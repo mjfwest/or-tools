@@ -21,16 +21,16 @@ public class CsFz
    */
   private static void Solve(String filename)
   {
-    FzModel model = new FzModel(filename);
+    Model model = new Model(filename);
     model.LoadFromFile(filename);
     // Uncomment to see the model.
     // Console.WriteLine(model.ToString());
     // This is mandatory.
-    model.PresolveForCp();
+    model.PresolveForCp(/*verbose=*/false);
     // Display basic statistics on the model.
     model.PrintStatistics();
 
-    FzSolverParameters parameters = new FzSolverParameters();
+    FlatzincParameters parameters = new FlatzincParameters();
     // Initialize to default values as in the C++ runner.
     parameters.all_solutions = false;
     parameters.free_search = false;
@@ -43,26 +43,42 @@ public class CsFz
     parameters.restart_log_size = -1;
     parameters.threads = 0;
     parameters.time_limit_in_ms = 10000;
-    parameters.use_log = true;
+    parameters.logging = false;
     parameters.verbose_impact = false;
-    parameters.worker_id = -1;
-    parameters.search_type = FzSolverParameters.DEFAULT;
+    parameters.thread_id = -1;
+    parameters.search_type = FlatzincParameters.DEFAULT;
     // Mandatory to retrieve solutions.
     parameters.store_all_solutions = true;
 
-    FzSolver solver = new FzSolver(model);
-    solver.SequentialSolve(parameters);
+    Solver solver = new Solver(model);
+    solver.Solve(parameters);
 
     int last = solver.NumStoredSolutions() - 1;
     if (last >= 0) {
-      FzOnSolutionOutputVector output_vector = model.output();
-      foreach (FzOnSolutionOutput output in output_vector) {
+      SolutionOutputSpecsVector output_vector = model.output();
+      foreach (SolutionOutputSpecs output in output_vector) {
         if (output.variable != null) {
-          FzIntegerVariable var = output.variable;
-          Console.WriteLine(var.name +  " = " + solver.StoredValue(last, var));
+          IntegerVariable var = output.variable;
+          Console.WriteLine(output.name +  " = " +
+                            solver.StoredValue(last, var));
         }
-        foreach (FzIntegerVariable var in output.flat_variables) {
-          Console.WriteLine(var.name +  " = " + solver.StoredValue(last, var));
+        if (output.flat_variables.Count > 0) {
+          String line = output.name;
+          foreach (SolutionOutputSpecs.Bounds b in output.bounds) {
+            line += "[" + b.ToString() + "]";
+          }
+          line += " = {";
+          bool start = true;
+          foreach (IntegerVariable var in output.flat_variables) {
+            if (start) {
+              start = false;
+            } else {
+              line += ", ";
+            }
+            line += solver.StoredValue(last, var);
+          }
+          line += "}";
+          Console.WriteLine(line);
         }
       }
     }
@@ -70,6 +86,10 @@ public class CsFz
 
   public static void Main(String[] args)
   {
-    Solve(args[0]);
+    if (args.Length == 0) {
+      Console.WriteLine("A file name is required!");
+    } else {
+      Solve(args[0]);
+    }
   }
 }

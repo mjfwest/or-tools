@@ -100,6 +100,11 @@ class LinearProgram {
   // TODO(user): Improve the support of integer variables.
   void SetVariableIntegrality(ColIndex col, bool is_integer);
 
+  // Records the fact that the variable at column col is implied integer
+  // variable i.e. it was continuous variable in the LP and was detected to take
+  // only integer values.
+  void SetVariableImpliedInteger(ColIndex col, bool is_implied_integer);
+
   // Returns whether the variable at column col must take binary values or not.
   bool IsVariableBinary(ColIndex col) const;
 
@@ -217,6 +222,12 @@ class LinearProgram {
   // constrained to be integer.
   const DenseBooleanRow& is_variable_integer() const {
     return is_variable_integer_;
+  }
+
+  // Returns a row vector of Booleans representing whether each variable is
+  // constrained to be integer.
+  const DenseBooleanRow& is_variable_implied_integer() const {
+    return is_variable_implied_integer_;
   }
 
   // Returns a list (technically a vector) of the ColIndices of the integer
@@ -436,6 +447,10 @@ class LinearProgram {
   // Scales the problem using the given scaler.
   void Scale(SparseMatrixScaler* scaler);
 
+  // Scales the costs to always have a maximum cost magnitude of 1.0 and returns
+  // the used cost scaling factor.
+  Fractional ScaleObjective();
+
   // Removes the given row indices from the LinearProgram.
   // This needs to allocate O(num_variables) memory.
   void DeleteRows(const DenseBooleanColumn& rows_to_delete);
@@ -499,7 +514,9 @@ class LinearProgram {
   DenseRow variable_lower_bounds_;
   DenseRow variable_upper_bounds_;
   StrictITIVector<ColIndex, std::string> variable_names_;
+  // TODO(user): Add ENUM for variable types.
   DenseBooleanRow is_variable_integer_;
+  DenseBooleanRow is_variable_implied_integer_;
 
   // The vector of the indices of variables constrained to be integer.
   // Note(user): the set of indices in integer_variables_list_ is the union

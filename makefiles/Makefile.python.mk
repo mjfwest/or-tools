@@ -1,33 +1,36 @@
+.PHONY : python install_python_modules pypi_archive pyinit pycp pyalgorithms pygraph pylp
+
 # Python support using SWIG
 
 # Detect python3
 
-ifeq ("$(PYTHON_VERSION)","3.2")
-  PYTHON3 = true
-  SWIG_PYTHON3_FLAG=-py3 -DPY3
-endif
-ifeq ("$(PYTHON_VERSION)","3.3")
-  PYTHON3 = true
-  SWIG_PYTHON3_FLAG=-py3 -DPY3
-endif
-ifeq ("$(PYTHON_VERSION)","3.4")
-  PYTHON3 = true
-  SWIG_PYTHON3_FLAG=-py3 -DPY3
-endif
-ifeq ("$(PYTHON_VERSION)","3.5")
-  PYTHON3 = true
-  SWIG_PYTHON3_FLAG=-py3 -DPY3
-endif
-ifeq ("$(PYTHON_VERSION)","35")
-  PYTHON3 = true
-  SWIG_PYTHON3_FLAG=-py3 -DPY3
-endif
-
-
 OR_TOOLS_PYTHONPATH = $(OR_ROOT_FULL)$Ssrc$(CPSEP)$(OR_ROOT_FULL)$Sdependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Spython
 
+ifeq ($(SYSTEM),win)
+  PYTHON_EXECUTABLE = $(WINDOWS_PATH_TO_PYTHON)$Spython.exe
+  SET_PYTHONPATH = @set PYTHONPATH=$(OR_TOOLS_PYTHONPATH) &&
+else #UNIX
+  PYTHON_EXECUTABLE = $(shell which python$(UNIX_PYTHON_VER))
+  SET_PYTHONPATH = @PYTHONPATH=$(OR_TOOLS_PYTHONPATH)
+endif
+
+ifeq ($(shell $(PYTHON_EXECUTABLE) -c "from sys import version_info as v; print (str(v[0]))"),3)
+  PYTHON3 = true
+  SWIG_PYTHON3_FLAG=-py3 -DPY3
+endif
+
 # Main target
-python: pyinit pycp pyalgorithms pygraph pylp
+CANONIC_PYTHON_EXECUTABLE = $(subst $(SPACE),$(BACKSLASH_SPACE),$(subst \,/,$(subst \\,/,$(PYTHON_EXECUTABLE))))
+ifeq ($(wildcard  $(CANONIC_PYTHON_EXECUTABLE)),)
+python:
+	@echo "The python executable was not set properly. Check Makefile.local for more information."
+test_python: python
+
+else
+python: install_python_modules pyinit pycp pyalgorithms pygraph pylp
+test_python: test_python_examples
+BUILT_LANGUAGES +=, python
+endif
 
 # Clean target
 clean_python:
@@ -50,6 +53,15 @@ clean_python:
 	-$(DEL) $(GEN_DIR)$Slinear_solver$S*.pyc
 	-$(DEL) $(LIB_DIR)$S_pywrap*.$(SWIG_LIB_SUFFIX)
 	-$(DEL) $(OBJ_DIR)$Sswig$S*python_wrap.$O
+
+install_python_modules: dependencies/sources/protobuf-3.0.0/python/google/protobuf/descriptor_pb2.py
+
+dependencies/sources/protobuf-3.0.0/python/google/protobuf/descriptor_pb2.py: \
+dependencies/sources/protobuf-$(PROTOBUF_TAG)/python/setup.py
+ifeq ("$(SYSTEM)", "win")
+	copy dependencies$Sinstall$Sbin$Sprotoc.exe dependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Ssrc
+endif
+	cd dependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Spython && $(PYTHON_EXECUTABLE) setup.py build
 
 pyinit: $(GEN_DIR)$Sortools$S__init__.py
 
@@ -206,12 +218,7 @@ endif
 
 rpy: $(LIB_DIR)/_pywraplp.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywrapcp.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywrapgraph.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywrapknapsack_solver.$(SWIG_LIB_SUFFIX) $(EX)
 	@echo Running $(EX)
-ifeq ($(SYSTEM),win)
-	@set PYTHONPATH=$(OR_TOOLS_PYTHONPATH) && $(WINDOWS_PATH_TO_PYTHON)$Spython $(EX) $(ARGS)
-else
-	@PYTHONPATH=$(OR_TOOLS_PYTHONPATH) python$(PYTHON_VERSION) $(EX) $(ARGS)
-endif
-
+	$(SET_PYTHONPATH) $(PYTHON_EXECUTABLE) $(EX) $(ARGS)
 
 # Build stand-alone archive file for redistribution.
 
@@ -240,78 +247,84 @@ else
 	cd temp && tar -c -v -z --no-same-owner -f ../or-tools_python_examples_v$(OR_TOOLS_VERSION).tar.gz ortools_examples
 endif
 
-pypi_archive: python $(PATCHELF)
-	-$(DELREC) temp
-	$(MKDIR) temp
-	$(MKDIR) temp$Sortools
-	$(MKDIR) temp$Sortools$Sortools
-	$(MKDIR) temp$Sortools$Sortools$Sconstraint_solver
-	$(MKDIR) temp$Sortools$Sortools$Slinear_solver
-	$(MKDIR) temp$Sortools$Sortools$Sgraph
-	$(MKDIR) temp$Sortools$Sortools$Salgorithms
-	$(MKDIR) temp$Sortools$Sdummy
-	$(COPY) src$Sgen$Sortools$Sconstraint_solver$S*.py temp$Sortools$Sortools$Sconstraint_solver
-	$(COPY) src$Sortools$Slinear_solver$S*.py temp$Sortools$Sortools$Slinear_solver
-	$(COPY) src$Sgen$Sortools$Slinear_solver$S*.py temp$Sortools$Sortools$Slinear_solver
-	$(COPY) src$Sgen$Sortools$Sgraph$Spywrapgraph.py temp$Sortools$Sortools$Sgraph
-	$(COPY) src$Sgen$Sortools$Salgorithms$Spywrapknapsack_solver.py temp$Sortools$Sortools$Salgorithms
-	$(COPY) $(GEN_DIR)$Sortools$S__init__.py temp$Sortools$Sortools$S__init__.py
-	$(SED) -i -e 's/VVVV/$(OR_TOOLS_VERSION)/' temp$Sortools$Sortools$S__init__.py
-	$(TOUCH) temp$Sortools$Sortools$Sconstraint_solver$S__init__.py
-	$(TOUCH) temp$Sortools$Sortools$Slinear_solver$S__init__.py
-	$(TOUCH) temp$Sortools$Sortools$Sgraph$S__init__.py
-	$(TOUCH) temp$Sortools$Sortools$Salgorithms$S__init__.py
-	$(COPY) tools$Sdummy_ortools_dependency.cc temp$Sortools$Sdummy
-	$(COPY) tools$SREADME.pypi temp$Sortools$SREADME.txt
-	$(COPY) LICENSE-2.0.txt temp$Sortools
-	$(COPY) tools$Ssetup.py temp$Sortools
+PYPI_ARCHIVE_TEMP_DIR = temp-python$(PYTHON_VERSION)
+
+OR_TOOLS_PYTHON_GEN_SCRIPTS = $(wildcard src/gen/ortools/*/*.py) $(wildcard src/gen/ortools/*/*.cc)
+
+pypi_archive: python $(PYPI_ARCHIVE_TEMP_DIR)
+
+$(PYPI_ARCHIVE_TEMP_DIR) : $(OR_TOOLS_PYTHON_GEN_SCRIPTS)
+	-$(DELREC) $(PYPI_ARCHIVE_TEMP_DIR)
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sconstraint_solver
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Slinear_solver
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sgraph
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Salgorithms
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sdummy
+	$(COPY) src$Sgen$Sortools$Sconstraint_solver$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sconstraint_solver
+	$(COPY) src$Sortools$Slinear_solver$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Slinear_solver
+	$(COPY) src$Sgen$Sortools$Slinear_solver$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Slinear_solver
+	$(COPY) src$Sgen$Sortools$Sgraph$Spywrapgraph.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sgraph
+	$(COPY) src$Sgen$Sortools$Salgorithms$Spywrapknapsack_solver.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Salgorithms
+	$(COPY) $(GEN_DIR)$Sortools$S__init__.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S__init__.py
+	$(SED) -i -e 's/VVVV/$(OR_TOOLS_VERSION)/' $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S__init__.py
+	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sconstraint_solver$S__init__.py
+	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Slinear_solver$S__init__.py
+	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sgraph$S__init__.py
+	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Salgorithms$S__init__.py
+	$(COPY) tools$Sdummy_ortools_dependency.cc $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sdummy
+	$(COPY) tools$SREADME.pypi $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$SREADME.txt
+	$(COPY) LICENSE-2.0.txt $(PYPI_ARCHIVE_TEMP_DIR)$Sortools
+	$(COPY) tools$Ssetup.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools
 ifeq ($(PYTHON3),true)
-	$(SED) -i -e 's/ORTOOLS_PYTHON_VERSION/py3-ortools/' temp$Sortools$Ssetup.py
+	$(SED) -i -e 's/ORTOOLS_PYTHON_VERSION/py3-ortools/' $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Ssetup.py
 else
-	$(SED) -i -e 's/ORTOOLS_PYTHON_VERSION/ortools/' temp$Sortools$Ssetup.py
+	$(SED) -i -e 's/ORTOOLS_PYTHON_VERSION/ortools/' $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Ssetup.py
 endif
-	$(SED) -i -e 's/VVVV/$(OR_TOOLS_VERSION)/' temp$Sortools$Ssetup.py
-	$(SED) -i -e 's/PROTOBUF_TAG/$(PROTOBUF_TAG)/' temp$Sortools$Ssetup.py
+	$(SED) -i -e 's/VVVV/$(OR_TOOLS_VERSION)/' $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Ssetup.py
+	$(SED) -i -e 's/PROTOBUF_TAG/$(PROTOBUF_TAG)/' $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Ssetup.py
 ifeq ($(SYSTEM),win)
-	copy src\gen\ortools\constraint_solver\_pywrapcp.pyd temp$Sortools$Sortools$Sconstraint_solver
-	copy src\gen\ortools\linear_solver\_pywraplp.pyd temp$Sortools$Sortools$Slinear_solver
-	copy src\gen\ortools\graph\_pywrapgraph.pyd temp$Sortools$Sortools$Sgraph
-	copy src\gen\ortools\algorithms\_pywrapknapsack_solver.pyd temp$Sortools$Sortools$Salgorithms
-	$(SED) -i -e 's/\.dll/\.pyd/' temp/ortools/setup.py
-	$(SED) -i -e '/DELETEWIN/d' temp/ortools/setup.py
-	$(SED) -i -e 's/DELETEUNIX/          /g' temp/ortools/setup.py
-	-del temp\ortools\setup.py-e
+	copy src\gen\ortools\constraint_solver\_pywrapcp.pyd $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sconstraint_solver
+	copy src\gen\ortools\linear_solver\_pywraplp.pyd $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Slinear_solver
+	copy src\gen\ortools\graph\_pywrapgraph.pyd $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sgraph
+	copy src\gen\ortools\algorithms\_pywrapknapsack_solver.pyd $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Salgorithms
+	$(SED) -i -e 's/\.dll/\.pyd/' $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py
+	$(SED) -i -e '/DELETEWIN/d' $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py
+	$(SED) -i -e 's/DELETEUNIX/          /g' $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py
+	-del $(PYPI_ARCHIVE_TEMP_DIR)\ortools\setup.py-e
 else
-	cp lib/_pywrapcp.$(SWIG_LIB_SUFFIX) temp/ortools/ortools/constraint_solver
-	cp lib/_pywraplp.$(SWIG_LIB_SUFFIX) temp/ortools/ortools/linear_solver
-	cp lib/_pywrapgraph.$(SWIG_LIB_SUFFIX) temp/ortools/ortools/graph
-	cp lib/_pywrapknapsack_solver.$(SWIG_LIB_SUFFIX) temp/ortools/ortools/algorithms
-	cp lib/libortools.$(LIB_SUFFIX) temp/ortools/ortools
-	$(SED) -i -e 's/\.dll/\.so/' temp/ortools/setup.py
-	$(SED) -i -e 's/DELETEWIN //g' temp/ortools/setup.py
-	$(SED) -i -e '/DELETEUNIX/d' temp/ortools/setup.py
-	$(SED) -i -e 's/DLL/$(LIB_SUFFIX)/g' temp/ortools/setup.py
-	-rm temp/ortools/setup.py-e
+	cp lib/_pywrapcp.$(SWIG_LIB_SUFFIX) $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/constraint_solver
+	cp lib/_pywraplp.$(SWIG_LIB_SUFFIX) $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/linear_solver
+	cp lib/_pywrapgraph.$(SWIG_LIB_SUFFIX) $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/graph
+	cp lib/_pywrapknapsack_solver.$(SWIG_LIB_SUFFIX) $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools/algorithms
+	cp lib/libortools.$(LIB_SUFFIX) $(PYPI_ARCHIVE_TEMP_DIR)/ortools/ortools
+	$(SED) -i -e 's/\.dll/\.so/' $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py
+	$(SED) -i -e 's/DELETEWIN //g' $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py
+	$(SED) -i -e '/DELETEUNIX/d' $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py
+	$(SED) -i -e 's/DLL/$(LIB_SUFFIX)/g' $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py
+	-rm $(PYPI_ARCHIVE_TEMP_DIR)/ortools/setup.py-e
 ifeq ($(PLATFORM),MACOSX)
-	tools/fix_python_libraries_on_mac.sh
+	tools/fix_python_libraries_on_mac.sh $(PYPI_ARCHIVE_TEMP_DIR)
 endif
 ifeq ($(PLATFORM),LINUX)
-	tools/fix_python_libraries_on_linux.sh
+	tools/fix_python_libraries_on_linux.sh $(PYPI_ARCHIVE_TEMP_DIR)
 endif
 endif
 
-pypi_upload: pypi_archive
-	@echo Uploading Pypi module for python$(PYTHON_VERSION).
+pypi_upload:
+	@echo Uploading Pypi module for $(PYTHON_EXECUTABLE).
 ifeq ($(SYSTEM),win)
-	set VS90COMNTOOLS=$(VS$(VS_COMTOOLS)COMNTOOLS)
-	cd temp\ortools && $(WINDOWS_PATH_TO_PYTHON)\python setup.py register bdist_egg bdist_wheel bdist_wininst upload
+	cd $(PYPI_ARCHIVE_TEMP_DIR)\ortools && $(PYTHON_EXECUTABLE) setup.py bdist_egg bdist_wheel bdist_wininst
 else
   ifeq ($(PLATFORM),MACOSX)
-	cd temp/ortools && python$(PYTHON_VERSION) setup.py register bdist_egg bdist_wheel upload
+	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && $(PYTHON_EXECUTABLE) setup.py bdist_egg bdist_wheel
   else
-	cd temp/ortools && python$(PYTHON_VERSION) setup.py register bdist_egg upload
+	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && $(PYTHON_EXECUTABLE) setup.py bdist_egg 
   endif
 endif
+	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && twine upload dist/*
 
 pypi_upload: $(PYPI_UPLOAD)
 

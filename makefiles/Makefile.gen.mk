@@ -708,9 +708,7 @@ $(OBJ_DIR)/lp_data/proto_utils.$O: \
 
 $(OBJ_DIR)/lp_data/sparse.$O: \
     $(SRC_DIR)/lp_data/sparse.cc \
-    $(SRC_DIR)/lp_data/lp_data.h \
     $(SRC_DIR)/lp_data/sparse.h \
-    $(SRC_DIR)/util/return_macros.h \
     $(SRC_DIR)/base/join.h \
     $(SRC_DIR)/base/stringprintf.h
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)/lp_data/sparse.cc $(OBJ_OUT)$(OBJ_DIR)$Slp_data$Ssparse.$O
@@ -1049,6 +1047,7 @@ $(OBJ_DIR)/glop/parameters.pb.$O: $(GEN_DIR)/glop/parameters.pb.cc
 	$(CCC) $(CFLAGS) -c $(GEN_DIR)/glop/parameters.pb.cc $(OBJ_OUT)$(OBJ_DIR)$Sglop$Sparameters.pb.$O
 
 GRAPH_DEPS = \
+    $(SRC_DIR)/graph/christofides.h \
     $(SRC_DIR)/graph/connectivity.h \
     $(SRC_DIR)/graph/ebert_graph.h \
     $(SRC_DIR)/graph/eulerian_path.h \
@@ -1091,6 +1090,12 @@ GRAPH_LIB_OBJS = \
 $(SRC_DIR)/graph/assignment.h: \
     $(SRC_DIR)/graph/ebert_graph.h
 
+$(SRC_DIR)/graph/christofides.h: \
+    $(SRC_DIR)/graph/eulerian_path.h \
+    $(SRC_DIR)/graph/minimum_spanning_tree.h \
+    $(SRC_DIR)/base/integral_types.h \
+    $(SRC_DIR)/base/logging.h
+
 $(SRC_DIR)/graph/cliques.h: \
     $(SRC_DIR)/base/hash.h \
     $(SRC_DIR)/base/int_type.h \
@@ -1127,12 +1132,11 @@ $(SRC_DIR)/graph/graphs.h: \
     $(SRC_DIR)/graph/graph.h
 
 $(SRC_DIR)/graph/hamiltonian_path.h: \
-    $(SRC_DIR)/graph/eulerian_path.h \
-    $(SRC_DIR)/graph/minimum_spanning_tree.h \
     $(SRC_DIR)/base/integral_types.h \
     $(SRC_DIR)/base/logging.h \
     $(SRC_DIR)/util/bitset.h \
-    $(SRC_DIR)/util/saturated_arithmetic.h
+    $(SRC_DIR)/util/saturated_arithmetic.h \
+    $(SRC_DIR)/util/vector_or_function.h
 
 $(SRC_DIR)/graph/io.h: \
     $(SRC_DIR)/graph/graph.h \
@@ -1175,8 +1179,15 @@ $(SRC_DIR)/graph/min_cost_flow.h: \
 $(SRC_DIR)/graph/minimum_spanning_tree.h: \
     $(SRC_DIR)/graph/connectivity.h \
     $(SRC_DIR)/graph/graph.h \
+    $(SRC_DIR)/base/adjustable_priority_queue.h \
+    $(SRC_DIR)/base/adjustable_priority_queue-inl.h \
     $(SRC_DIR)/base/integral_types.h \
     $(SRC_DIR)/util/vector_or_function.h
+
+$(SRC_DIR)/graph/one_tree_lower_bound.h: \
+    $(SRC_DIR)/graph/christofides.h \
+    $(SRC_DIR)/graph/minimum_spanning_tree.h \
+    $(SRC_DIR)/base/integral_types.h
 
 $(SRC_DIR)/graph/shortestpaths.h: \
     $(SRC_DIR)/base/integral_types.h \
@@ -1292,6 +1303,7 @@ ALGORITHMS_DEPS = \
     $(SRC_DIR)/util/bitset.h \
     $(SRC_DIR)/util/running_stat.h \
     $(SRC_DIR)/util/saturated_arithmetic.h \
+    $(SRC_DIR)/graph/christofides.h \
     $(SRC_DIR)/graph/connectivity.h \
     $(SRC_DIR)/graph/ebert_graph.h \
     $(SRC_DIR)/graph/eulerian_path.h \
@@ -1393,6 +1405,7 @@ SAT_DEPS = \
     $(SRC_DIR)/sat/boolean_problem.h \
     $(GEN_DIR)/sat/boolean_problem.pb.h \
     $(SRC_DIR)/sat/clause.h \
+    $(SRC_DIR)/sat/cp_constraints.h \
     $(SRC_DIR)/sat/drat.h \
     $(SRC_DIR)/sat/integer_expr.h \
     $(SRC_DIR)/sat/integer.h \
@@ -1425,6 +1438,7 @@ SAT_DEPS = \
     $(SRC_DIR)/util/saturated_arithmetic.h \
     $(SRC_DIR)/algorithms/dynamic_partition.h \
     $(SRC_DIR)/algorithms/dynamic_permutation.h \
+    $(SRC_DIR)/graph/christofides.h \
     $(SRC_DIR)/graph/connectivity.h \
     $(SRC_DIR)/graph/ebert_graph.h \
     $(SRC_DIR)/graph/eulerian_path.h \
@@ -1464,6 +1478,7 @@ SAT_LIB_OBJS = \
     $(OBJ_DIR)/sat/disjunctive.$O \
     $(OBJ_DIR)/sat/drat.$O \
     $(OBJ_DIR)/sat/encoding.$O \
+    $(OBJ_DIR)/sat/flow_costs.$O \
     $(OBJ_DIR)/sat/integer.$O \
     $(OBJ_DIR)/sat/integer_expr.$O \
     $(OBJ_DIR)/sat/intervals.$O \
@@ -1478,6 +1493,7 @@ SAT_LIB_OBJS = \
     $(OBJ_DIR)/sat/symmetry.$O \
     $(OBJ_DIR)/sat/table.$O \
     $(OBJ_DIR)/sat/timetable.$O \
+    $(OBJ_DIR)/sat/timetable_edgefinding.$O \
     $(OBJ_DIR)/sat/util.$O \
     $(OBJ_DIR)/sat/boolean_problem.pb.$O \
     $(OBJ_DIR)/sat/sat_parameters.pb.$O
@@ -1531,6 +1547,12 @@ $(SRC_DIR)/sat/encoding.h: \
     $(GEN_DIR)/sat/boolean_problem.pb.h \
     $(SRC_DIR)/sat/sat_solver.h
 
+$(SRC_DIR)/sat/flow_costs.h: \
+    $(SRC_DIR)/sat/integer.h \
+    $(SRC_DIR)/sat/model.h \
+    $(SRC_DIR)/sat/sat_base.h \
+    $(SRC_DIR)/linear_solver/linear_solver.h
+
 $(SRC_DIR)/sat/integer_expr.h: \
     $(SRC_DIR)/sat/integer.h \
     $(SRC_DIR)/sat/model.h \
@@ -1552,6 +1574,7 @@ $(SRC_DIR)/sat/integer.h: \
     $(SRC_DIR)/util/sorted_interval_list.h
 
 $(SRC_DIR)/sat/intervals.h: \
+    $(SRC_DIR)/sat/cp_constraints.h \
     $(SRC_DIR)/sat/integer_expr.h \
     $(SRC_DIR)/sat/integer.h \
     $(SRC_DIR)/sat/model.h \
@@ -1642,6 +1665,12 @@ $(SRC_DIR)/sat/table.h: \
     $(SRC_DIR)/sat/integer.h \
     $(SRC_DIR)/sat/model.h
 
+$(SRC_DIR)/sat/timetable_edgefinding.h: \
+    $(SRC_DIR)/sat/integer.h \
+    $(SRC_DIR)/sat/intervals.h \
+    $(SRC_DIR)/sat/model.h \
+    $(SRC_DIR)/sat/sat_base.h
+
 $(SRC_DIR)/sat/timetable.h: \
     $(SRC_DIR)/sat/integer.h \
     $(SRC_DIR)/sat/intervals.h \
@@ -1689,6 +1718,7 @@ $(OBJ_DIR)/sat/cumulative.$O: \
     $(SRC_DIR)/sat/disjunctive.h \
     $(SRC_DIR)/sat/overload_checker.h \
     $(SRC_DIR)/sat/sat_solver.h \
+    $(SRC_DIR)/sat/timetable_edgefinding.h \
     $(SRC_DIR)/sat/timetable.h
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)/sat/cumulative.cc $(OBJ_OUT)$(OBJ_DIR)$Ssat$Scumulative.$O
 
@@ -1709,6 +1739,11 @@ $(OBJ_DIR)/sat/encoding.$O: \
     $(SRC_DIR)/sat/encoding.cc \
     $(SRC_DIR)/sat/encoding.h
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)/sat/encoding.cc $(OBJ_OUT)$(OBJ_DIR)$Ssat$Sencoding.$O
+
+$(OBJ_DIR)/sat/flow_costs.$O: \
+    $(SRC_DIR)/sat/flow_costs.cc \
+    $(SRC_DIR)/sat/flow_costs.h
+	$(CCC) $(CFLAGS) -c $(SRC_DIR)/sat/flow_costs.cc $(OBJ_OUT)$(OBJ_DIR)$Ssat$Sflow_costs.$O
 
 $(OBJ_DIR)/sat/integer.$O: \
     $(SRC_DIR)/sat/integer.cc \
@@ -1812,6 +1847,13 @@ $(OBJ_DIR)/sat/timetable.$O: \
     $(SRC_DIR)/sat/timetable.h
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)/sat/timetable.cc $(OBJ_OUT)$(OBJ_DIR)$Ssat$Stimetable.$O
 
+$(OBJ_DIR)/sat/timetable_edgefinding.$O: \
+    $(SRC_DIR)/sat/timetable_edgefinding.cc \
+    $(SRC_DIR)/sat/timetable_edgefinding.h \
+    $(SRC_DIR)/base/int_type.h \
+    $(SRC_DIR)/util/sort.h
+	$(CCC) $(CFLAGS) -c $(SRC_DIR)/sat/timetable_edgefinding.cc $(OBJ_OUT)$(OBJ_DIR)$Ssat$Stimetable_edgefinding.$O
+
 $(OBJ_DIR)/sat/util.$O: \
     $(SRC_DIR)/sat/util.cc \
     $(SRC_DIR)/sat/util.h
@@ -1884,6 +1926,7 @@ BOP_DEPS = \
     $(SRC_DIR)/sat/boolean_problem.h \
     $(GEN_DIR)/sat/boolean_problem.pb.h \
     $(SRC_DIR)/sat/clause.h \
+    $(SRC_DIR)/sat/cp_constraints.h \
     $(SRC_DIR)/sat/drat.h \
     $(SRC_DIR)/sat/integer_expr.h \
     $(SRC_DIR)/sat/integer.h \
@@ -2426,6 +2469,7 @@ CP_DEPS = \
     $(SRC_DIR)/util/bitset.h \
     $(SRC_DIR)/util/running_stat.h \
     $(SRC_DIR)/util/saturated_arithmetic.h \
+    $(SRC_DIR)/graph/christofides.h \
     $(SRC_DIR)/graph/connectivity.h \
     $(SRC_DIR)/graph/ebert_graph.h \
     $(SRC_DIR)/graph/eulerian_path.h \
@@ -2437,6 +2481,7 @@ CP_DEPS = \
     $(SRC_DIR)/sat/boolean_problem.h \
     $(GEN_DIR)/sat/boolean_problem.pb.h \
     $(SRC_DIR)/sat/clause.h \
+    $(SRC_DIR)/sat/cp_constraints.h \
     $(SRC_DIR)/sat/drat.h \
     $(SRC_DIR)/sat/integer_expr.h \
     $(SRC_DIR)/sat/integer.h \
@@ -2524,7 +2569,6 @@ $(SRC_DIR)/constraint_solver/constraint_solveri.h: \
     $(SRC_DIR)/base/join.h \
     $(SRC_DIR)/base/logging.h \
     $(SRC_DIR)/base/map_util.h \
-    $(SRC_DIR)/base/sparse_hash.h \
     $(SRC_DIR)/base/sysinfo.h \
     $(SRC_DIR)/base/timer.h \
     $(SRC_DIR)/util/bitset.h \
@@ -2949,7 +2993,7 @@ $(OBJ_DIR)/constraint_solver/routing_search.$O: \
     $(SRC_DIR)/base/small_ordered_set.h \
     $(SRC_DIR)/util/bitset.h \
     $(SRC_DIR)/util/saturated_arithmetic.h \
-    $(SRC_DIR)/graph/hamiltonian_path.h
+    $(SRC_DIR)/graph/christofides.h
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)/constraint_solver/routing_search.cc $(OBJ_OUT)$(OBJ_DIR)$Sconstraint_solver$Srouting_search.$O
 
 $(OBJ_DIR)/constraint_solver/sat_constraint.$O: \

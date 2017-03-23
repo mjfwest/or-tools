@@ -163,18 +163,23 @@ bool OverloadChecker::Propagate() {
     const int leaf_id = task_to_index_in_start_min_[task_id];
     {
       // Compute the energy and envelope of the task.
-      // TODO(user): This code will not work for negative start_min.
       // TODO(user): Deal with integer overflow.
-      // TODO(user): Deduce that some tasks cannot be executed.
       const IntegerValue energy = DurationMin(task_id) * DemandMin(task_id);
       const IntegerValue envelope = StartMin(task_id) * capacity_max + energy;
       InsertTaskInThetaTree(leaf_id, energy, envelope);
     }
 
-    // Compute the minimum capacity required to provide the left-cut with enough
-    // energy. The minimum capacity is ceil(envelopes_[i] / EndMax(task_id)).
-    const IntegerValue new_capacity_min =
-        CeilOfDivision(node_envelopes_[1], by_end_max_[i].time);
+    // The interval with the maximum energy per unit of time.
+    const int interval_start_leaf = LeftMostInvolvedLeaf();
+    const IntegerValue interval_start = by_start_min_[interval_start_leaf].time;
+    const IntegerValue interval_end = by_end_max_[i].time;
+    const IntegerValue interval_size = interval_end - interval_start;
+
+    // Compute the minimum capacity required to provide the interval above with
+    // enough energy.
+    CHECK_LE(interval_start * capacity_max, node_envelopes_[1]);
+    const IntegerValue new_capacity_min = CeilOfDivision(
+        node_envelopes_[1] - interval_start * capacity_max, interval_size);
 
     // Continue if we can't propagate anything, there is two cases.
     if (is_present) {
@@ -193,9 +198,6 @@ bool OverloadChecker::Propagate() {
 
     // Compute the bounds of the task interval responsible for the value of the
     // root envelope.
-    const IntegerValue interval_end = by_end_max_[i].time;
-    const int interval_start_leaf = LeftMostInvolvedLeaf();
-    const IntegerValue interval_start = by_start_min_[interval_start_leaf].time;
     for (int j = 0; j <= i; ++j) {
       const int t = by_end_max_[j].task_id;
 

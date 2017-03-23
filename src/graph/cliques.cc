@@ -53,7 +53,8 @@ inline bool Connects(std::function<bool(int, int)> graph, int i, int j) {
 void Search(std::function<bool(int, int)> graph,
             std::function<bool(const std::vector<int>&)> callback,
             int* input_candidates, int first_candidate_index,
-            int num_input_candidates, std::vector<int>* current_clique, bool* stop) {
+            int num_input_candidates, std::vector<int>* current_clique,
+            bool* stop) {
   // The pivot is a node from input_candidates that is disconnected from the
   // minimal number of nodes in the actual candidates (excluding the "not" set);
   // the algorithm then selects only candidates that are disconnected from the

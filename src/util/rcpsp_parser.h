@@ -45,16 +45,53 @@ namespace operations_research {
 // successor predecence of the non RCPSP/Max variation, i.e.:
 //   start(i) + duration(i, mi) <= start(j).
 //
-// The objective is to minimize the makespan of the problem.
+// In the normal case, the objective is to minimize the makespan of the problem.
+//
+// In the resource investment problem, there is no makespan. It is
+// replaced by a strict deadline, and each task must finish before
+// this deadline.  In that case, resources have a unit cost, and the
+// objective is to minimize the sum of resource cost.
+//
+// In the consumer/producer case, tasks have a zero duration, and demands can be
+// negative. The constraint states that at each time point, the sum of demands
+// happening before or during this time must be between the min and max
+// capacity. Note that in that case, both min and max capacity can be negative.
+// Furthermore, if 0 si not in [min_capacity, max_capacity], then a sufficient
+// set of events must happen at time 0 such that the sum of their demands must
+// fall inside the capacity interval.
+//
+// The supported file format are:
+//   - standard psplib (.sm and .mm):
+//     http://www.om-db.wi.tum.de/psplib/data.html
+//   - rcpsp problem in the patterson format (.rcp):
+//     http://www.om-db.wi.tum.de/psplib/dataob.html
+//   - rcpsp/max (.sch):
+//     https://www.wiwi.tu-clausthal.de/de/abteilungen/produktion/forschung/
+//           schwerpunkte/project-generator/rcpspmax/
+//     https://www.wiwi.tu-clausthal.de/de/abteilungen/produktion/forschung/
+//           schwerpunkte/project-generator/mrcpspmax/
+//   - resource investment problem with max delay (.sch):
+//     https://www.wiwi.tu-clausthal.de/de/abteilungen/produktion/forschung/
+//           schwerpunkte/project-generator/ripmax/
 class RcpspParser {
  public:
   struct Resource {
-    int capacity;
+    // The max capacity of the cumulative.
+    int max_capacity;
+    // This field is used only in the consumer/producer case. It states the
+    // minimum capacity that must be valid at each time point.
+    int min_capacity;
     bool renewable;
+    // If non zero, then a each unit of capacity will incur a cost of unit_cost.
+    int unit_cost;
   };
 
   struct Recipe {
     int duration;
+    // In the general case, demand must be >= 0. In the consumer/producer case,
+    // it can be < 0. Note that in this case, the tasks always have a duration
+    // of zero. Thus the effect of the demand (increase or decrease of the
+    // current usage) happens at the start of the task.
     std::vector<int> demands_per_resource;
   };
 
@@ -64,7 +101,7 @@ class RcpspParser {
     // an n x m matrix where each entry at line i is a vector with the
     // same length as the number of mode for the task successor[i]. If
     // mode m1 is chosen for the current task, and mode m2 is choosen
-    // for its succesor i, we have:
+    // for its successor i, we have:
     //    start(current_task) + delay[i][m1][m2] <= start(successor task).
     std::vector<std::vector<std::vector<int>>> delays;
     std::vector<Recipe> recipes;
@@ -75,13 +112,23 @@ class RcpspParser {
   std::string name() const { return name_; }
   const std::vector<Resource>& resources() const { return resources_; }
   const std::vector<Task>& tasks() const { return tasks_; }
+  // The horizon is a date where we are sure that all tasks can fit before it.
   int horizon() const { return horizon_; }
+  // The release date is defined in the rcpsp base format, but is not used.
   int release_date() const { return release_date_; }
+  // The due date is defined in the rcpsp base format, but is not used.
   int due_date() const { return due_date_; }
+  // The tardiness cost is defined in the rcpsp base format, but is not used.
   int tardiness_cost() const { return tardiness_cost_; }
+  // The mpm_time is defined in the rcpsp base format, but is not used.
+  // It is defined as the minimum makespan in case of interruptible tasks.
   int mpm_time() const { return mpm_time_; }
+  // If set, it defines a strict date, and each task must finish before this.
+  int deadline() const { return deadline_; }
+  // Define the problem type.
   bool is_rcpsp_max() const { return is_rcpsp_max_; }
-  bool is_patterson() const { return is_patterson_; }
+  bool is_resource_investment() const { return is_resource_investment_; }
+  bool is_consumer_producer() const { return is_consumer_producer_; }
 
   bool LoadFile(const std::string& file_name);
 
@@ -94,6 +141,7 @@ class RcpspParser {
     PRECEDENCE_SECTION,
     REQUEST_SECTION,
     RESOURCE_SECTION,
+    RESOURCE_MIN_SECTION,
     PARSING_FINISHED,
     ERROR_FOUND
   };
@@ -113,11 +161,13 @@ class RcpspParser {
   int due_date_;
   int tardiness_cost_;
   int mpm_time_;
+  int deadline_;
   LoadStatus load_status_;
   int declared_tasks_;
   int current_task_;
   bool is_rcpsp_max_;
-  bool is_patterson_;
+  bool is_resource_investment_;
+  bool is_consumer_producer_;
   std::vector<std::vector<int>> temp_delays_;
   int unreads_;
 };

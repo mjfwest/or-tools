@@ -82,6 +82,7 @@ std::unordered_set<int64> GetValueSet(const Argument& arg) {
 }
 
 void SetConstraintAsIntEq(Constraint* ct, IntegerVariable* var, int64 value) {
+  CHECK(var != nullptr);
   ct->type = "int_eq";
   ct->arguments.clear();
   ct->arguments.push_back(Argument::IntVarRef(var));
@@ -459,7 +460,7 @@ bool Presolver::Unreify(Constraint* ct, std::string* log) {
   if (!last_argument.HasOneValue()) {
     return false;
   }
-  DCHECK(HasSuffixString(ct->type, "_reif")) << ct->DebugString();
+  DCHECK(strings::EndsWith(ct->type, "_reif")) << ct->DebugString();
   ct->type.resize(ct->type.size() - 5);
   ct->RemoveTargetVariable();
   if (last_argument.Value() == 1) {
@@ -1750,7 +1751,16 @@ bool Presolver::PresolveSimplifyElement(Constraint* ct, std::string* log) {
     const int64 index = ct->arguments[0].Value() - 1;
     const int64 value = ct->arguments[1].values[index];
     // Rewrite as equality.
-    SetConstraintAsIntEq(ct, ct->arguments[2].Var(), value);
+    if (ct->arguments[2].HasOneValue()) {
+      const int64 target = ct->arguments[2].Value();
+      if (value == target) {
+        ct->MarkAsInactive();
+      } else {
+        ct->SetAsFalse();
+      }
+    } else {
+      SetConstraintAsIntEq(ct, ct->arguments[2].Var(), value);
+    }
     return true;
   }
 
@@ -3419,6 +3429,15 @@ void Presolver::SubstituteEverywhere(Model* model) {
   for (const auto& iter : var_representative_map_) {
     iter.second->domain.IntersectWithDomain(iter.first->domain);
   }
+
+  // Change the objective variable.
+  IntegerVariable* const current_objective = model->objective();
+  if (current_objective == nullptr) return;
+  IntegerVariable* const new_objective =
+      FindRepresentativeOfVar(current_objective);
+  if (new_objective != current_objective) {
+    model->SetObjective(new_objective);
+  }
 }
 
 void Presolver::SubstituteAnnotation(Annotation* ann) {
@@ -3505,7 +3524,7 @@ void CheckRegroupStart(Constraint* ct, Constraint** start,
 //  - *_reif: arity
 //  - otherwise arity + 100.
 int SortWeight(Constraint* ct) {
-  int arity = HasSuffixString(ct->type, "_reif") ? 0 : 100;
+  int arity = strings::EndsWith(ct->type, "_reif") ? 0 : 100;
   for (const Argument& arg : ct->arguments) {
     arity += arg.variables.size();
   }

@@ -137,9 +137,11 @@ class MonoThreadReporting : public SearchReportingInterface {
   bool ShouldFinish() const override;
   void OnSearchEnd(int thread_id, bool interrupted) override;
   int64 BestSolution() const override;
+#if !defined(SWIG)
   OptimizeVar* CreateObjective(Solver* s, bool maximize, IntVar* var,
                                int64 step, int thread_id) const override;
   SearchLimit* CreateLimit(Solver* s, int thread_id) const override;
+#endif
   bool Interrupted() const override;
 
  private:
@@ -148,6 +150,17 @@ class MonoThreadReporting : public SearchReportingInterface {
   bool interrupted_;
 };
 
+class SilentMonoThreadReporting : public MonoThreadReporting {
+ public:
+  SilentMonoThreadReporting(bool print_all, int num_solutions);
+  ~SilentMonoThreadReporting() override;
+
+  void Init(int thread_id, const std::string& init_string) override;
+  void Log(int thread_id, const std::string& message) const override;
+  void Print(int thread_id, const std::string& final_output) const override;
+};
+
+#if !defined(SWIG)
 class MultiThreadReporting : public SearchReportingInterface {
  public:
   MultiThreadReporting(bool print_all, int num_solutions, bool verbose);
@@ -179,6 +192,7 @@ class MultiThreadReporting : public SearchReportingInterface {
   bool should_finish_ GUARDED_BY(mutex_);
   bool interrupted_ GUARDED_BY(mutex_);
 };
+#endif
 }  // namespace fz
 }  // namespace operations_research
 #endif  // OR_TOOLS_FLATZINC_REPORTING_H_
