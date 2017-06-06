@@ -18,27 +18,28 @@
 #include <cstdio>
 #include <string>
 
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/integral_types.h"
-#include "base/logging.h"
-#include "base/stringprintf.h"
-#include "base/timer.h"
-#include "base/file.h"
-//#include "base/options.h"
-#include "base/stringpiece_utils.h"
-#include "linear_solver/linear_solver.h"
-#include "linear_solver/linear_solver.pb.h"
-//#include "linear_solver/model_anonymizer.h"
-#include "lp_data/lp_data.h"
-#include "lp_data/mps_reader.h"
-#include "lp_data/proto_utils.h"
-#include "util/proto_tools.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/base/timer.h"
+#include "ortools/base/file.h"
+//#include "ortools/base/options.h"
+#include "ortools/base/stringpiece_utils.h"
+#include "ortools/linear_solver/linear_solver.h"
+#include "ortools/linear_solver/linear_solver.pb.h"
+//#include "ortools/linear_solver/model_anonymizer.h"
+#include "ortools/lp_data/lp_data.h"
+#include "ortools/lp_data/mps_reader.h"
+#include "ortools/lp_data/proto_utils.h"
+#include "ortools/util/proto_tools.h"
 
 DEFINE_string(input, "", "REQUIRED: Input file name.");
 DEFINE_string(solver, "glop",
               "The solver to use: bop, cbc, clp, glop, glpk_lp, glpk_mip, "
               "gurobi_lp, gurobi_mip, scip, knapsack.");
+
 DEFINE_string(params_file, "",
               "Solver specific parameters file. "
               "If this flag is set, the --params flag is ignored.");
@@ -66,7 +67,6 @@ DEFINE_string(dump_format, "text",
 
 DEFINE_bool(dump_gzip, false,
             "Whether to gzip dumped protos. Appends .gz to their name.");
-
 DEFINE_string(dump_model, "", "If non-empty, dumps MPModelProto there.");
 DEFINE_string(dump_request, "", "If non-empty, dumps MPModelRequest there.");
 DEFINE_string(dump_response, "", "If non-empty, dumps MPModelResponse there.");
@@ -190,6 +190,19 @@ void Run() {
   // }
   printf("%-12s: '%s'\n", "File", FLAGS_input.c_str());
 
+  // Detect format to dump protos.
+  operations_research::ProtoWriteFormat write_format;
+  if (FLAGS_dump_format == "text") {
+    write_format = ProtoWriteFormat::kProtoText;
+  } else if (FLAGS_dump_format == "binary") {
+    write_format = ProtoWriteFormat::kProtoBinary;
+  } else if (FLAGS_dump_format == "json") {
+    write_format = ProtoWriteFormat::kJson;
+  } else {
+    LOG(FATAL) << "Unsupported --dump_format: " << FLAGS_dump_format;
+  }
+
+
   // Create the solver, we use the name of the model as the solver name.
   MPSolver solver(model_proto.name(), type);
   solver.EnableOutput();
@@ -211,18 +224,6 @@ void Run() {
   // Load the proto into the solver.
   std::string error_message;
 
-  // Detect format to dump protos.
-  operations_research::ProtoWriteFormat write_format;
-  if (FLAGS_dump_format == "text") {
-    write_format = ProtoWriteFormat::kProtoText;
-  } else if (FLAGS_dump_format == "binary") {
-    write_format = ProtoWriteFormat::kProtoBinary;
-  } else if (FLAGS_dump_format == "json") {
-    write_format = ProtoWriteFormat::kJson;
-  } else {
-    LOG(FATAL) << "Unsupported --dump_format: " << FLAGS_dump_format;
-  }
-
   // If requested, save the model to file.
   if (!FLAGS_dump_model.empty()) {
     CHECK(WriteProtoToFile(FLAGS_dump_model, model_proto, write_format,
@@ -230,7 +231,8 @@ void Run() {
   }
 
   const MPSolverResponseStatus status =
-      solver.LoadModelFromProto(model_proto, &error_message);
+      solver.LoadModelFromProtoWithUniqueNamesOrDie(model_proto,
+                                                    &error_message);
   if (request_proto.has_solver_time_limit_seconds()) {
     solver.set_time_limit(
         static_cast<int64>(1000.0 * request_proto.solver_time_limit_seconds()));

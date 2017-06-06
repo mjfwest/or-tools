@@ -15,20 +15,20 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include "base/hash.h"
+#include <unordered_map>
 #include <string>
 #include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/logging.h"
-#include "base/stringprintf.h"
-#include "base/timer.h"
-#include "algorithms/hungarian.h"
-#include "cpp/parse_dimacs_assignment.h"
-#include "cpp/print_dimacs_assignment.h"
-#include "graph/ebert_graph.h"
-#include "graph/linear_assignment.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/base/timer.h"
+#include "ortools/algorithms/hungarian.h"
+#include "examples/cpp/parse_dimacs_assignment.h"
+#include "examples/cpp/print_dimacs_assignment.h"
+#include "ortools/graph/ebert_graph.h"
+#include "ortools/graph/linear_assignment.h"
 
 DEFINE_bool(assignment_compare_hungarian, false,
             "Compare result and speed against Hungarian method.");
@@ -91,8 +91,8 @@ CostValue BuildAndSolveHungarianInstance(
       hungarian_cost[tail][head] = cost;
     }
   }
-  hash_map<int, int> result;
-  hash_map<int, int> wish_this_could_be_null;
+  std::unordered_map<int, int> result;
+  std::unordered_map<int, int> wish_this_could_be_null;
   WallTimer timer;
   VLOG(1) << "Beginning Hungarian method.";
   timer.Start();
@@ -125,11 +125,11 @@ int SolveDimacsAssignment(int argc, char* argv[]) {
   std::string error_message;
   // Handle on the graph we will need to delete because the
   // LinearSumAssignment object does not take ownership of it.
-  GraphType* graph = NULL;
+  GraphType* graph = nullptr;
   DimacsAssignmentParser<GraphType> parser(argv[1]);
   LinearSumAssignment<GraphType>* assignment =
       parser.Parse(&error_message, &graph);
-  if (assignment == NULL) {
+  if (assignment == nullptr) {
     LOG(FATAL) << error_message;
   }
   if (!FLAGS_assignment_problem_output_file.empty()) {

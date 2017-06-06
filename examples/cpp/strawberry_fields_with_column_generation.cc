@@ -60,17 +60,17 @@
 #include <utility>
 #include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/logging.h"
-#include "base/macros.h"
-#include "base/stringprintf.h"
-#include "linear_solver/linear_solver.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/macros.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/linear_solver/linear_solver.h"
 
 DEFINE_bool(colgen_verbose, false, "print verbosely");
 DEFINE_bool(colgen_complete, false, "generate all columns initially");
 DEFINE_int32(colgen_max_iterations, 500, "max iterations");
-DEFINE_string(colgen_solver, "clp", "solver - glpk or clp (default)");
+DEFINE_string(colgen_solver, "glop", "solver - glop (default) or clp");
 DEFINE_int32(colgen_instance, -1, "Which instance to solve (0 - 9)");
 
 namespace operations_research {
@@ -606,18 +606,18 @@ int main(int argc, char** argv) {
 
   operations_research::MPSolver::OptimizationProblemType solver_type;
   bool found = false;
+  #if defined(USE_GLOP)
+  if (FLAGS_colgen_solver == "glop") {
+    solver_type = operations_research::MPSolver::GLOP_LINEAR_PROGRAMMING;
+    found = true;
+  }
+  #endif  // USE_GLOP
   #if defined(USE_CLP)
   if (FLAGS_colgen_solver == "clp") {
     solver_type = operations_research::MPSolver::CLP_LINEAR_PROGRAMMING;
     found = true;
   }
   #endif  // USE_CLP
-  #if defined(USE_GLPK)
-  if (FLAGS_colgen_solver == "glpk") {
-    solver_type = operations_research::MPSolver::GLPK_LINEAR_PROGRAMMING;
-    found = true;
-  }
-  #endif  // USE_GLPK
   if (!found) {
     LOG(ERROR) << "Unknown solver " << FLAGS_colgen_solver;
     return 1;

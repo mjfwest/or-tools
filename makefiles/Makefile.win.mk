@@ -6,11 +6,11 @@ LIB_PREFIX =
 STATIC_LIB_SUFFIX = lib
 LIB_SUFFIX = lib
 BIN_DIR = $(OR_ROOT)bin
-GEN_DIR = $(OR_ROOT)src\\gen
+GEN_DIR = $(OR_ROOT)ortools\\gen
 OBJ_DIR = $(OR_ROOT)objs
-SRC_DIR = $(OR_ROOT)src
+SRC_DIR = $(OR_ROOT).
 EX_DIR  = $(OR_ROOT)examples
-INC_DIR = $(OR_ROOT)src
+INC_DIR = $(OR_ROOT).
 LINK_CMD = lib
 LINK_PREFIX = /OUT:
 STATIC_LINK_CMD = lib
@@ -41,8 +41,6 @@ MKDIR_P = tools\mkdir.exe -p
 COPY = copy
 TOUCH = tools\touch.exe
 SED = tools\sed.exe
-BISON = dependencies\install\bin\win_bison.exe
-FLEX = dependencies\install\bin\win_flex.exe
 CMAKE = cmake
 ARCHIVE_EXT = .zip
 FZ_EXE = fzn-or-tools$E
@@ -56,6 +54,15 @@ NUGET_PACK = nuget.exe pack
 NUGET_PUSH = nuget.exe push
 NUGET_SRC = https://www.nuget.org/api/v2/package
 
+# Default paths for libraries and binaries.
+WINDOWS_ZLIB_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
+WINDOWS_ZLIB_NAME ?= zlib.lib
+WINDOWS_GFLAGS_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
+WINDOWS_PROTOBUF_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
+WINDOWS_SWIG_BINARY ?= $(OR_ROOT_FULL)\\dependencies\\install\\swigwin-$(SWIG_TAG)\\swig.exe
+WINDOWS_CLP_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
+WINDOWS_CBC_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
+
 # Compilation macros.
 DEBUG=/O2 -DNDEBUG
 ifeq ("$(VISUAL_STUDIO_YEAR)","2015")
@@ -67,7 +74,7 @@ endif
 GFLAGS_INC = /I$(WINDOWS_GFLAGS_DIR)\\include /DGFLAGS_DLL_DECL= /DGFLAGS_DLL_DECLARE_FLAG= /DGFLAGS_DLL_DEFINE_FLAG=
 ZLIB_INC = /I$(WINDOWS_ZLIB_DIR)\\include
 PROTOBUF_INC = /I$(WINDOWS_PROTOBUF_DIR)\\include
-SPARSEHASH_INC = /I$(WINDOWS_SPARSEHASH_DIR)\\include
+GLOG_INC = /I$(WINDOWS_GLOG_DIR)\\include /DGOOGLE_GLOG_DLL_DECL=
 
 PYTHON_VERSION = $(WINDOWS_PYTHON_VERSION)
 PYTHON_INC=/I$(WINDOWS_PATH_TO_PYTHON)\\include
@@ -102,18 +109,10 @@ STATIC_GLPK_LNK = $(WINDOWS_GLPK_DIR)\\lib\\glpk.lib
 endif
 # This is needed to find SCIP include files and libraries.
 ifdef WINDOWS_SCIP_DIR
-  SCIP_LNK_DIR = $(OR_ROOT)dependencies\\install
-  SCIP_INC = /I$(WINDOWS_SCIP_DIR)\\include\\scip /DUSE_SCIP
+  SCIP_INC = /I$(WINDOWS_SCIP_DIR)\\include /DUSE_SCIP
   SCIP_SWIG = -DUSE_SCIP
-  STATIC_SCIP_LNK = $(SCIP_LNK_DIR)\\lib\\scip.lib $(SCIP_LNK_DIR)\\lib\\soplex.lib
-  DYNAMIC_SCIP_LNK = $(SCIP_LNK_DIR)\\lib\\scip.lib $(SCIP_LNK_DIR)\\lib\\soplex.lib
-endif
-# This is needed to find SULUM include files and libraries.
-ifdef WINDOWS_SLM_DIR
-SLM_INC = /I$(WINDOWS_SLM_DIR)\\header /DUSE_SLM
-SLM_SWIG = -DUSE_SLM
-DYNAMIC_SLM_LNK = $(WINDOWS_SLM_DIR)\\win$(PTRLENGTH)\\bin\\sulum$(WINDOWS_SULUM_VERSION).lib
-STATIC_SLM_LNK = $(WINDOWS_SLM_DIR)\\win$(PTRLENGTH)\\bin\\sulum$(WINDOWS_SULUM_VERSION).lib
+  STATIC_SCIP_LNK = $(WINDOWS_SCIP_DIR)\\libscipopt.lib
+  DYNAMIC_SCIP_LNK = $(WINDOWS_SCIP_DIR)\\libscipopt.lib
 endif
 ifdef WINDOWS_GUROBI_DIR
   ifeq ($(PTRLENGTH),64)
@@ -129,16 +128,16 @@ ifdef WINDOWS_GUROBI_DIR
   endif
 endif
 
-SWIG_INC = $(GLPK_SWIG) $(CLP_SWIG) $(CBC_SWIG) $(SCIP_SWIG) $(SLM_SWIG) $(GUROBI_SWIG) -DUSE_GLOP -DUSE_BOP
+SWIG_INC = $(GLPK_SWIG) $(CLP_SWIG) $(CBC_SWIG) $(SCIP_SWIG) $(GUROBI_SWIG) -DUSE_GLOP -DUSE_BOP
 
 JAVA_INC=/I"$(JDK_DIRECTORY)\\include" /I"$(JDK_DIRECTORY)\\include\\win32"
 JAVAC_BIN="$(JDK_DIRECTORY)/bin/javac"
 JAVA_BIN="$(JDK_DIRECTORY)/bin/java"
 JAR_BIN="$(JDK_DIRECTORY)/bin/jar"
 
-CFLAGS= -nologo $(SYSCFLAGS) $(DEBUG) /I$(INC_DIR) /I$(EX_DIR) /I$(GEN_DIR) \
-        $(GFLAGS_INC) $(ZLIB_INC) $(MINISAT_INC) $(PROTOBUF_INC) $(CBC_INC) \
-        $(CLP_INC) $(GLPK_INC) $(SCIP_INC) $(SLM_INC) $(GUROBI_INC) /DUSE_GLOP /DUSE_BOP \
+CFLAGS= -nologo $(SYSCFLAGS) $(DEBUG) /I$(INC_DIR) /I$(GEN_DIR) \
+        $(GFLAGS_INC) $(ZLIB_INC) $(MINISAT_INC) $(PROTOBUF_INC) $(GLOG_INC) $(CBC_INC) \
+        $(CLP_INC) $(GLPK_INC) $(SCIP_INC) $(GUROBI_INC) /DUSE_GLOP /DUSE_BOP \
         /D__WIN32__  $(SPARSEHASH_INC) /DPSAPI_VERSION=1 $(ARCH)
 JNIFLAGS=$(CFLAGS) $(JAVA_INC)
 DYNAMIC_GFLAGS_LNK = $(WINDOWS_GFLAGS_DIR)\\lib\\gflags_static.lib
@@ -146,8 +145,10 @@ STATIC_GFLAGS_LNK = $(WINDOWS_GFLAGS_DIR)\\lib\\gflags_static.lib
 ZLIB_LNK = $(WINDOWS_ZLIB_DIR)\\lib\\$(WINDOWS_ZLIB_NAME)
 DYNAMIC_PROTOBUF_LNK = $(PROTOBUF_DIR)\\lib\\libprotobuf.lib
 STATIC_PROTOBUF_LNK = $(PROTOBUF_DIR)\\lib\\libprotobuf.lib
+DYNAMIC_GLOG_LNK = $(PROTOBUF_DIR)\\lib\\glog.lib
+STATIC_GLOG_LNK = $(PROTOBUF_DIR)\\lib\\glog.lib
 SYS_LNK=psapi.lib ws2_32.lib shlwapi.lib
-DEPENDENCIES_LNK = $(STATIC_CBC_LNK) $(STATIC_CLP_LNK) $(STATIC_GLPK_LNK) $(STATIC_SCIP_LNK) $(STATIC_SLM_LNK) $(STATIC_GUROBI_LNK) $(STATIC_GFLAGS_LNK) $(STATIC_PROTOBUF_LNK)
+DEPENDENCIES_LNK = $(STATIC_CBC_LNK) $(STATIC_CLP_LNK) $(STATIC_GLPK_LNK) $(STATIC_SCIP_LNK) $(STATIC_GUROBI_LNK) $(STATIC_GLOG_LNK) $(STATIC_GFLAGS_LNK) $(STATIC_PROTOBUF_LNK)
 OR_TOOLS_LD_FLAGS = $(ZLIB_LNK) $(SYS_LNK)
 
 COMMA := ,

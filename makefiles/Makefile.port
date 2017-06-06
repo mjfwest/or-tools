@@ -51,7 +51,7 @@ ifeq ("$(SYSTEM)","unix")
         /usr/lib/jvm/java-7-openjdk-i386
 
     endif
-    SELECTED_JDK_DEF = JDK_DIRECTORY = $(firstword $(wildcard $(CANDIDATE_JDK_ROOTS)))
+    JDK_DIRECTORY = $(firstword $(wildcard $(CANDIDATE_JDK_ROOTS)))
   endif
   ifeq ($(OS),Darwin) # Assume Mac Os X
     PLATFORM = MACOSX
@@ -62,11 +62,11 @@ ifeq ("$(SYSTEM)","unix")
     PTRLENGTH = 64
     GUROBI_PLATFORM=mac64
     ifeq ($(wildcard /usr/libexec/java_home),)
-      SELECTED_JDK_DEF = JDK_DIRECTORY = \\\# /usr/libexec/java_home could not be found on your system. Set this variable to the path to jdk to build the java files.
+      JDK_DIRECTORY = \\\# /usr/libexec/java_home could not be found on your system. Set this variable to the path to jdk to build the java files.
     else
-      SELECTED_JDK_DEF = JDK_DIRECTORY = $(shell /usr/libexec/java_home)/include
+      JDK_DIRECTORY = $(shell /usr/libexec/java_home)/include
     endif
-    MAC_MIN_VERSION = 10.8
+    MAC_MIN_VERSION = 10.9
   endif
 
   # Look at mono compiler.
@@ -90,7 +90,7 @@ endif
 # Windows specific part.
 ifeq ("$(SYSTEM)","win")
   # Detect 32/64bit
-  ifeq ("$(Platform)", "X64")
+  ifeq ("$(Platform)", "X64")  # Visual Studio 2015 64 bit
     PLATFORM = WIN64
     PTRLENGTH = 64
     CMAKE_SUFFIX = Win64
@@ -99,13 +99,23 @@ ifeq ("$(SYSTEM)","win")
     GLPK_PLATFORM = w64
     NETPLATFORM = x64
   else
-    PLATFORM = Win32
-    PTRLENGTH = 32
-    CMAKE_SUFFIX =
-    ARCH =
-    CBC_PLATFORM_PREFIX = Win32
-    GLPK_PLATFORM = w32
-    NETPLATFORM = x86
+     ifeq ("$(Platform)", "x64")  # Visual studio 2013 64 bit
+      PLATFORM = WIN64
+      PTRLENGTH = 64
+      CMAKE_SUFFIX = Win64
+      ARCH= /DARCH_K8
+      CBC_PLATFORM_PREFIX = x64
+      GLPK_PLATFORM = w64
+      NETPLATFORM = x64
+    else  # Visual Studio 32 bit (soon obsolete)
+      PLATFORM = Win32
+      PTRLENGTH = 32
+      CMAKE_SUFFIX =
+      ARCH =
+      CBC_PLATFORM_PREFIX = Win32
+      GLPK_PLATFORM = w32
+      NETPLATFORM = x86
+    endif
   endif
 
   # Detect visual studio version
@@ -142,13 +152,12 @@ ifeq ("$(SYSTEM)","win")
 
   # Third party specific
   CBC_PLATFORM = $(CBC_PLATFORM_PREFIX)-$(VS_RELEASE)-Release
-  SCIP_MAKEFILE = \# SCIP not compiled
 
   # Java specific
   ifeq ($(JAVA_HOME),)
-    SELECTED_JDK_DEF = JDK_DIRECTORY = \# JAVA_HOME is not set on your system. Set the JDK_DIRECTORY variable to the path to jdk to build the java files.
+    JDK_DIRECTORY = \# JAVA_HOME is not set on your system. Set the JDK_DIRECTORY variable to the path to jdk to build the java files.
   else
-    SELECTED_JDK_DEF = JDK_DIRECTORY = $(JAVA_HOME)
+    JDK_DIRECTORY = $(JAVA_HOME)
   endif
 
   # Detect Python
@@ -199,8 +208,7 @@ printport:
 ifeq ("$(SYSTEM)","unix")
 	@echo PATH_TO_CSHARP_COMPILER = $(PATH_TO_CSHARP_COMPILER)
 	@echo DETECTED_PYTHON_VERSION = $(DETECTED_PYTHON_VERSION)
-	@echo SELECTED_JDK_DEF = $(SELECTED_JDK_DEF)
+	@echo JDK_DIRECTORY = $(JDK_DIRECTORY)
 else
 	@echo CMAKE_PLATFORM = $(CMAKE_PLATFORM)
 endif
-

@@ -51,14 +51,14 @@
 #include <utility>
 #include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/logging.h"
-#include "base/map_util.h"
-#include "constraint_solver/constraint_solver.h"
-#include "cpp/fap_model_printer.h"
-#include "cpp/fap_parser.h"
-#include "cpp/fap_utilities.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/map_util.h"
+#include "ortools/constraint_solver/constraint_solver.h"
+#include "examples/cpp/fap_model_printer.h"
+#include "examples/cpp/fap_parser.h"
+#include "examples/cpp/fap_utilities.h"
 
 DEFINE_string(directory, "", "Specifies the directory of the data.");
 DEFINE_string(value_evaluator, "",
@@ -232,11 +232,11 @@ class OrderingBuilder : public DecisionBuilder {
         return s->RevAlloc(ordering_decision);
       } else {
         // The constraint was dropped.
-        return NULL;
+        return nullptr;
       }
     } else {
       // All the constraints were processed. No decision to take.
-      return NULL;
+      return nullptr;
     }
   }
 
@@ -331,7 +331,7 @@ bool ConstraintImpactComparator(FapConstraint constraint1,
 }
 
 int64 ValueEvaluator(
-    hash_map<int64, std::pair<int64, int64>>* value_evaluator_map,
+    std::unordered_map<int64, std::pair<int64, int64>>* value_evaluator_map,
     int64 variable_index, int64 value) {
   CHECK_NOTNULL(value_evaluator_map);
   // Evaluate the choice. Smaller ranking denotes a better choice.
@@ -344,7 +344,7 @@ int64 ValueEvaluator(
   }
 
   // Update the history of assigned values and their rankings of each variable.
-  hash_map<int64, std::pair<int64, int64>>::iterator it;
+  std::unordered_map<int64, std::pair<int64, int64>>::iterator it;
   int64 new_value = value;
   int64 new_ranking = ranking;
   if ((it = value_evaluator_map->find(variable_index)) !=
@@ -498,7 +498,7 @@ void CreateAdditionalMonitors(OptimizeVar* const objective, Solver* solver,
       FLAGS_restart != -1
           ? (FLAGS_luby ? solver->MakeLubyRestart(FLAGS_restart)
                         : solver->MakeConstantRestart(FLAGS_restart))
-          : NULL;
+          : nullptr;
   if (restart) {
     monitors->push_back(restart);
   }
@@ -579,7 +579,7 @@ void HardFapSolver(const std::map<int, FapVariable>& data_variables,
   ChooseVariableStrategy(&variable_strategy);
   // Choose the value selection strategy.
   DecisionBuilder* db;
-  hash_map<int64, std::pair<int64, int64>> history;
+  std::unordered_map<int64, std::pair<int64, int64>> history;
   if (FLAGS_value_evaluator == "value_evaluator") {
     LOG(INFO) << "Using ValueEvaluator for value selection strategy.";
     Solver::IndexEvaluator2 index_evaluator2 = [&history](int64 var,
@@ -701,7 +701,7 @@ void PenalizeConstraintsViolation(
             ->MakeAbs(
                 solver->MakeDifference(variables[index1], variables[index2]))
             ->Var();
-    IntVar* violation = NULL;
+    IntVar* violation = nullptr;
     if (ct.operation == ">") {
       violation = solver->MakeIsLessCstVar(absolute_difference, ct.value);
     } else if (ct.operation == "=") {
@@ -755,7 +755,8 @@ int SoftFapSolver(const std::map<int, FapVariable>& data_variables,
 
   // Penalize variable and constraint violations.
   std::vector<IntVar*> cost;
-  std::vector<IntVar*> violated_constraints(ordered_constraints.size(), NULL);
+  std::vector<IntVar*> violated_constraints(ordered_constraints.size(),
+                                            nullptr);
   PenalizeVariablesViolation(soft_variables, index_from_key, variables, &cost,
                              &solver);
   PenalizeConstraintsViolation(ordered_constraints, soft_constraints,
@@ -863,7 +864,7 @@ int main(int argc, char** argv) {
   std::vector<operations_research::FapConstraint> constraints;
   std::string objective;
   std::vector<int> values;
-  hash_map<int, operations_research::FapComponent> components;
+  std::unordered_map<int, operations_research::FapComponent> components;
   operations_research::ParseInstance(FLAGS_directory, FLAGS_find_components,
                                      &variables, &constraints, &objective,
                                      &values, &components);

@@ -14,22 +14,23 @@
 #include <math.h>
 #include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/logging.h"
-#include "base/timer.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/base/strtoint.h"
+#include "ortools/base/timer.h"
 #include "google/protobuf/text_format.h"
-#include "base/join.h"
-#include "base/split.h"
-#include "base/strutil.h"
-#include "base/strtoint.h"
-#include "sat/disjunctive.h"
-#include "sat/integer_expr.h"
-#include "sat/intervals.h"
-#include "sat/model.h"
-#include "sat/optimization.h"
-#include "sat/precedences.h"
-#include "util/filelineiter.h"
+#include "ortools/base/join.h"
+#include "ortools/base/split.h"
+#include "ortools/base/strutil.h"
+#include "ortools/sat/disjunctive.h"
+#include "ortools/sat/integer_expr.h"
+#include "ortools/sat/intervals.h"
+#include "ortools/sat/model.h"
+#include "ortools/sat/optimization.h"
+#include "ortools/sat/precedences.h"
+#include "ortools/util/filelineiter.h"
 
 DEFINE_string(input, "examples/data/weighted_tardiness/wt40.txt",
               "wt data file name.");
@@ -95,7 +96,7 @@ void Solve(const std::vector<int>& durations, const std::vector<int>& due_dates,
       tardiness_vars[i] = model.Get(EndVar(tasks[i]));
     } else {
       tardiness_vars[i] =
-          model.Add(NewIntegerVariable(0, horizon - due_dates[i]));
+          model.Add(NewIntegerVariable(0, std::max(0, horizon - due_dates[i])));
       model.Add(LowerOrEqualWithOffset(model.Get(EndVar(tasks[i])),
                                        tardiness_vars[i], -due_dates[i]));
     }
@@ -163,9 +164,14 @@ void Solve(const std::vector<int>& durations, const std::vector<int>& due_dates,
   }
 
   // Solve it.
+  //
+  // Note that we only fully instanciate the start/end and only look at the
+  // lower bound for the objective and the tardiness variables.
   model.Add(NewSatParameters(FLAGS_params));
   MinimizeIntegerVariableWithLinearScanAndLazyEncoding(
-      /*log_info=*/true, objective_var, decision_vars,
+      /*log_info=*/true, objective_var,
+      /*next_decision=*/
+      UnassignedVarWithLowestMinAtItsMinHeuristic(decision_vars, &model),
       /*feasible_solution_observer=*/
       [&](const Model& model) {
         const int64 objective = model.Get(LowerBound(objective_var));
@@ -177,9 +183,8 @@ void Solve(const std::vector<int>& durations, const std::vector<int>& due_dates,
           for (int i = 0; i < num_tasks; ++i) {
             tardiness_objective +=
                 weights[i] *
-                std::max(0ll,
-                         model.Get(LowerBound(model.Get(EndVar(tasks[i])))) -
-                             due_dates[i]);
+                std::max(0ll, model.Get(Value(model.Get(EndVar(tasks[i])))) -
+                                  due_dates[i]);
           }
           CHECK_EQ(objective, tardiness_objective);
 
@@ -195,8 +200,8 @@ void Solve(const std::vector<int>& durations, const std::vector<int>& due_dates,
         std::vector<IntervalVariable> sorted_tasks = tasks;
         std::sort(sorted_tasks.begin(), sorted_tasks.end(),
                   [&model](IntervalVariable v1, IntervalVariable v2) {
-                    return model.Get(LowerBound(model.Get(StartVar(v1)))) <
-                           model.Get(LowerBound(model.Get(StartVar(v2))));
+                    return model.Get(Value(model.Get(StartVar(v1)))) <
+                           model.Get(Value(model.Get(StartVar(v2))));
                   });
         std::string solution = "0";
         int end = 0;
@@ -208,11 +213,11 @@ void Solve(const std::vector<int>& durations, const std::vector<int>& due_dates,
             // Display the cost in red.
             solution += StringPrintf("\033[1;31m(+%lld) \033[0m", cost);
           }
-          solution += StringPrintf("|%lld",
-                                   model.Get(LowerBound(model.Get(EndVar(v)))));
-          CHECK_EQ(end, model.Get(LowerBound(model.Get(StartVar(v)))));
+          solution +=
+              StringPrintf("|%lld", model.Get(Value(model.Get(EndVar(v)))));
+          CHECK_EQ(end, model.Get(Value(model.Get(StartVar(v)))));
           end += durations[v.value()];
-          CHECK_EQ(end, model.Get(LowerBound(model.Get(EndVar(v)))));
+          CHECK_EQ(end, model.Get(Value(model.Get(EndVar(v)))));
         }
         LOG(INFO) << "solution: " << solution;
       },
@@ -225,7 +230,7 @@ void LoadAndSolve() {
   std::vector<int> numbers;
   std::vector<std::string> entries;
   for (const std::string& line : operations_research::FileLines(FLAGS_input)) {
-    entries = strings::Split(line, " ", strings::SkipEmpty());
+    entries = strings::Split(line, ' ', strings::SkipEmpty());
     for (const std::string& entry : entries) {
       numbers.push_back(atoi32(entry));
     }

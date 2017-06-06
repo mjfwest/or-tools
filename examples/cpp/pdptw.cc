@@ -38,15 +38,17 @@
 
 #include <vector>
 
-#include "base/callback.h"
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/strtoint.h"
-#include "base/file.h"
-#include "base/split.h"
-#include "base/mathutil.h"
-#include "constraint_solver/routing.h"
-#include "constraint_solver/routing_flags.h"
+#include "ortools/base/callback.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/base/strtoint.h"
+#include "ortools/base/file.h"
+#include "ortools/base/split.h"
+#include "ortools/base/mathutil.h"
+#include "ortools/constraint_solver/routing.h"
+#include "ortools/constraint_solver/routing_enums.pb.h"
+#include "ortools/constraint_solver/routing_flags.h"
 
 DEFINE_string(pdp_file, "",
               "File containing the Pickup and Delivery Problem to solve.");
@@ -68,7 +70,7 @@ typedef std::vector<std::pair<int, int> > Coordinates;
 // coordinates of the nodes.
 int64 Travel(const Coordinates* const coords, RoutingModel::NodeIndex from,
              RoutingModel::NodeIndex to) {
-  DCHECK(coords != NULL);
+  DCHECK(coords != nullptr);
   const int xd = coords->at(from.value()).first - coords->at(to.value()).first;
   const int yd =
       coords->at(from.value()).second - coords->at(to.value()).second;
@@ -154,7 +156,7 @@ bool SafeParseInt64Array(const std::string& str, std::vector<int64>* parsed_int)
   parsed_int->assign(items.size(), 0);
   for (int i = 0; i < items.size(); ++i) {
     const char* item = items[i].c_str();
-    char* endptr = NULL;
+    char* endptr = nullptr;
     (*parsed_int)[i] = strto64(item, &endptr, 10);
     // The whole item should have been consumed.
     if (*endptr != '\0') return false;
@@ -170,7 +172,7 @@ bool LoadAndSolve(const std::string& pdp_file) {
   std::vector<std::string> lines;
   {
     std::string contents;
-    CHECK(file::GetContents(pdp_file, &contents, file::Defaults()).ok());
+    CHECK_OK(file::GetContents(pdp_file, &contents, file::Defaults()));
     const int64 kMaxInputFileSize = 1 << 30;  // 1GB
     if (contents.size() >= kMaxInputFileSize) {
       LOG(WARNING) << "Input file '" << pdp_file << "' is too large (>"
@@ -219,12 +221,12 @@ bool LoadAndSolve(const std::string& pdp_file) {
     const int customer_id = parsed_int[0];
     const int x = parsed_int[1];
     const int y = parsed_int[2];
-    const int delivery = parsed_int[8];  // Parse 'delivery' before 'demand'.
-    const int64 demand = delivery == 0 ? -parsed_int[3] : parsed_int[3];
+    const int64 demand = parsed_int[3];
     const int64 open_time = parsed_int[4];
     const int64 close_time = parsed_int[5];
     const int64 service_time = parsed_int[6];
     const int pickup = parsed_int[7];
+    const int delivery = parsed_int[8];
     customer_ids.push_back(customer_id);
     coords.push_back(std::make_pair(x, y));
     demands.push_back(demand);
@@ -241,7 +243,8 @@ bool LoadAndSolve(const std::string& pdp_file) {
 
   // Build pickup and delivery model.
   const int num_nodes = customer_ids.size();
-  RoutingModel routing(num_nodes, num_vehicles, depot);
+  RoutingModelParameters model_parameters = BuildModelParametersFromFlags();
+  RoutingModel routing(num_nodes, num_vehicles, depot, model_parameters);
   routing.SetArcCostEvaluatorOfAllVehicles(
       NewPermanentCallback(Travel, const_cast<const Coordinates*>(&coords)));
   routing.AddDimension(
@@ -288,7 +291,8 @@ bool LoadAndSolve(const std::string& pdp_file) {
 
   // Solve pickup and delivery problem.
   const Assignment* assignment = routing.SolveWithParameters(parameters);
-  if (NULL != assignment) {
+  LOG(INFO) << routing.solver()->LocalSearchProfile();
+  if (nullptr != assignment) {
     LOG(INFO) << "Cost: " << assignment->ObjectiveValue();
     LOG(INFO) << VerboseOutput(routing, *assignment, coords, service_times);
     return true;

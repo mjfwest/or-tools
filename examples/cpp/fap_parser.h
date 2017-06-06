@@ -19,14 +19,14 @@
 #ifndef OR_TOOLS_EXAMPLES_FAP_PARSER_H_
 #define OR_TOOLS_EXAMPLES_FAP_PARSER_H_
 
-#include "base/hash.h"
+#include <unordered_map>
 #include <map>
 #include <string>
 #include <vector>
-#include "base/logging.h"
-#include "base/strtoint.h"
-#include "base/split.h"
-#include "base/map_util.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/strtoint.h"
+#include "ortools/base/split.h"
+#include "ortools/base/map_util.h"
 
 namespace operations_research {
 
@@ -234,7 +234,7 @@ class ParametersParser {
 void FindComponents(const std::vector<FapConstraint>& constraints,
                     const std::map<int, FapVariable>& variables,
                     const int maximum_variable_id,
-                    hash_map<int, FapComponent>* components);
+                    std::unordered_map<int, FapComponent>* components);
 
 // Function that computes the impact of a constraint.
 int EvaluateConstraintImpact(const std::map<int, FapVariable>& variables,
@@ -246,6 +246,6 @@ void ParseInstance(const std::string& data_directory, bool find_components,
                    std::map<int, FapVariable>* variables,
                    std::vector<FapConstraint>* constraints, std::string* objective,
                    std::vector<int>* frequencies,
-                   hash_map<int, FapComponent>* components);
+                   std::unordered_map<int, FapComponent>* components);
 }  // namespace operations_research
 #endif  // OR_TOOLS_EXAMPLES_FAP_PARSER_H_

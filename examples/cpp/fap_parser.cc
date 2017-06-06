@@ -13,20 +13,20 @@
 
 //
 
-#include "cpp/fap_parser.h"
+#include "examples/cpp/fap_parser.h"
 #include <map>
 #include <string>
 #include <vector>
-#include "base/file.h"
-#include "base/split.h"
-#include "base/map_util.h"
+#include "ortools/base/file.h"
+#include "ortools/base/split.h"
+#include "ortools/base/map_util.h"
 
 namespace operations_research {
 
 void ParseFileByLines(const std::string& filename, std::vector<std::string>* lines) {
   CHECK_NOTNULL(lines);
   std::string result;
-  CHECK(file::GetContents(filename, &result, file::Defaults()).ok());
+  CHECK_OK(file::GetContents(filename, &result, file::Defaults()));
   *lines = strings::Split(result, '\n', strings::SkipEmpty());
 }
 
@@ -190,7 +190,7 @@ void ParametersParser::Parse() {
 void FindComponents(const std::vector<FapConstraint>& constraints,
                     const std::map<int, FapVariable>& variables,
                     const int maximum_variable_id,
-                    hash_map<int, FapComponent>* components) {
+                    std::unordered_map<int, FapComponent>* components) {
   std::vector<int> in_component(maximum_variable_id + 1, -1);
   int constraint_index = 0;
   for (const FapConstraint& constraint : constraints) {
@@ -297,7 +297,7 @@ void ParseInstance(const std::string& data_directory, bool find_components,
                    std::map<int, FapVariable>* variables,
                    std::vector<FapConstraint>* constraints, std::string* objective,
                    std::vector<int>* frequencies,
-                   hash_map<int, FapComponent>* components) {
+                   std::unordered_map<int, FapComponent>* components) {
   CHECK_NOTNULL(variables);
   CHECK_NOTNULL(constraints);
   CHECK_NOTNULL(objective);

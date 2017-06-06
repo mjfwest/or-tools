@@ -2,9 +2,21 @@
 #  ----- configuration is not standard. In that case, please tell us -----
 #  ----- about it. -----
 
+# Checks if the user has overwritten default libraries and binaries.
+
+UNIX_GFLAGS_DIR ?= $(OR_TOOLS_TOP)/dependencies/install
+UNIX_PROTOBUF_DIR ?= $(OR_TOOLS_TOP)/dependencies/install
+UNIX_GLOG_DIR ?= $(OR_TOOLS_TOP)/dependencies/install
+UNIX_CBC_DIR ?= $(OR_ROOT_FULL)/dependencies/install
+UNIX_CLP_DIR ?= $(OR_ROOT_FULL)/dependencies/install
+
 # Unix specific definitions
 PROTOBUF_DIR = $(UNIX_PROTOBUF_DIR)
-SWIG_BINARY = $(UNIX_SWIG_BINARY)
+ifdef UNIX_SWIG_BINARY
+  SWIG_BINARY = $(UNIX_SWIG_BINARY)
+else
+  SWIG_BINARY = swig
+endif
 MKDIR = mkdir
 MKDIR_P = mkdir -p
 COPY = cp
@@ -17,11 +29,11 @@ else # No need to keep the path in the lib, it is not stored there on linux.
 LIB_DIR = $(OR_ROOT)lib
 endif
 BIN_DIR = $(OR_ROOT)bin
-GEN_DIR = $(OR_ROOT)src/gen
+GEN_DIR = $(OR_ROOT)ortools/gen
 OBJ_DIR = $(OR_ROOT)objs
-SRC_DIR = $(OR_ROOT)src
+SRC_DIR = $(OR_ROOT).
 EX_DIR  = $(OR_ROOT)examples
-INC_DIR = $(OR_ROOT)src
+INC_DIR = $(OR_ROOT).
 DEP_BIN_DIR = $(OR_ROOT)dependencies/install/bin
 
 
@@ -61,7 +73,7 @@ GFLAGS_INC = -I$(UNIX_GFLAGS_DIR)/include
 # This is needed to find protocol buffers.
 PROTOBUF_INC = -I$(UNIX_PROTOBUF_DIR)/include
 # This is needed to find sparse hash containers.
-SPARSEHASH_INC = -I$(UNIX_SPARSEHASH_DIR)/include
+GLOG_INC = -I$(UNIX_GLOG_DIR)/include
 
 # Define UNIX_CLP_DIR if unset and if UNIX_CBC_DIR is set.
 ifdef UNIX_CBC_DIR
@@ -89,11 +101,6 @@ ifdef UNIX_SCIP_DIR
   SCIP_INC = -I$(UNIX_SCIP_DIR)/src -DUSE_SCIP
   SCIP_SWIG = $(SCIP_INC)
 endif
-# This is needed to find SULUM include files.
-ifdef UNIX_SLM_DIR
-  SLM_INC = -I$(UNIX_SLM_DIR)/header -DUSE_SLM
-  SLM_SWIG = $(SLM_INC)
-endif
 ifdef UNIX_GUROBI_DIR
   GUROBI_INC = -I$(UNIX_GUROBI_DIR)/$(GUROBI_PLATFORM)/include -DUSE_GUROBI
   GUROBI_SWIG = $(GUROBI_INC)
@@ -103,7 +110,7 @@ ifdef UNIX_CPLEX_DIR
   CPLEX_SWIG = $(CPLEX_INC)
 endif
 
-SWIG_INC = $(GLPK_SWIG) $(CLP_SWIG) $(CBC_SWIG) $(SCIP_SWIG) $(SLM_SWIG) $(GUROBI_SWIG) $(CPLEX_SWIG) -DUSE_GLOP -DUSE_BOP
+SWIG_INC = $(GLPK_SWIG) $(CLP_SWIG) $(CBC_SWIG) $(SCIP_SWIG) $(GUROBI_SWIG) $(CPLEX_SWIG) -DUSE_GLOP -DUSE_BOP
 
 # Compilation flags
 DEBUG = -O4 -DNDEBUG
@@ -139,6 +146,9 @@ ifeq ($(PLATFORM),LINUX)
   ZLIB_LNK = -lz
   # This is needed to find libprotobuf.a
   PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib/libprotobuf.a
+  # This is needed to find libglog.a
+  GLOG_LNK = $(UNIX_GLOG_DIR)/lib/libglog.a
+
   ifdef UNIX_GLPK_DIR
   GLPK_LNK = $(UNIX_GLPK_DIR)/lib/libglpk.a
   endif
@@ -154,14 +164,7 @@ ifeq ($(PLATFORM),LINUX)
     else
       SCIP_ARCH = linux.x86.gnu.opt
     endif
-    SCIP_LNK = $(UNIX_SCIP_DIR)/lib/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/libnlpi.cppad.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/liblpispx.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/libsoplex.$(SCIP_ARCH).a
-  endif
-  ifdef UNIX_SLM_DIR
-    ifeq ($(PTRLENGTH),64)
-      SLM_LNK = -Wl,-rpath $(UNIX_SLM_DIR)/linux64/bin/ -L$(UNIX_SLM_DIR)/linux64/bin/ -m64 -lc -ldl -lm -lpthread -lsulum$(UNIX_SULUM_VERSION)
-    else
-      SLM_LNK = -Wl,-rpath $(UNIX_SLM_DIR)/linux32/bin/ -L$(UNIX_SLM_DIR)/linux32/bin/ -m32 -lc -ldl -lm -lpthread -lsulum$(UNIX_SULUM_VERSION)
-    endif
+    SCIP_LNK = $(UNIX_SCIP_DIR)/lib/static/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libnlpi.cppad.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/liblpispx.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libsoplex.$(SCIP_ARCH).a
   endif
   ifdef UNIX_GUROBI_DIR
     ifeq ($(PTRLENGTH),64)
@@ -209,6 +212,8 @@ ifeq ($(PLATFORM),MACOSX)
   GFLAGS_LNK = $(UNIX_GFLAGS_DIR)/lib/libgflags.a
   ZLIB_LNK = -lz
   PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib/libprotobuf.a
+  GLOG_LNK = $(UNIX_GLOG_DIR)/lib/libglog.a
+
   ARCH = -DARCH_K8
   SYS_LNK =
 
@@ -235,7 +240,7 @@ ifeq ($(PLATFORM),MACOSX)
   endif
   ifdef UNIX_SCIP_DIR
     SCIP_ARCH = darwin.x86_64.gnu.opt
-    SCIP_LNK = -force_load $(UNIX_SCIP_DIR)/lib/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/libnlpi.cppad.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/liblpispx.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/libsoplex.$(SCIP_ARCH).a
+    SCIP_LNK = -force_load $(UNIX_SCIP_DIR)/lib/static/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libnlpi.cppad.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/static/liblpispx2.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/static/libsoplex.$(SCIP_ARCH).a
   endif
   ifdef UNIX_GUROBI_DIR
     GUROBI_LNK = -L$(UNIX_GUROBI_DIR)/mac64/bin/ -m64 -lc -ldl -lm -lpthread -lgurobi$(GUROBI_LIB_VERSION)
@@ -243,19 +248,13 @@ ifeq ($(PLATFORM),MACOSX)
   ifdef UNIX_CPLEX_DIR
     CPLEX_LNK = -force_load $(UNIX_CPLEX_DIR)/cplex/lib/x86-64_osx/static_pic/libcplex.a -lm -lpthread -framework CoreFoundation -framework IOKit
   endif
-  ifdef UNIX_SLM_DIR
-      SLM_LNK = -rpath $(UNIX_SLM_DIR)/mac64/bin/ -L$(UNIX_SLM_DIR)/mac64/bin/ -lc -ldl -lm -lpthread -lsulum$(UNIX_SULUM_VERSION)
-  endif
 endif  # MAC OS X
-
-BISON = dependencies/install/bin/bison
-FLEX = dependencies/install/bin/flex
 
 CFLAGS = $(DEBUG) -I$(INC_DIR) -I$(EX_DIR) -I$(GEN_DIR) $(GFLAGS_INC) $(ARCH) \
   -Wno-deprecated $(PROTOBUF_INC) $(CBC_INC) $(CLP_INC) $(GLPK_INC) \
-        $(SCIP_INC) $(SLM_INC) $(GUROBI_INC) $(CPLEX_INC) -DUSE_GLOP -DUSE_BOP $(SPARSEHASH_INC)
+        $(SCIP_INC) $(GUROBI_INC) $(CPLEX_INC) -DUSE_GLOP -DUSE_BOP $(GLOG_INC)
 
 JNIFLAGS = $(JNIDEBUG) -I$(INC_DIR) -I$(EX_DIR) -I$(GEN_DIR) $(GFLAGS_INC) $(ARCH) \
-        -Wno-deprecated $(PROTOBUF_INC) $(CBC_INC) $(CLP_INC) $(GLPK_INC) $(SCIP_INC) $(SLM_INC) $(GUROBI_INC) $(CPLEX_INC) -DUSE_GLOP -DUSE_BOP
-DEPENDENCIES_LNK = $(GLPK_LNK) $(CBC_LNK) $(CLP_LNK) $(SCIP_LNK) $(LM_LNK) $(GUROBI_LNK) $(CPLEX_LNK) $(GFLAGS_LNK) $(PROTOBUF_LNK)
+        -Wno-deprecated $(PROTOBUF_INC) $(CBC_INC) $(CLP_INC) $(GLPK_INC) $(SCIP_INC) $(GUROBI_INC) $(CPLEX_INC) -DUSE_GLOP -DUSE_BOP
+DEPENDENCIES_LNK = $(GLPK_LNK) $(CBC_LNK) $(CLP_LNK) $(SCIP_LNK) $(LM_LNK) $(GUROBI_LNK) $(CPLEX_LNK) $(GFLAGS_LNK) $(PROTOBUF_LNK) $(GLOG_LNK)
 OR_TOOLS_LD_FLAGS = $(ZLIB_LNK) $(SYS_LNK)

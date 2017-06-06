@@ -11,33 +11,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <csignal>
 #include <string>
 #include <vector>
 
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/integral_types.h"
-#include "base/logging.h"
-#include "base/strtoint.h"
-#include "base/timer.h"
-#include "base/file.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/strtoint.h"
+#include "ortools/base/timer.h"
+#include "ortools/base/file.h"
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/message.h"
 #include "google/protobuf/text_format.h"
-#include "base/stringpiece_utils.h"
-#include "base/strutil.h"
-#include "algorithms/sparse_permutation.h"
-#include "sat/boolean_problem.h"
-#include "sat/drat.h"
-#include "cpp/opb_reader.h"
-#include "sat/optimization.h"
-#include "cpp/sat_cnf_reader.h"
-#include "sat/sat_solver.h"
-#include "sat/simplification.h"
-#include "sat/symmetry.h"
-#include "util/time_limit.h"
-#include "base/random.h"
-#include "base/status.h"
+#include "ortools/base/stringpiece_utils.h"
+#include "ortools/base/strutil.h"
+#include "ortools/base/threadpool.h"
+#include "ortools/algorithms/sparse_permutation.h"
+#include "ortools/sat/boolean_problem.h"
+#include "ortools/sat/drat.h"
+#include "examples/cpp/opb_reader.h"
+#include "ortools/sat/optimization.h"
+#include "examples/cpp/sat_cnf_reader.h"
+#include "ortools/base/join.h"
+#include "ortools/sat/sat_solver.h"
+#include "ortools/sat/simplification.h"
+#include "ortools/sat/symmetry.h"
+#include "ortools/util/time_limit.h"
+#include "ortools/base/random.h"
+#include "ortools/base/status.h"
 
 DEFINE_string(
     input, "",
@@ -50,7 +53,7 @@ DEFINE_string(
     "If non-empty, write the input problem as a LinearBooleanProblem proto to "
     "this file. By default it uses the binary format except if the file "
     "extension is '.txt'. If the problem is SAT, a satisfiable assignment is "
-    "also writen to the file.");
+    "also written to the file.");
 
 DEFINE_bool(output_cnf_solution, false,
             "If true and the problem was solved to optimality, this output "
@@ -153,8 +156,7 @@ std::string SolutionString(const LinearBooleanProblem& problem,
   BooleanVariable limit(problem.original_num_variables());
   for (BooleanVariable index(0); index < limit; ++index) {
     if (index > 0) output += " ";
-    output += StringPrintf(
-        "%d", Literal(index, assignment[index.value()]).SignedValue());
+    StrAppend(&output, Literal(index, assignment[index.value()]).SignedValue());
   }
   return output;
 }
@@ -186,6 +188,10 @@ int Run() {
 
   // The global time limit.
   std::unique_ptr<TimeLimit> time_limit(TimeLimit::FromParameters(parameters));
+
+  // Catch ^C.
+  bool interrupt_solve = false;
+  time_limit->RegisterExternalBooleanAsLimit(&interrupt_solve);
 
   // Read the problem.
   LinearBooleanProblem problem;

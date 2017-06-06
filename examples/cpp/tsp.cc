@@ -27,14 +27,16 @@
 
 #include <memory>
 
-#include "base/callback.h"
-#include "base/commandlineflags.h"
-#include "base/commandlineflags.h"
-#include "base/integral_types.h"
-#include "base/join.h"
-#include "constraint_solver/routing.h"
-#include "constraint_solver/routing_flags.h"
-#include "base/random.h"
+#include "ortools/base/callback.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/join.h"
+#include "ortools/base/join.h"
+#include "ortools/constraint_solver/routing.h"
+#include "ortools/constraint_solver/routing_enums.pb.h"
+#include "ortools/constraint_solver/routing_flags.h"
+#include "ortools/base/random.h"
 
 DEFINE_int32(tsp_size, 10, "Size of Traveling Salesman Problem instance.");
 DEFINE_bool(tsp_use_random_matrix, true, "Use random cost matrix.");
@@ -135,7 +137,7 @@ void Tsp() {
     }
     // Solve, returns a solution if any (owned by RoutingModel).
     const Assignment* solution = routing.SolveWithParameters(parameters);
-    if (solution != NULL) {
+    if (solution != nullptr) {
       // Solution cost.
       LOG(INFO) << "Cost " << solution->ObjectiveValue();
       // Inspect solution.
@@ -145,7 +147,7 @@ void Tsp() {
       for (int64 node = routing.Start(route_number); !routing.IsEnd(node);
            node = solution->Value(routing.NextVar(node))) {
         StrAppend(&route, routing.IndexToNode(node).value(), " (", node,
-                  ") -> ");
+                        ") -> ");
       }
       const int64 end = routing.End(route_number);
       StrAppend(&route, routing.IndexToNode(end).value(), " (", end, ")");
