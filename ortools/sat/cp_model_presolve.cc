@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "ortools/base/join.h"
-#include "ortools/base/hash.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/sat/cp_model_checker.h"
@@ -386,6 +385,14 @@ bool PresolveBoolOr(ConstraintProto* ct, PresolveContext* context) {
     context->SetLiteralToTrue(new_literals.Get(0));
     return RemoveConstraint(ct, context);
   }
+  if (new_literals.size() == 2) {
+    // For consistency, we move all "implication" into half-reified bool_and.
+    // TODO(user): merge by enforcement literal and detect implication cycles.
+    context->UpdateRuleStats("bool_or: implications");
+    ct->add_enforcement_literal(NegatedRef(new_literals.Get(0)));
+    ct->mutable_bool_and()->add_literals(new_literals.Get(1));
+    return changed;
+  }
 
   ct->mutable_bool_or()->mutable_literals()->Swap(&new_literals);
   if (changed) context->UpdateRuleStats("bool_or: fixed literals");
@@ -421,9 +428,6 @@ bool PresolveBoolAnd(ConstraintProto* ct, PresolveContext* context) {
   }
 
   if (new_literals.empty()) return RemoveConstraint(ct, context);
-  if (new_literals.size() == 1) {
-    context->UpdateRuleStats("TODO bool_and: equality");
-  }
 
   ct->mutable_bool_and()->mutable_literals()->Swap(&new_literals);
   if (changed) context->UpdateRuleStats("bool_and: fixed literals");
@@ -897,6 +901,8 @@ bool PresolveLinearIntoClauses(ConstraintProto* ct, PresolveContext* context) {
   }
 
   // Detect clauses and reified ands.
+  // TODO(user): split an == 1 constraint or similar into a clause and a <= 1
+  // constraint?
   const std::vector<ClosedInterval> domain = ReadDomain(arg);
   DCHECK(!domain.empty());
   if (offset + min_coeff > domain.back().end) {
@@ -1140,6 +1146,89 @@ bool PresolveTable(ConstraintProto* ct, PresolveContext* context) {
   return false;
 }
 
+bool PresolveAllDiff(ConstraintProto* ct, PresolveContext* context) {
+  if (HasEnforcementLiteral(*ct)) return false;
+  const int size = ct->all_diff().vars_size();
+  if (size == 0) {
+    context->UpdateRuleStats("all_diff: empty constraint");
+    return RemoveConstraint(ct, context);
+  }
+  if (size == 1) {
+    context->UpdateRuleStats("all_diff: only one variable");
+    return RemoveConstraint(ct, context);
+  }
+
+  bool contains_fixed_variable = false;
+  for (int i = 0; i < size; ++i) {
+    if (context->domains[PositiveRef(ct->all_diff().vars(i))].IsFixed()) {
+      contains_fixed_variable = true;
+      break;
+    }
+  }
+  if (contains_fixed_variable) {
+    context->UpdateRuleStats("TODO all_diff: fixed variables");
+  }
+  return false;
+}
+
+bool PresolveCumulative(ConstraintProto* ct, PresolveContext* context) {
+  if (HasEnforcementLiteral(*ct)) return false;
+  const CumulativeConstraintProto& proto = ct->cumulative();
+  if (!context->domains[PositiveRef(proto.capacity())].IsFixed()) {
+    return false;
+  }
+  const int64 capacity = context->domains[PositiveRef(proto.capacity())].Min();
+
+  const int size = proto.intervals_size();
+  std::vector<int> start_indices(size, -1);
+
+  int num_duration_one = 0;
+  int num_greater_half_capacity = 0;
+
+  for (int i = 0; i < size; ++i) {
+    const IntervalConstraintProto& interval =
+        context->working_model->constraints(proto.intervals(i)).interval();
+    start_indices[i] = interval.start();
+    const int duration_index = interval.size();
+    const int demand_index = proto.demands(i);
+    if (context->domains[duration_index].IsFixedTo(1)) {
+      num_duration_one++;
+    }
+    const int demand_min = context->domains[demand_index].Min();
+    const int demand_max = context->domains[demand_index].Max();
+    if (demand_min > capacity / 2) {
+      num_greater_half_capacity++;
+    }
+    if (demand_min > capacity) {
+      context->UpdateRuleStats("TODO cumulative: demand_min exceeds capacity");
+    } else if (demand_max > capacity) {
+      context->UpdateRuleStats("TODO cumulative: demand_max exceeds capacity");
+    }
+  }
+
+  if (num_greater_half_capacity == size) {
+    if (num_duration_one == size) {
+      context->UpdateRuleStats("cumulative: convert to all_different");
+      ConstraintProto* new_ct = context->working_model->add_constraints();
+      auto* arg = new_ct->mutable_all_diff();
+      for (const int var : start_indices) {
+        arg->add_vars(var);
+      }
+      return RemoveConstraint(ct, context);
+    } else {
+      context->UpdateRuleStats("cumulative: convert to no_overlap");
+      ConstraintProto* new_ct = context->working_model->add_constraints();
+      auto* arg = new_ct->mutable_no_overlap();
+      for (const int interval : proto.intervals()) {
+        arg->add_intervals(interval);
+      }
+      return RemoveConstraint(ct, context);
+    }
+  }
+
+  return false;
+}
+
 }  // namespace.
 
 // =============================================================================
@@ -1259,6 +1348,12 @@ void PresolveCpModel(const CpModelProto& initial_model,
           break;
         case ConstraintProto::ConstraintCase::kTable:
           changed |= PresolveTable(ct, &context);
+          break;
+        case ConstraintProto::ConstraintCase::kAllDiff:
+          changed |= PresolveAllDiff(ct, &context);
+          break;
+        case ConstraintProto::ConstraintCase::kCumulative:
+          changed |= PresolveCumulative(ct, &context);
           break;
         default:
           break;
