@@ -1,0 +1,19 @@
+
+# safelist
+branches:
+  only:
+  - master
+
+language: cpp
+compiler: gcc
+os:
+  - linux
+  - osx
+
+before_install:
+
+install: mkdir build && cd build && rm -fR * && cmake ..
+
+before_script:
+
+script: make
