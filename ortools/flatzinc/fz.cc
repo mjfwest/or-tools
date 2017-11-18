@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -36,7 +36,6 @@
 #include "ortools/flatzinc/parser.h"
 #include "ortools/flatzinc/presolve.h"
 #include "ortools/flatzinc/reporting.h"
-#include "ortools/flatzinc/sat_fz_solver.h"
 #include "ortools/flatzinc/solver.h"
 #include "ortools/flatzinc/solver_util.h"
 
@@ -66,15 +65,12 @@ DEFINE_bool(
     verbose_impact, false,
     "Increase verbosity of the impact based search when used in free search.");
 DEFINE_bool(verbose_mt, false, "Verbose Multi-Thread.");
-DEFINE_bool(use_fz_sat, false, "Use the SAT/CP solver.");
-DEFINE_bool(use_cp_model, false, "Use the SAT/CP solver through CpModel.");
+DEFINE_bool(use_cp_sat, true, "Use the CP/SAT solver.");
 DEFINE_string(fz_model_name, "stdin",
               "Define problem name when reading from stdin.");
 
-// TODO(user): Remove when using ABCL in open-source.
-DECLARE_bool(log_prefix);
 DECLARE_bool(fz_use_sat);
-DECLARE_bool(vmodule);
+DECLARE_bool(log_prefix);
 
 using operations_research::ThreadPool;
 
@@ -219,6 +215,7 @@ void FixAndParseParameters(int* argc, char*** argv) {
 
   gflags::SetUsageMessage(kUsage);
   gflags::ParseCommandLineFlags(argc, argv, true);
+  google::InitGoogleLogging((*argv)[0]);
 }
 
 Model ParseFlatzincModel(const std::string& input, bool input_is_filename) {
@@ -305,7 +302,6 @@ int main(int argc, char** argv) {
   // By default, we want to show how the solver progress. Note that this needs
   // to be set before InitGoogle() which has the nice side-effect of allowing
   // the user to override it.
-  //  FLAGS_vmodule = "*cp_model*=1";
 
   // Flatzinc specifications require single dash parameters (-a, -f, -p).
   // We need to fix parameters before parsing them.
@@ -328,17 +324,11 @@ int main(int argc, char** argv) {
       operations_research::fz::ParseFlatzincModel(input,
                                                   !FLAGS_read_from_stdin);
 
-  if (FLAGS_use_fz_sat || FLAGS_use_cp_model) {
+  if (FLAGS_use_cp_sat) {
     bool interrupt_solve = false;
-    if (FLAGS_use_fz_sat) {
-      operations_research::sat::SolveWithSat(
-          model, operations_research::fz::SingleThreadParameters(),
-          &interrupt_solve);
-    } else {
-      operations_research::sat::SolveFzWithCpModelProto(
-          model, operations_research::fz::SingleThreadParameters(),
-          &interrupt_solve);
-    }
+    operations_research::sat::SolveFzWithCpModelProto(
+        model, operations_research::fz::SingleThreadParameters(),
+        &interrupt_solve);
   } else {
     operations_research::fz::Solve(model);
   }

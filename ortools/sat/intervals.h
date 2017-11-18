@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,10 +14,19 @@
 #ifndef OR_TOOLS_SAT_INTERVALS_H_
 #define OR_TOOLS_SAT_INTERVALS_H_
 
+#include <functional>
+#include <vector>
+
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/macros.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/sat/cp_constraints.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/integer_expr.h"
 #include "ortools/sat/model.h"
+#include "ortools/sat/pb_constraint.h"
 #include "ortools/sat/precedences.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_solver.h"
@@ -34,26 +43,22 @@ const IntervalVariable kNoIntervalVariable(-1);
 // provides many helper functions to add precedences relation between intervals.
 class IntervalsRepository {
  public:
-  IntervalsRepository(IntegerTrail* integer_trail,
-                      PrecedencesPropagator* precedences)
-      : integer_trail_(integer_trail), precedences_(precedences) {}
-
-  static IntervalsRepository* CreateInModel(Model* model) {
-    IntervalsRepository* intervals =
-        new IntervalsRepository(model->GetOrCreate<IntegerTrail>(),
-                                model->GetOrCreate<PrecedencesPropagator>());
-    model->TakeOwnership(intervals);
-    return intervals;
-  }
+  explicit IntervalsRepository(Model* model)
+      : integer_trail_(model->GetOrCreate<IntegerTrail>()),
+        precedences_(model->GetOrCreate<PrecedencesPropagator>()) {}
 
   // Returns the current number of intervals in the repository.
   // The interval will always be identified by an integer in [0, num_intervals).
   int NumIntervals() const { return start_vars_.size(); }
 
   // Functions to add a new interval to the repository.
-  // - If size == kNoIntegerVariable, then the size is assumed to be fixed
-  //   to fixed_size.
+  // - If size == kNoIntegerVariable, then the size is fixed to fixed_size.
   // - If is_present != kNoLiteralIndex, then this is an optional interval.
+  //
+  // TRICKY: for optional interval, the start and end variables are
+  // automatically marked as "ignorable" and the relation start + size <= end
+  // will still be propagated even if the interval is not present. Note that we
+  // never mark the size as "ignorable" here.
   IntervalVariable CreateInterval(IntegerVariable start, IntegerVariable end,
                                   IntegerVariable size, IntegerValue fixed_size,
                                   LiteralIndex is_present);
@@ -482,6 +487,7 @@ inline std::function<void(Model*)> IntervalWithAlternatives(
     // Propagate from the candidate bounds to the master interval ones.
     {
       std::vector<IntegerVariable> starts;
+      starts.reserve(members.size());
       for (const IntervalVariable member : members) {
         starts.push_back(intervals->StartVar(member));
       }
@@ -490,6 +496,7 @@ inline std::function<void(Model*)> IntervalWithAlternatives(
     }
     {
       std::vector<IntegerVariable> ends;
+      ends.reserve(members.size());
       for (const IntervalVariable member : members) {
         ends.push_back(intervals->EndVar(member));
       }

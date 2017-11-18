@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,6 +19,7 @@
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/timer.h"
 #include "ortools/flatzinc/logging.h"
 #include "ortools/flatzinc/model.h"
 #include "ortools/flatzinc/parser.h"
@@ -32,7 +33,10 @@ DEFINE_bool(statistics, false, "Print model statistics");
 namespace operations_research {
 namespace fz {
 void ParseFile(const std::string& filename, bool presolve) {
-  FZLOG << "Parsing " << filename << FZENDL;
+  WallTimer timer;
+  timer.Start();
+
+  FZLOG << "Loading " << filename << FZENDL;
 
   std::string problem_name = filename;
   // Remove the .fzn extension.
@@ -43,13 +47,18 @@ void ParseFile(const std::string& filename, bool presolve) {
   if (found != std::string::npos) {
     problem_name = problem_name.substr(found + 1);
   }
+  FZLOG << "  - parsed in " << timer.GetInMs() << " ms" << FZENDL;
 
   Model model(problem_name);
   CHECK(ParseFlatzincFile(filename, &model));
   if (presolve) {
+    FZLOG << "Presolve model" << FZENDL;
+    timer.Reset();
+    timer.Start();
     Presolver presolve;
     presolve.CleanUpModelForTheCpSolver(&model, /*use_sat=*/true);
     presolve.Run(&model);
+    FZLOG << "  - done in " << timer.GetInMs() << " ms" << FZENDL;
   }
   if (FLAGS_statistics) {
     ModelStatistics stats(model);
@@ -64,12 +73,13 @@ void ParseFile(const std::string& filename, bool presolve) {
 }  // namespace operations_research
 
 int main(int argc, char** argv) {
-  FLAGS_log_prefix = false;
   const char kUsage[] =
       "Parses a flatzinc .fzn file, optionally presolve it, and prints it in "
       "human-readable format";
+  FLAGS_log_prefix = false;
   gflags::SetUsageMessage(kUsage);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  google::InitGoogleLogging(argv[0]);
   operations_research::fz::ParseFile(FLAGS_file, FLAGS_presolve);
   return 0;
 }

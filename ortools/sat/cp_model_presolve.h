@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,6 +14,8 @@
 #ifndef OR_TOOLS_SAT_CP_MODEL_PRESOLVE_H_
 #define OR_TOOLS_SAT_CP_MODEL_PRESOLVE_H_
 
+#include <vector>
+
 #include "ortools/sat/cp_model.pb.h"
 
 namespace operations_research {
@@ -21,20 +23,21 @@ namespace sat {
 
 // Presolves the given CpModelProto into presolved_model.
 //
-// This also creates a mapping model that encode the correspondance between the
+// This also creates a mapping model that encode the correspondence between the
 // two problems. This works as follow:
-// - The first variables of mapping_model are in one to one correspondance with
+// - The first variables of mapping_model are in one to one correspondence with
 //   the variables of the initial model.
-// - The presolved_model variables are in one to one correspondance with the
+// - The presolved_model variables are in one to one correspondence with the
 //   variable at the indices given by postsolve_mapping in the mapping model.
 // - Fixing one of the two sets of variables and solving the model will assign
 //   the other set to a feasible solution of the other problem. Moreover, the
-//   objective value of these solution will be the same. Note that solving such
-//   problem will take little time in practice because the propagation will
+//   objective value of these solutions will be the same. Note that solving such
+//   problems will take little time in practice because the propagation will
 //   basically do all the work.
 //
-// Note(user): an optimization model can be transformed in a decision one if for
-// instance the objective is fixed, or independent on the rest of the problem.
+// Note(user): an optimization model can be transformed into a decision problem,
+// if for instance the objective is fixed, or independent from the rest of the
+// problem.
 //
 // TODO(user): Identify disconnected components and returns a vector of
 // presolved model? If we go this route, it may be nicer to store the indices

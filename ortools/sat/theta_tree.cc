@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -12,6 +12,11 @@
 // limitations under the License.
 
 #include "ortools/sat/theta_tree.h"
+
+#include <algorithm>
+#include <memory>
+
+#include "ortools/base/int_type.h"
 
 namespace operations_research {
 namespace sat {

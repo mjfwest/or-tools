@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,6 +27,7 @@
 #include "ortools/lp_data/lp_print_utils.h"
 #include "ortools/lp_data/lp_utils.h"
 #include "ortools/lp_data/matrix_utils.h"
+#include "ortools/lp_data/permutation.h"
 
 namespace operations_research {
 namespace glop {
@@ -589,10 +590,12 @@ std::string LinearProgram::DumpSolution(const DenseRow& variable_values) const {
   std::string output;
   for (ColIndex col(0); col < variable_values.size(); ++col) {
     if (!output.empty()) StrAppend(&output, ", ");
-    StrAppend(&output, GetVariableName(col), " = ", variable_values[col]);
+    StrAppend(&output, GetVariableName(col), " = ",
+                    LegacyPrecision(variable_values[col]));
   }
   return output;
 }
+
 
 std::string LinearProgram::GetProblemStats() const {
   return ProblemStatFormatter(
@@ -638,7 +641,7 @@ void LinearProgram::AddSlackVariablesWhereNecessary(
   // Clean up the matrix. We're going to add entries, but we'll only be adding
   // them to new columns, and only one entry per column, which does not
   // invalidate the "cleanness" of the matrix.
-  matrix_.CleanUp();
+  CleanUp();
 
   // Detect which constraints produce an integer slack variable. A constraint
   // has an integer slack variable, if it contains only integer variables with
@@ -679,6 +682,8 @@ void LinearProgram::AddSlackVariablesWhereNecessary(
     SetCoefficient(row, slack_col, 1.0);
     SetConstraintBounds(row, 0.0, 0.0);
   }
+
+  columns_are_known_to_be_clean_ = true;
   transpose_matrix_is_consistent_ = false;
   if (first_slack_variable_ == kInvalidCol) {
     first_slack_variable_ = original_num_variables;
@@ -815,6 +820,58 @@ void LinearProgram::PopulateFromLinearProgram(
 
   PopulateNameObjectiveAndVariablesFromLinearProgram(linear_program);
   first_slack_variable_ = linear_program.first_slack_variable_;
+}
+
+void LinearProgram::PopulateFromPermutedLinearProgram(
+    const LinearProgram& lp, const RowPermutation& row_permutation,
+    const ColumnPermutation& col_permutation) {
+  DCHECK(lp.IsCleanedUp());
+  DCHECK_EQ(row_permutation.size(), lp.num_constraints());
+  DCHECK_EQ(col_permutation.size(), lp.num_variables());
+  DCHECK_EQ(lp.GetFirstSlackVariable(), kInvalidCol);
+  Clear();
+
+  // Populate matrix coefficients.
+  ColumnPermutation inverse_col_permutation;
+  inverse_col_permutation.PopulateFromInverse(col_permutation);
+  matrix_.PopulateFromPermutedMatrix(lp.matrix_, row_permutation,
+                                     inverse_col_permutation);
+  ClearTransposeMatrix();
+
+  // Populate constraints.
+  ApplyPermutation(row_permutation, lp.constraint_lower_bounds(),
+                   &constraint_lower_bounds_);
+  ApplyPermutation(row_permutation, lp.constraint_upper_bounds(),
+                   &constraint_upper_bounds_);
+
+  // Populate variables.
+  ApplyPermutation(col_permutation, lp.objective_coefficients(),
+                   &objective_coefficients_);
+  ApplyPermutation(col_permutation, lp.variable_lower_bounds(),
+                   &variable_lower_bounds_);
+  ApplyPermutation(col_permutation, lp.variable_upper_bounds(),
+                   &variable_upper_bounds_);
+  ApplyPermutation(col_permutation, lp.variable_types(), &variable_types_);
+  integer_variables_list_is_consistent_ = false;
+
+  // There is no vector based accessor to names, because they may be created
+  // on the fly.
+  constraint_names_.resize(lp.num_constraints());
+  for (RowIndex old_row(0); old_row < lp.num_constraints(); ++old_row) {
+    const RowIndex new_row = row_permutation[old_row];
+    constraint_names_[new_row] = lp.constraint_names_[old_row];
+  }
+  variable_names_.resize(lp.num_variables());
+  for (ColIndex old_col(0); old_col < lp.num_variables(); ++old_col) {
+    const ColIndex new_col = col_permutation[old_col];
+    variable_names_[new_col] = lp.variable_names_[old_col];
+  }
+
+  // Populate singular fields.
+  maximize_ = lp.maximize_;
+  objective_offset_ = lp.objective_offset_;
+  objective_scaling_factor_ = lp.objective_scaling_factor_;
+  name_ = lp.name_;
 }
 
 void LinearProgram::PopulateFromLinearProgramVariables(
@@ -1029,18 +1086,42 @@ void LinearProgram::Scale(SparseMatrixScaler* scaler) {
   transpose_matrix_is_consistent_ = false;
 }
 
-Fractional LinearProgram::ScaleObjective() {
-  Fractional cost_scaling_factor = 0.0;
-  for (ColIndex col(0); col < num_variables(); ++col) {
-    cost_scaling_factor =
-        std::max(cost_scaling_factor, std::abs(objective_coefficients()[col]));
+namespace {
+
+// Note that we ignore zeros and infinities because they do not matter from a
+// scaling perspective where this function is used.
+template <typename FractionalRange>
+void UpdateMinAndMaxMagnitude(const FractionalRange& range,
+                              Fractional* min_magnitude,
+                              Fractional* max_magnitude) {
+  for (const Fractional value : range) {
+    const Fractional magnitude = std::abs(value);
+    if (magnitude == 0 || magnitude == kInfinity) continue;
+    *min_magnitude = std::min(*min_magnitude, magnitude);
+    *max_magnitude = std::max(*max_magnitude, magnitude);
   }
-  VLOG(1) << "Objective stats (before objective scaling): "
-          << GetObjectiveStatsString();
-  if (cost_scaling_factor == 0.0) {
-    // This is needed for pure feasibility problems.
-    cost_scaling_factor = 1.0;
-  } else {
+}
+
+Fractional ComputeDivisorSoThatRangeContainsOne(Fractional min_magnitude,
+                                                Fractional max_magnitude) {
+  if (min_magnitude > 1.0 && min_magnitude < kInfinity) {
+    return min_magnitude;
+  } else if (max_magnitude > 0.0 && max_magnitude < 1.0) {
+    return max_magnitude;
+  }
+  return 1.0;
+}
+
+}  // namespace
+
+Fractional LinearProgram::ScaleObjective() {
+  Fractional min_magnitude = kInfinity;
+  Fractional max_magnitude = 0.0;
+  UpdateMinAndMaxMagnitude(objective_coefficients(), &min_magnitude,
+                           &max_magnitude);
+  const Fractional cost_scaling_factor =
+      ComputeDivisorSoThatRangeContainsOne(min_magnitude, max_magnitude);
+  if (cost_scaling_factor != 1.0) {
     for (ColIndex col(0); col < num_variables(); ++col) {
       SetObjectiveCoefficient(
           col, objective_coefficients()[col] / cost_scaling_factor);
@@ -1048,8 +1129,45 @@ Fractional LinearProgram::ScaleObjective() {
     SetObjectiveScalingFactor(objective_scaling_factor() * cost_scaling_factor);
     SetObjectiveOffset(objective_offset() / cost_scaling_factor);
   }
-  VLOG(1) << "Objective stats: " << GetObjectiveStatsString();
+
+  VLOG(1) << "Objective magnitude range is [" << min_magnitude << ", "
+          << max_magnitude << "] (dividing by " << cost_scaling_factor << ").";
   return cost_scaling_factor;
+}
+
+Fractional LinearProgram::ScaleBounds() {
+  Fractional min_magnitude = kInfinity;
+  Fractional max_magnitude = 0.0;
+  UpdateMinAndMaxMagnitude(variable_lower_bounds(), &min_magnitude,
+                           &max_magnitude);
+  UpdateMinAndMaxMagnitude(variable_upper_bounds(), &min_magnitude,
+                           &max_magnitude);
+  UpdateMinAndMaxMagnitude(constraint_lower_bounds(), &min_magnitude,
+                           &max_magnitude);
+  UpdateMinAndMaxMagnitude(constraint_lower_bounds(), &min_magnitude,
+                           &max_magnitude);
+  const Fractional bound_scaling_factor =
+      ComputeDivisorSoThatRangeContainsOne(min_magnitude, max_magnitude);
+  if (bound_scaling_factor != 1.0) {
+    SetObjectiveScalingFactor(objective_scaling_factor() *
+                              bound_scaling_factor);
+    SetObjectiveOffset(objective_offset() / bound_scaling_factor);
+    for (ColIndex col(0); col < num_variables(); ++col) {
+      SetVariableBounds(col,
+                        variable_lower_bounds()[col] / bound_scaling_factor,
+                        variable_upper_bounds()[col] / bound_scaling_factor);
+    }
+    for (RowIndex row(0); row < num_constraints(); ++row) {
+      SetConstraintBounds(
+          row, constraint_lower_bounds()[row] / bound_scaling_factor,
+          constraint_upper_bounds()[row] / bound_scaling_factor);
+    }
+  }
+
+  VLOG(1) << "Bounds magnitude range is [" << min_magnitude << ", "
+          << max_magnitude << "] (dividing bounds by " << bound_scaling_factor
+          << ").";
+  return bound_scaling_factor;
 }
 
 void LinearProgram::DeleteRows(const DenseBooleanColumn& row_to_delete) {
@@ -1266,6 +1384,57 @@ bool LinearProgram::IsInEquationForm() const {
       num_variables() - GetFirstSlackVariable();
   return num_constraints().value() == num_slack_variables.value() &&
          IsRightMostSquareMatrixIdentity(matrix_);
+}
+
+bool LinearProgram::BoundsOfIntegerVariablesAreInteger(
+    Fractional tolerance) const {
+  for (const ColIndex col : IntegerVariablesList()) {
+    if ((IsFinite(variable_lower_bounds_[col]) &&
+         !IsIntegerWithinTolerance(variable_lower_bounds_[col], tolerance)) ||
+        (IsFinite(variable_upper_bounds_[col]) &&
+         !IsIntegerWithinTolerance(variable_upper_bounds_[col], tolerance))) {
+      VLOG(1) << "Bounds of variable " << col.value() << " are non-integer ("
+              << variable_lower_bounds_[col] << ", "
+              << variable_upper_bounds_[col] << ").";
+      return false;
+    }
+  }
+  return true;
+}
+
+bool LinearProgram::BoundsOfIntegerConstraintsAreInteger(
+    Fractional tolerance) const {
+  // Using transpose for this is faster (complexity = O(number of non zeros in
+  // matrix)) than directly iterating through entries (complexity = O(number of
+  // constraints * number of variables)).
+  const SparseMatrix& transpose = GetTransposeSparseMatrix();
+  for (RowIndex row = RowIndex(0); row < num_constraints(); ++row) {
+    bool integer_constraint = true;
+    for (const SparseColumn::Entry var : transpose.column(RowToColIndex(row))) {
+      if (!IsVariableInteger(RowToColIndex(var.row()))) {
+        integer_constraint = false;
+        break;
+      }
+      if (!IsIntegerWithinTolerance(var.coefficient(), tolerance)) {
+        integer_constraint = false;
+        break;
+      }
+    }
+    if (integer_constraint) {
+      if ((IsFinite(constraint_lower_bounds_[row]) &&
+           !IsIntegerWithinTolerance(constraint_lower_bounds_[row],
+                                     tolerance)) ||
+          (IsFinite(constraint_upper_bounds_[row]) &&
+           !IsIntegerWithinTolerance(constraint_upper_bounds_[row],
+                                     tolerance))) {
+        VLOG(1) << "Bounds of constraint " << row.value()
+                << " are non-integer (" << constraint_lower_bounds_[row] << ", "
+                << constraint_upper_bounds_[row] << ").";
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 // --------------------------------------------------------

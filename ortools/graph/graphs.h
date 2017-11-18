@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,12 +18,11 @@
 #define OR_TOOLS_GRAPH_GRAPHS_H_
 
 #include "ortools/graph/ebert_graph.h"
-#include "ortools/graph/graph.h"
 
 namespace operations_research {
 
 // Since StarGraph does not have exactly the same interface as the other
-// graphs, we define a correspondance there.
+// graphs, we define a correspondence there.
 template <typename Graph>
 struct Graphs {
   typedef typename Graph::ArcIndex ArcIndex;

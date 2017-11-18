@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,24 +19,27 @@
 #ifndef OR_TOOLS_SAT_SAT_SOLVER_H_
 #define OR_TOOLS_SAT_SAT_SOLVER_H_
 
+#include <functional>
 #include <unordered_map>
+#include <limits>
 #include <memory>
-#include <queue>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
+#include "ortools/base/macros.h"
 #include "ortools/base/timer.h"
-#include "google/protobuf/text_format.h"
+#include "ortools/base/span.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
-#include "ortools/base/map_util.h"
+#include "ortools/base/hash.h"
 #include "ortools/sat/clause.h"
 #include "ortools/sat/drat.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/pb_constraint.h"
+#include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/util/bitset.h"
 #include "ortools/util/random_engine.h"
@@ -57,15 +60,8 @@ const int kUnsatTrailIndex = -1;
 class SatSolver {
  public:
   SatSolver();
-  explicit SatSolver(Trail* trail);
+  explicit SatSolver(Model* model);
   ~SatSolver();
-
-  static SatSolver* CreateInModel(Model* model) {
-    Trail* trail = model->GetOrCreate<Trail>();
-    SatSolver* solver = new SatSolver(trail);
-    model->TakeOwnership(solver);
-    return solver;
-  }
 
   // Parameters management. Note that calling SetParameters() will reset the
   // value of many heuristics. For instance:
@@ -136,8 +132,11 @@ class SatSolver {
 
   // Adds and registers the given propagator with the sat solver. Note that
   // during propagation, they will be called in the order they where added.
-  void AddPropagator(std::unique_ptr<SatPropagator> propagator);
-  void AddLastPropagator(std::unique_ptr<SatPropagator> propagator);
+  void AddPropagator(SatPropagator* propagator);
+  void AddLastPropagator(SatPropagator* propagator);
+  void TakePropagatorOwnership(std::unique_ptr<SatPropagator> propagator) {
+    owned_propagators_.push_back(std::move(propagator));
+  }
 
   // Gives a hint so the solver tries to find a solution with the given literal
   // set to true. Currently this take precedence over the phase saving heuristic
@@ -260,8 +259,7 @@ class SatSolver {
   // of the old stack. Note that decisions that are now consequence of the ones
   // before them will no longer be decisions.
   //
-  // Note(user): This function can be called with an already assigned literal,
-  // in which case, it will just do nothing.
+  // Note(user): This function can be called with an already assigned literal.
   int EnqueueDecisionAndBacktrackOnConflict(Literal true_literal);
 
   // Tries to enqueue the given decision and performs the propagation.
@@ -637,7 +635,7 @@ class SatSolver {
   // as decaying all the variable activities, but it is a lot more efficient.
   void UpdateVariableActivityIncrement();
 
-  // Activity managment for clauses. This work the same way at the ones for
+  // Activity management for clauses. This work the same way at the ones for
   // variables, but with different parameters.
   void BumpReasonActivities(const std::vector<Literal>& literals);
   void BumpClauseActivity(SatClause* clause);
@@ -654,6 +652,10 @@ class SatSolver {
   std::string DebugString(const SatClause& clause) const;
   std::string StatusString(Status status) const;
   std::string RunningStatisticsString() const;
+
+  // This is used by the old non-model constructor.
+  Model* model_;
+  std::unique_ptr<Model> owned_model_;
 
   BooleanVariable num_variables_;
 
@@ -686,8 +688,11 @@ class SatSolver {
   std::vector<SatPropagator*> propagators_;
 
   // Ordered list of propagators added with AddPropagator().
-  std::vector<std::unique_ptr<SatPropagator>> external_propagators_;
-  std::unique_ptr<SatPropagator> last_propagator_;
+  std::vector<SatPropagator*> external_propagators_;
+  SatPropagator* last_propagator_ = nullptr;
+
+  // For the old, non-model interface.
+  std::vector<std::unique_ptr<SatPropagator>> owned_propagators_;
 
   // Keep track of all binary clauses so they can be exported.
   bool track_binary_clauses_;
@@ -695,9 +700,6 @@ class SatSolver {
 
   // The solver trail.
   Trail* trail_;
-
-  // This is used by the non-model constructor to properly cleanup trail_.
-  std::unique_ptr<Trail> owned_trail_;
 
   // Used for debugging only. See SaveDebugAssignment().
   VariablesAssignment debug_assignment_;
@@ -967,9 +969,10 @@ inline std::function<void(Model*)> CardinalityConstraint(
     int64 lower_bound, int64 upper_bound,
     const std::vector<Literal>& literals) {
   return [=](Model* model) {
-    std::vector<LiteralWithCoeff> cst(literals.size());
+    std::vector<LiteralWithCoeff> cst;
+    cst.reserve(literals.size());
     for (int i = 0; i < literals.size(); ++i) {
-      cst[i] = LiteralWithCoeff(literals[i], 1);
+      cst.emplace_back(literals[i], 1);
     }
     model->GetOrCreate<SatSolver>()->AddLinearConstraint(
         /*use_lower_bound=*/true, Coefficient(lower_bound),
@@ -981,8 +984,9 @@ inline std::function<void(Model*)> ExactlyOneConstraint(
     const std::vector<Literal>& literals) {
   return [=](Model* model) {
     std::vector<LiteralWithCoeff> cst;
+    cst.reserve(literals.size());
     for (const Literal l : literals) {
-      cst.push_back(LiteralWithCoeff(l, Coefficient(1)));
+      cst.emplace_back(l, Coefficient(1));
     }
     model->GetOrCreate<SatSolver>()->AddLinearConstraint(
         /*use_lower_bound=*/true, Coefficient(1),
@@ -994,8 +998,9 @@ inline std::function<void(Model*)> AtMostOneConstraint(
     const std::vector<Literal>& literals) {
   return [=](Model* model) {
     std::vector<LiteralWithCoeff> cst;
+    cst.reserve(literals.size());
     for (const Literal l : literals) {
-      cst.push_back(LiteralWithCoeff(l, Coefficient(1)));
+      cst.emplace_back(l, Coefficient(1));
     }
     model->GetOrCreate<SatSolver>()->AddLinearConstraint(
         /*use_lower_bound=*/false, Coefficient(0),
@@ -1007,8 +1012,9 @@ inline std::function<void(Model*)> ClauseConstraint(
     const std::vector<Literal>& literals) {
   return [=](Model* model) {
     std::vector<LiteralWithCoeff> cst;
+    cst.reserve(literals.size());
     for (const Literal l : literals) {
-      cst.push_back(LiteralWithCoeff(l, Coefficient(1)));
+      cst.emplace_back(l, Coefficient(1));
     }
     model->GetOrCreate<SatSolver>()->AddLinearConstraint(
         /*use_lower_bound=*/true, Coefficient(1),
@@ -1112,28 +1118,6 @@ inline std::function<void(Model*)> ExcludeCurrentSolutionAndBacktrack() {
     }
     sat_solver->Backtrack(0);
     model->Add(ClauseConstraint(clause_to_exclude_solution));
-  };
-}
-
-inline std::function<SatParameters(Model*)> NewSatParameters(
-    const std::string& params) {
-  return [=](Model* model) {
-    sat::SatParameters parameters;
-    if (!params.empty()) {
-      CHECK(google::protobuf::TextFormat::ParseFromString(params, &parameters)) << params;
-      model->GetOrCreate<SatSolver>()->SetParameters(parameters);
-      model->SetSingleton(TimeLimit::FromParameters(parameters));
-    }
-    return parameters;
-  };
-}
-
-inline std::function<SatParameters(Model*)> NewSatParameters(
-    const sat::SatParameters& parameters) {
-  return [=](Model* model) {
-    model->GetOrCreate<SatSolver>()->SetParameters(parameters);
-    model->SetSingleton(TimeLimit::FromParameters(parameters));
-    return parameters;
   };
 }
 

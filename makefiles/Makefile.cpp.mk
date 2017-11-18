@@ -23,6 +23,7 @@ clean_cc:
 	-$(DEL) $(OBJ_DIR)$Sglop$S*.$O
 	-$(DEL) $(OBJ_DIR)$Slp_data$S*.$O
 	-$(DEL) $(OBJ_DIR)$Sgraph$S*.$O
+	-$(DEL) $(OBJ_DIR)$Sport$S*.$O
 	-$(DEL) $(OBJ_DIR)$Ssat$S*.$O
 	-$(DEL) $(OBJ_DIR)$Sconstraint_solver$S*.$O
 	-$(DEL) $(OBJ_DIR)$Slinear_solver$S*.$O
@@ -31,15 +32,17 @@ clean_cc:
 	-$(DEL) $(BIN_DIR)$Ssat_runner$E
 	-$(DEL) $(CP_BINARIES)
 	-$(DEL) $(LP_BINARIES)
-	-$(DEL) $(GEN_DIR)$Sconstraint_solver$S*.pb.*
-	-$(DEL) $(GEN_DIR)$Slinear_solver$S*.pb.*
-	-$(DEL) $(GEN_DIR)$Sgraph$S*.pb.*
-	-$(DEL) $(GEN_DIR)$Sbop$S*.pb.*
-	-$(DEL) $(GEN_DIR)$Sflatzinc$Sparser.*
-	-$(DEL) $(GEN_DIR)$Sglop$S*.pb.*
-	-$(DEL) $(GEN_DIR)$Sflatzinc$S*.tab.*
-	-$(DEL) $(GEN_DIR)$Sflatzinc$S*.yy.*
-	-$(DEL) $(GEN_DIR)$Ssat$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sbop$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sconstraint_solver$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Slinear_solver$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sgraph$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sbop$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sdata$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sflatzinc$Sparser.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sglop$S*.pb.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sflatzinc$S*.tab.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sflatzinc$S*.yy.*
+	-$(DEL) $(GEN_DIR)$Sortools$Sutil$S*.pb.*
 	-$(DEL) $(BIN_DIR)$S*.exp
 	-$(DEL) $(BIN_DIR)$S*.lib
 	-$(DELREC) $(OR_ROOT)src$Sgen$Sflatzinc$S*
@@ -102,7 +105,6 @@ FLATZINC_DEPS = \
 	$(SRC_DIR)/ortools/flatzinc/presolve.h \
 	$(SRC_DIR)/ortools/flatzinc/reporting.h \
 	$(SRC_DIR)/ortools/flatzinc/sat_constraint.h \
-	$(SRC_DIR)/ortools/flatzinc/sat_fz_solver.h \
 	$(SRC_DIR)/ortools/flatzinc/solver_data.h \
 	$(SRC_DIR)/ortools/flatzinc/solver.h \
 	$(SRC_DIR)/ortools/flatzinc/solver_util.h \
@@ -206,14 +208,13 @@ FLATZINC_OBJS=\
 	$(OBJ_DIR)/flatzinc/presolve.$O \
 	$(OBJ_DIR)/flatzinc/reporting.$O \
 	$(OBJ_DIR)/flatzinc/sat_constraint.$O \
-	$(OBJ_DIR)/flatzinc/sat_fz_solver.$O \
 	$(OBJ_DIR)/flatzinc/solver.$O \
 	$(OBJ_DIR)/flatzinc/solver_data.$O \
 	$(OBJ_DIR)/flatzinc/solver_util.$O
 
-fz_parser: $(SRC_DIR)/ortools/flatzinc/parser.lex $(SRC_DIR)/ortools/flatzinc/parser.yy
+fz_parser: #$(SRC_DIR)/ortools/flatzinc/parser.lex $(SRC_DIR)/ortools/flatzinc/parser.yy
 	flex -o$(SRC_DIR)/ortools/flatzinc/parser.yy.cc $(SRC_DIR)/ortools/flatzinc/parser.lex
-	bison -t -o $(SRC_DIR)/ortools/flatzinc/parser.tab.cc -d $<
+	bison -t -o $(SRC_DIR)/ortools/flatzinc/parser.tab.cc -d $(SRC_DIR)/ortools/flatzinc/parser.yy
 
 $(OBJ_DIR)/flatzinc/checker.$O: $(SRC_DIR)/ortools/flatzinc/checker.cc $(FLATZINC_DEPS)
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)$Sortools$Sflatzinc$Schecker.cc $(OBJ_OUT)$(OBJ_DIR)$Sflatzinc$Schecker.$O
@@ -250,9 +251,6 @@ $(OBJ_DIR)/flatzinc/reporting.$O: $(SRC_DIR)/ortools/flatzinc/reporting.cc $(FLA
 
 $(OBJ_DIR)/flatzinc/sat_constraint.$O: $(SRC_DIR)/ortools/flatzinc/sat_constraint.cc $(FLATZINC_DEPS)
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)$Sortools$Sflatzinc$Ssat_constraint.cc $(OBJ_OUT)$(OBJ_DIR)$Sflatzinc$Ssat_constraint.$O
-
-$(OBJ_DIR)/flatzinc/sat_fz_solver.$O: $(SRC_DIR)/ortools/flatzinc/sat_fz_solver.cc $(FLATZINC_DEPS)
-	$(CCC) $(CFLAGS) -c $(SRC_DIR)$Sortools$Sflatzinc$Ssat_fz_solver.cc $(OBJ_OUT)$(OBJ_DIR)$Sflatzinc$Ssat_fz_solver.$O
 
 $(OBJ_DIR)/flatzinc/solver.$O: $(SRC_DIR)/ortools/flatzinc/solver.cc $(FLATZINC_DEPS)
 	$(CCC) $(CFLAGS) -c $(SRC_DIR)$Sortools$Sflatzinc$Ssolver.cc $(OBJ_OUT)$(OBJ_DIR)$Sflatzinc$Ssolver.$O
@@ -398,7 +396,7 @@ $(OBJ_DIR)/jobshop_earlytardy.$O: $(EX_DIR)/cpp/jobshop_earlytardy.cc $(EX_DIR)/
 $(BIN_DIR)/jobshop_earlytardy$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/jobshop_earlytardy.$O
 	$(CCC) $(CFLAGS) $(OBJ_DIR)/jobshop_earlytardy.$O $(OR_TOOLS_LNK) $(OR_TOOLS_LD_FLAGS) $(EXE_OUT)$(BIN_DIR)$Sjobshop_earlytardy$E
 
-$(OBJ_DIR)/jobshop_sat.$O: $(EX_DIR)/cpp/jobshop_sat.cc $(CP_DEPS)
+$(OBJ_DIR)/jobshop_sat.$O: $(EX_DIR)/cpp/jobshop_sat.cc $(SAT_DEPS)
 	$(CCC) $(CFLAGS) -c $(EX_DIR)$Scpp/jobshop_sat.cc $(OBJ_OUT)$(OBJ_DIR)$Sjobshop_sat.$O
 
 $(BIN_DIR)/jobshop_sat$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/jobshop_sat.$O
@@ -446,13 +444,13 @@ $(OBJ_DIR)/pdptw.$O: $(EX_DIR)/cpp/pdptw.cc $(CP_DEPS) $(SRC_DIR)/ortools/constr
 $(BIN_DIR)/pdptw$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/pdptw.$O
 	$(CCC) $(CFLAGS) $(OBJ_DIR)/pdptw.$O $(OR_TOOLS_LNK) $(OR_TOOLS_LD_FLAGS) $(EXE_OUT)$(BIN_DIR)$Spdptw$E
 
-$(OBJ_DIR)/rcpsp_sat.$O: $(EX_DIR)/cpp/rcpsp_sat.cc $(CP_DEPS)
+$(OBJ_DIR)/rcpsp_sat.$O: $(EX_DIR)/cpp/rcpsp_sat.cc $(SAT_DEPS)
 	$(CCC) $(CFLAGS) -c $(EX_DIR)$Scpp/rcpsp_sat.cc $(OBJ_OUT)$(OBJ_DIR)$Srcpsp_sat.$O
 
 $(BIN_DIR)/rcpsp_sat$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/rcpsp_sat.$O
 	$(CCC) $(CFLAGS) $(OBJ_DIR)/rcpsp_sat.$O $(OR_TOOLS_LNK) $(OR_TOOLS_LD_FLAGS) $(EXE_OUT)$(BIN_DIR)$Srcpsp_sat$E
 
-$(OBJ_DIR)/shift_minimization_sat.$O: $(EX_DIR)/cpp/shift_minimization_sat.cc $(CP_DEPS)
+$(OBJ_DIR)/shift_minimization_sat.$O: $(EX_DIR)/cpp/shift_minimization_sat.cc $(SAT_DEPS)
 	$(CCC) $(CFLAGS) -c $(EX_DIR)$Scpp/shift_minimization_sat.cc $(OBJ_OUT)$(OBJ_DIR)$Sshift_minimization_sat.$O
 
 $(BIN_DIR)/shift_minimization_sat$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/shift_minimization_sat.$O
@@ -476,7 +474,7 @@ $(OBJ_DIR)/tsp.$O: $(EX_DIR)/cpp/tsp.cc $(CP_DEPS) $(SRC_DIR)/ortools/constraint
 $(BIN_DIR)/tsp$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/tsp.$O
 	$(CCC) $(CFLAGS) $(OBJ_DIR)/tsp.$O $(OR_TOOLS_LNK) $(OR_TOOLS_LD_FLAGS) $(EXE_OUT)$(BIN_DIR)$Stsp$E
 
-$(OBJ_DIR)/weighted_tardiness_sat.$O: $(EX_DIR)/cpp/weighted_tardiness_sat.cc $(CP_DEPS)
+$(OBJ_DIR)/weighted_tardiness_sat.$O: $(EX_DIR)/cpp/weighted_tardiness_sat.cc $(SAT_DEPS)
 	$(CCC) $(CFLAGS) -c $(EX_DIR)$Scpp/weighted_tardiness_sat.cc $(OBJ_OUT)$(OBJ_DIR)$Sweighted_tardiness_sat.$O
 
 $(BIN_DIR)/weighted_tardiness_sat$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/weighted_tardiness_sat.$O
@@ -616,7 +614,9 @@ $(BIN_DIR)/sat_runner$E: $(OR_TOOLS_LIBS) $(OBJ_DIR)/sat/sat_runner.$O
 
 $(LIB_DIR)/$(LIB_PREFIX)ortools.$(LIB_SUFFIX): \
     $(BASE_LIB_OBJS) \
+    $(PORT_LIB_OBJS) \
     $(UTIL_LIB_OBJS) \
+    $(DATA_LIB_OBJS) \
     $(LP_DATA_LIB_OBJS) \
     $(GLOP_LIB_OBJS) \
     $(GRAPH_LIB_OBJS) \
@@ -628,7 +628,9 @@ $(LIB_DIR)/$(LIB_PREFIX)ortools.$(LIB_SUFFIX): \
 	$(LINK_CMD) \
 	  $(LDOUT)$(LIB_DIR)$S$(LIB_PREFIX)ortools.$(LIB_SUFFIX) \
 	  $(BASE_LIB_OBJS) \
+	  $(PORT_LIB_OBJS) \
 	  $(UTIL_LIB_OBJS) \
+	  $(DATA_LIB_OBJS) \
 	  $(LP_DATA_LIB_OBJS) \
 	  $(GLOP_LIB_OBJS) \
 	  $(GRAPH_LIB_OBJS) \

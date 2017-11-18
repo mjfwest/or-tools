@@ -1,8 +1,8 @@
 # tags of dependencies to checkout.
-GFLAGS_TAG = 2.2.0
-PROTOBUF_TAG = 3.2.0
+GFLAGS_TAG = 2.2.1
+PROTOBUF_TAG = 3.5.0
 GLOG_TAG = 0.3.5
-CBC_TAG = 2.9.8
+CBC_TAG = 2.9.9
 ZLIB_TAG = 1.2.11
 ZLIB_ARCHIVE_TAG = 1211
 SWIG_TAG = 3.0.12
@@ -29,6 +29,7 @@ MISSING_DIRECTORIES = \
 	objs/graph \
 	objs/linear_solver \
 	objs/lp_data \
+	objs/port \
 	objs/sat \
 	objs/swig \
 	objs/util \
@@ -37,6 +38,7 @@ MISSING_DIRECTORIES = \
 	ortools/gen/com/google/ortools/flatzinc \
 	ortools/gen/com/google/ortools/graph \
 	ortools/gen/com/google/ortools/linearsolver \
+	ortools/gen/com/google/ortools/sat \
 	ortools/gen/com/google/ortools/properties \
 	ortools/gen/ortools/algorithms \
 	ortools/gen/ortools/bop \
@@ -95,6 +97,9 @@ objs/linear_solver:
 objs/lp_data:
 	$(MKDIR_P) objs$Slp_data
 
+objs/port:
+	$(MKDIR_P) objs$Sport
+
 objs/sat:
 	$(MKDIR_P) objs$Ssat
 
@@ -118,6 +123,9 @@ ortools/gen/com/google/ortools/linearsolver:
 
 ortools/gen/com/google/ortools/flatzinc:
 	$(MKDIR_P) ortools$Sgen$Scom$Sgoogle$Sortools$Sflatzinc
+
+ortools/gen/com/google/ortools/sat:
+	$(MKDIR_P) ortools$Sgen$Scom$Sgoogle$Sortools$Ssat
 
 ortools/gen/com/google/ortools/properties:
 	$(MKDIR_P) ortools$Sgen$Scom$Sgoogle$Sortools$Sproperties
@@ -299,7 +307,6 @@ dependencies\sources\cbc-$(CBC_TAG)\Cbc\MSVisualStudio\v10\$(CBC_PLATFORM)\cbc.e
 
 dependencies\sources\cbc-$(CBC_TAG)\configure:
 	svn co https://projects.coin-or.org/svn/Cbc/releases/$(CBC_TAG) dependencies/sources/cbc-$(CBC_TAG)
-	tools\sed -i -e "s/#  include <direct.h>/#  include <direct.h>\n#  include <cctype>/g" dependencies\sources\cbc-$(CBC_TAG)\CoinUtils\src\CoinHelperFunctions.hpp
 
 
 # Install SWIG.
@@ -314,13 +321,12 @@ dependencies\archives\swigwin-$(SWIG_TAG).zip:
 
 # Install Java protobuf
 
-install_java_protobuf: dependencies/install/lib/protobuf.jar
-
 dependencies/install/lib/protobuf.jar: dependencies/install/bin/protoc.exe
 	cd dependencies\\sources\\protobuf-$(PROTOBUF_TAG)\\java && \
 	  ..\\..\\..\\install\\bin\\protoc --java_out=core/src/main/java -I../src \
 	  ../src/google/protobuf/descriptor.proto
-	cd dependencies\\sources\\protobuf-$(PROTOBUF_TAG)\\java\\core\\src\\main\\java && jar cvf ..\\..\\..\\..\\..\\..\\..\\install\\lib\\protobuf.jar com\\google\\protobuf\\*java
+	cd dependencies\\sources\\protobuf-$(PROTOBUF_TAG)\\java\\core\\src\\main\\java && $(JAVAC_BIN) com\\google\\protobuf\\*java
+	cd dependencies\\sources\\protobuf-$(PROTOBUF_TAG)\\java\\core\\src\\main\\java && jar cvf ..\\..\\..\\..\\..\\..\\..\\install\\lib\\protobuf.jar com\\google\\protobuf\\*class
 
 # TODO: TBD: Don't know if this is a ubiquitous issue across platforms...
 # Handle a couple of extraneous circumstances involving TortoiseSVN caching and .svn readonly attributes.
@@ -361,6 +367,8 @@ Makefile.local: makefiles/Makefile.third_party.$(SYSTEM).mk
 	@echo # >> Makefile.local
 	@echo # Define WINDOWS_SCIP_DIR to point to a compiled version of SCIP to use it >> Makefile.local
 	@echo #   i.e.: path\\scip-4.0.0 >> Makefile.local
+	@echo # See instructions here: >> Makefile.local
+	@echo #   http://or-tools.blogspot.com/2017/03/changing-way-we-link-with-scip.html >> Makefile.local
 	@echo CLR_KEYFILE = bin\\or-tools.snk >> Makefile.local
 	@echo # Define WINDOWS_GUROBI_DIR and GUROBI_LIB_VERSION to use Gurobi >> Makefile.local
 	@echo # >> Makefile.local

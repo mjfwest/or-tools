@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,11 +14,18 @@
 #ifndef OR_TOOLS_SAT_CP_CONSTRAINTS_H_
 #define OR_TOOLS_SAT_CP_CONSTRAINTS_H_
 
-#include <unordered_map>
+#include <functional>
+#include <memory>
+#include <vector>
 
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/macros.h"
+#include "ortools/base/int_type.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/model.h"
-#include "ortools/util/sorted_interval_list.h"
+#include "ortools/sat/sat_base.h"
+#include "ortools/util/rev.h"
 
 namespace operations_research {
 namespace sat {
@@ -48,60 +55,6 @@ class BooleanXorPropagator : public PropagatorInterface {
   IntegerTrail* integer_trail_;
 
   DISALLOW_COPY_AND_ASSIGN(BooleanXorPropagator);
-};
-
-// Initial version of the circuit/sub-circuit constraint.
-// It mainly report conflicts and do not propagate much.
-class CircuitPropagator : PropagatorInterface, ReversibleInterface {
- public:
-  // The constraints take a dense representation of a graph on [0, n). Each arc
-  // being present when the given literal is true. The special values
-  // kTrueLiteralIndex and kFalseLiteralIndex can be used for arcs that are
-  // either always there or never there.
-  CircuitPropagator(const std::vector<std::vector<LiteralIndex>>& graph,
-                    bool allow_subcircuit, Trail* trail);
-
-  void SetLevel(int level) final;
-  bool Propagate() final;
-  bool IncrementalPropagate(const std::vector<int>& watch_indices) final;
-  void RegisterWith(GenericLiteralWatcher* watcher);
-
- private:
-  // Clears and fills trail_->MutableConflict() with the literals of the arcs
-  // that form a cycle containing the given node.
-  void FillConflictFromCircuitAt(int start);
-
-  const int num_nodes_;
-  const bool allow_subcircuit_;
-  Trail* trail_;
-
-  // Internal representation of the graph given at construction. Const.
-  struct Arc {
-    int tail;
-    int head;
-  };
-  std::vector<LiteralIndex> self_arcs_;
-
-  std::vector<Literal> watch_index_to_literal_;
-  std::vector<std::vector<Arc>> watch_index_to_arcs_;
-
-  // Index in trail_ up to which we propagated all the assigned Literals.
-  int propagation_trail_index_;
-
-  // Current partial chains of arc that are present.
-  std::vector<int> next_;  // -1 if not assigned yet.
-  std::vector<int> prev_;  // -1 if not assigned yet.
-  std::vector<LiteralIndex> next_literal_;
-
-  // Backtrack support for the partial chains of arcs, level_ends_[level] is an
-  // index in added_arcs_;
-  std::vector<int> level_ends_;
-  std::vector<Arc> added_arcs_;
-
-  // Temporary vector.
-  std::vector<bool> in_circuit_;
-
-  DISALLOW_COPY_AND_ASSIGN(CircuitPropagator);
 };
 
 // Base class to help writing CP inspired constraints.
@@ -210,16 +163,21 @@ class NonOverlappingRectanglesPropagator : public CpPropagator {
   DISALLOW_COPY_AND_ASSIGN(NonOverlappingRectanglesPropagator);
 };
 
-// In an "int element" constraint, a target variable is equal to one of a given
-// set of candidate variables, each selected by a given literal. This propagator
-// is reponsible for updating the min of the target variable using the min of
-// the candidate variables that can still be choosen.
-class OneOfVarMinPropagator : public PropagatorInterface {
+// If we have:
+//  - selectors[i] =>  (target_var >= vars[i] + offset[i])
+//  - and we known that at least one selectors[i] must be true
+// then we can propagate the fact that if no selectors is chosen yet, the lower
+// bound of target_var is greater than the min of the still possible
+// alternatives.
+//
+// This constraint take care of this case when no selectors[i] is chosen yet.
+class GreaterThanAtLeastOneOfPropagator : public PropagatorInterface {
  public:
-  OneOfVarMinPropagator(IntegerVariable target_var,
-                        const std::vector<IntegerVariable>& vars,
-                        const std::vector<Literal>& selectors, Trail* trail,
-                        IntegerTrail* integer_trail);
+  GreaterThanAtLeastOneOfPropagator(IntegerVariable target_var,
+                                    const std::vector<IntegerVariable>& vars,
+                                    const std::vector<IntegerValue>& offsets,
+                                    const std::vector<Literal>& selectors,
+                                    Model* model);
 
   bool Propagate() final;
   void RegisterWith(GenericLiteralWatcher* watcher);
@@ -227,14 +185,16 @@ class OneOfVarMinPropagator : public PropagatorInterface {
  private:
   const IntegerVariable target_var_;
   const std::vector<IntegerVariable> vars_;
+  const std::vector<IntegerValue> offsets_;
   const std::vector<Literal> selectors_;
+
   Trail* trail_;
   IntegerTrail* integer_trail_;
 
   std::vector<Literal> literal_reason_;
   std::vector<IntegerLiteral> integer_reason_;
 
-  DISALLOW_COPY_AND_ASSIGN(OneOfVarMinPropagator);
+  DISALLOW_COPY_AND_ASSIGN(GreaterThanAtLeastOneOfPropagator);
 };
 
 // ============================================================================
@@ -331,30 +291,14 @@ inline std::function<void(Model*)> StrictNonOverlappingFixedSizeRectangles(
   };
 }
 
-// Enforces that exactly one literal per rows and per columns is true.
-// This only work for a square matrix (but could easily be generalized).
-std::function<void(Model*)> ExactlyOnePerRowAndPerColumn(
-    const std::vector<std::vector<LiteralIndex>>& square_matrix);
-
-inline std::function<void(Model*)> CircuitConstraint(
-    const std::vector<std::vector<LiteralIndex>>& graph) {
+inline std::function<void(Model*)> GreaterThanAtLeastOneOf(
+    IntegerVariable target_var, const std::vector<IntegerVariable>& vars,
+    const std::vector<IntegerValue>& offsets,
+    const std::vector<Literal>& selectors) {
   return [=](Model* model) {
-    if (graph.empty()) return;
-    model->Add(ExactlyOnePerRowAndPerColumn(graph));
-    CircuitPropagator* constraint = new CircuitPropagator(
-        graph, /*allow_subcircuit=*/false, model->GetOrCreate<Trail>());
-    constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
-    model->TakeOwnership(constraint);
-  };
-}
-
-inline std::function<void(Model*)> SubcircuitConstraint(
-    const std::vector<std::vector<LiteralIndex>>& graph) {
-  return [=](Model* model) {
-    if (graph.empty()) return;
-    model->Add(ExactlyOnePerRowAndPerColumn(graph));
-    CircuitPropagator* constraint = new CircuitPropagator(
-        graph, /*allow_subcircuit=*/true, model->GetOrCreate<Trail>());
+    GreaterThanAtLeastOneOfPropagator* constraint =
+        new GreaterThanAtLeastOneOfPropagator(target_var, vars, offsets,
+                                              selectors, model);
     constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
     model->TakeOwnership(constraint);
   };
@@ -367,27 +311,22 @@ inline std::function<void(Model*)> SubcircuitConstraint(
 // to the min/max of the target variable. The full constraint also requires
 // to deal with the case when one of the literal is true.
 //
-// Note(user): If there is just one or two candiates, this doesn't add anything.
+// Note(user): If there is just one or two candidates, this doesn't add
+// anything.
 inline std::function<void(Model*)> PartialIsOneOfVar(
     IntegerVariable target_var, const std::vector<IntegerVariable>& vars,
     const std::vector<Literal>& selectors) {
   CHECK_EQ(vars.size(), selectors.size());
   return [=](Model* model) {
+    const std::vector<IntegerValue> offsets(vars.size(), IntegerValue(0));
     if (vars.size() > 2) {
       // Propagate the min.
-      OneOfVarMinPropagator* constraint = new OneOfVarMinPropagator(
-          target_var, vars, selectors, model->GetOrCreate<Trail>(),
-          model->GetOrCreate<IntegerTrail>());
-      constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
-      model->TakeOwnership(constraint);
+      model->Add(GreaterThanAtLeastOneOf(target_var, vars, offsets, selectors));
     }
     if (vars.size() > 2) {
       // Propagate the max.
-      OneOfVarMinPropagator* constraint = new OneOfVarMinPropagator(
-          NegationOf(target_var), NegationOf(vars), selectors,
-          model->GetOrCreate<Trail>(), model->GetOrCreate<IntegerTrail>());
-      constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
-      model->TakeOwnership(constraint);
+      model->Add(GreaterThanAtLeastOneOf(NegationOf(target_var),
+                                         NegationOf(vars), offsets, selectors));
     }
   };
 }

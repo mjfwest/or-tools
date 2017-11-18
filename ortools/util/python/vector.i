@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -162,7 +162,9 @@ PY_LIST_OUTPUT_TYPEMAP(double, PyFloat_Check, PyFloat_FromDouble);
   }
 }
 
-%apply const std::vector<std::vector<type> >& { const std::vector<std::vector<type> >& }
+%apply const std::vector<std::vector<type> >& {
+  const std::vector<std::vector<type> >&
+}
 %enddef  // PY_LIST_LIST_INPUT_TYPEMAP
 
 PY_LIST_LIST_INPUT_TYPEMAP(long long, SwigPyIntOrLong_Check);

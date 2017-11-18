@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,9 +14,14 @@
 #ifndef OR_TOOLS_SAT_PRECEDENCES_H_
 #define OR_TOOLS_SAT_PRECEDENCES_H_
 
-#include <algorithm>
-#include <queue>
+#include <deque>
+#include <functional>
+#include <vector>
 
+#include "ortools/base/integral_types.h"
+#include "ortools/base/macros.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_base.h"
@@ -39,27 +44,15 @@ namespace sat {
 // Another word is "separation logic".
 class PrecedencesPropagator : public SatPropagator, PropagatorInterface {
  public:
-  PrecedencesPropagator(Trail* trail, IntegerTrail* integer_trail,
-                        GenericLiteralWatcher* watcher)
+  explicit PrecedencesPropagator(Model* model)
       : SatPropagator("PrecedencesPropagator"),
-        trail_(trail),
-        integer_trail_(integer_trail),
-        watcher_(watcher),
-        watcher_id_(watcher->Register(this)) {
+        trail_(model->GetOrCreate<Trail>()),
+        integer_trail_(model->GetOrCreate<IntegerTrail>()),
+        watcher_(model->GetOrCreate<GenericLiteralWatcher>()),
+        watcher_id_(watcher_->Register(this)) {
+    model->GetOrCreate<SatSolver>()->AddPropagator(this);
     integer_trail_->RegisterWatcher(&modified_vars_);
-    watcher->SetPropagatorPriority(watcher_id_, 0);
-  }
-
-  static PrecedencesPropagator* CreateInModel(Model* model) {
-    PrecedencesPropagator* precedences = new PrecedencesPropagator(
-        model->GetOrCreate<Trail>(), model->GetOrCreate<IntegerTrail>(),
-        model->GetOrCreate<GenericLiteralWatcher>());
-
-    // TODO(user): Find a way to have more control on the order in which
-    // the propagators are added.
-    model->GetOrCreate<SatSolver>()->AddPropagator(
-        std::unique_ptr<PrecedencesPropagator>(precedences));
-    return precedences;
+    watcher_->SetPropagatorPriority(watcher_id_, 0);
   }
 
   bool Propagate() final;
@@ -95,22 +88,6 @@ class PrecedencesPropagator : public SatPropagator, PropagatorInterface {
                                    IntegerValue offset,
                                    IntegerVariable offset_var, LiteralIndex l);
 
-  // An optional integer variable has a special behavior:
-  // - If the bounds on i cross each other, then is_present must be false.
-  // - It will only propagate any outgoing arcs if is_present is true.
-  //
-  // TODO(user): Accept a BinaryImplicationGraph* here, so that and arc
-  // (tail -> head) can still propagate if tail.is_present => head.is_present.
-  // Note that such propagation is only useful if the status of tail presence
-  // is still undecided. Note that we do propagate if tail and head have the
-  // same presence literal (see ArcShouldPropagate()).
-  //
-  // TODO(user): use instead integer_trail_->VariableIsOptional()? Note that the
-  // meaning is not exactly the same, because here we also do not propagate the
-  // outgoing arcs. And we need to watch the is_present variable, so we still
-  // need to call this function.
-  void MarkIntegerVariableAsOptional(IntegerVariable i, Literal is_present);
-
   // Finds all the IntegerVariable that are "after" one of the IntegerVariable
   // in vars. Returns a vector of these precedences relation sorted by
   // IntegerPrecedences.var so that it is efficient to find all the
@@ -129,7 +106,7 @@ class PrecedencesPropagator : public SatPropagator, PropagatorInterface {
   struct IntegerPrecedences {
     int index;            // in vars.
     IntegerVariable var;  // An IntegerVariable that is >= to vars[index].
-    LiteralIndex reason;  // The reaon for it to be >= or kNoLiteralIndex.
+    LiteralIndex reason;  // The reason for it to be >= or kNoLiteralIndex.
 
     // Only needed for testing.
     bool operator==(const IntegerPrecedences& o) const {
@@ -139,6 +116,14 @@ class PrecedencesPropagator : public SatPropagator, PropagatorInterface {
   void ComputePrecedences(const std::vector<IntegerVariable>& vars,
                           const std::vector<bool>& to_consider,
                           std::vector<IntegerPrecedences>* output);
+
+  // Advanced usage. To be called once all the constraints have been added to
+  // the model. This will loop over all "node" in this class, and if one of its
+  // optional incoming arcs must be chosen, it will add a corresponding
+  // GreaterThanAtLeastOneOfConstraint(). Note that this might be a bit slow as
+  // it relies on the propagation engine to detect clauses between incoming arcs
+  // presence literals.
+  void AddGreaterThanAtLeastOneOfConstraints(Model* model);
 
  private:
   // Information about an individual arc.
@@ -154,6 +139,22 @@ class PrecedencesPropagator : public SatPropagator, PropagatorInterface {
     // should be false at the beginning of BellmanFordTarjan().
     mutable bool is_marked;
   };
+
+  // An optional integer variable has a special behavior:
+  // - If the bounds on i cross each other, then is_present must be false.
+  // - It will only propagate any outgoing arcs if is_present is true.
+  //
+  // TODO(user): Accept a BinaryImplicationGraph* here, so that and arc
+  // (tail -> head) can still propagate if tail.is_present => head.is_present.
+  // Note that such propagation is only useful if the status of tail presence
+  // is still undecided. Note that we do propagate if tail and head have the
+  // same presence literal (see ArcShouldPropagate()).
+  //
+  // TODO(user): use instead integer_trail_->VariableIsOptional()? Note that the
+  // meaning is not exactly the same, because here we also do not propagate the
+  // outgoing arcs. And we need to watch the is_present variable, so we still
+  // need to call this function.
+  void MarkIntegerVariableAsOptional(IntegerVariable i, Literal is_present);
 
   // Internal functions to add new precedence relations.
   //

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,30 +14,34 @@
 #include "ortools/sat/sat_solver.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
+#include <random>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/sysinfo.h"
-#include "google/protobuf/text_format.h"
 #include "ortools/base/split.h"
-#include "ortools/base/join.h"
+#include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/util/saturated_arithmetic.h"
+#include "ortools/base/adjustable_priority_queue-inl.h"
 
 namespace operations_research {
 namespace sat {
 
-SatSolver::SatSolver() : SatSolver(new Trail()) { owned_trail_.reset(trail_); }
+SatSolver::SatSolver() : SatSolver(new Model()) { owned_model_.reset(model_); }
 
-SatSolver::SatSolver(Trail* trail)
-    : num_variables_(0),
+SatSolver::SatSolver(Model* model)
+    : model_(model),
+      num_variables_(0),
       pb_constraints_(),
       track_binary_clauses_(false),
-      trail_(trail),
+      trail_(model->GetOrCreate<Trail>()),
       current_decision_level_(0),
       last_decision_or_backtrack_trail_index_(0),
       assumption_level_(0),
@@ -397,20 +401,20 @@ void SatSolver::AddLearnedClauseAndEnqueueUnitPropagation(
   }
 }
 
-void SatSolver::AddPropagator(std::unique_ptr<SatPropagator> propagator) {
+void SatSolver::AddPropagator(SatPropagator* propagator) {
   CHECK_EQ(CurrentDecisionLevel(), 0);
   problem_is_pure_sat_ = false;
-  trail_->RegisterPropagator(propagator.get());
-  external_propagators_.push_back(std::move(propagator));
+  trail_->RegisterPropagator(propagator);
+  external_propagators_.push_back(propagator);
   InitializePropagators();
 }
 
-void SatSolver::AddLastPropagator(std::unique_ptr<SatPropagator> propagator) {
+void SatSolver::AddLastPropagator(SatPropagator* propagator) {
   CHECK_EQ(CurrentDecisionLevel(), 0);
   CHECK(last_propagator_ == nullptr);
   problem_is_pure_sat_ = false;
-  trail_->RegisterPropagator(propagator.get());
-  last_propagator_ = std::move(propagator);
+  trail_->RegisterPropagator(propagator);
+  last_propagator_ = propagator;
   InitializePropagators();
 }
 
@@ -924,7 +928,6 @@ SatSolver::Status SatSolver::StatusWithLog(Status status) {
 }
 
 void SatSolver::SetAssumptionLevel(int assumption_level) {
-  DCHECK(!is_model_unsat_);
   CHECK_GE(assumption_level, 0);
   CHECK_LE(assumption_level, CurrentDecisionLevel());
   assumption_level_ = assumption_level;
@@ -1538,10 +1541,10 @@ void SatSolver::InitializePropagators() {
     propagators_.push_back(&pb_constraints_);
   }
   for (int i = 0; i < external_propagators_.size(); ++i) {
-    propagators_.push_back(external_propagators_[i].get());
+    propagators_.push_back(external_propagators_[i]);
   }
   if (last_propagator_ != nullptr) {
-    propagators_.push_back(last_propagator_.get());
+    propagators_.push_back(last_propagator_);
   }
 }
 
@@ -2405,8 +2408,6 @@ bool SatSolver::CanBeInferedFromConflictVariables(BooleanVariable variable) {
   variable_to_process_.push_back(variable);
 
   // First we expand the reason for the given variable.
-  DCHECK(!trail_->Reason(variable).empty())
-      << trail_->Info(variable).DebugString();
   for (Literal literal : trail_->Reason(variable)) {
     const BooleanVariable var = literal.Variable();
     DCHECK_NE(var, variable);
@@ -2467,7 +2468,6 @@ bool SatSolver::CanBeInferedFromConflictVariables(BooleanVariable variable) {
     // Expand the variable. This can be seen as making a recursive call.
     dfs_stack_.push_back(current_var);
     bool abort_early = false;
-    DCHECK(!trail_->Reason(current_var).empty());
     for (Literal literal : trail_->Reason(current_var)) {
       const BooleanVariable var = literal.Variable();
       DCHECK_NE(var, current_var);

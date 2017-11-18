@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,8 +13,12 @@
 
 #include "ortools/sat/disjunctive.h"
 
+#include <memory>
+
+#include "ortools/base/logging.h"
 #include "ortools/base/iterator_adaptors.h"
 #include "ortools/sat/all_different.h"
+#include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/sat_solver.h"
 
 namespace operations_research {
@@ -34,6 +38,7 @@ std::function<void(Model*)> Disjunctive(
     }
     if (is_all_different) {
       std::vector<IntegerVariable> starts;
+      starts.reserve(vars.size());
       for (const IntervalVariable var : vars) {
         starts.push_back(model->Get(StartVar(var)));
       }

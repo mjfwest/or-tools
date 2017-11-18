@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -75,8 +75,8 @@ bool IntervalsAreSortedAndDisjoint(
   return true;
 }
 
-bool SortedDisjointIntervalsContain(
-    const std::vector<ClosedInterval>& intervals, int64 value) {
+bool SortedDisjointIntervalsContain(gtl::Span<ClosedInterval> intervals,
+                                    int64 value) {
   for (const ClosedInterval& interval : intervals) {
     if (interval.start <= value && interval.end >= value) return true;
   }
@@ -264,6 +264,19 @@ std::vector<ClosedInterval> InverseMultiplicationOfSortedDisjointIntervals(
   return coeff > 0 ? intervals : NegationOfSortedDisjointIntervals(intervals);
 }
 
+std::vector<ClosedInterval> DivisionOfSortedDisjointIntervals(
+    std::vector<ClosedInterval> intervals, int64 coeff) {
+  CHECK_NE(coeff, 0);
+  DCHECK(IntervalsAreSortedAndDisjoint(intervals));
+  const int64 abs_coeff = std::abs(coeff);
+  for (ClosedInterval& i : intervals) {
+    i.start = i.start / abs_coeff;
+    i.end = i.end / abs_coeff;
+  }
+  UnionOfSortedIntervals(&intervals);
+  return coeff > 0 ? intervals : NegationOfSortedDisjointIntervals(intervals);
+}
+
 SortedDisjointIntervalList::SortedDisjointIntervalList() {}
 
 SortedDisjointIntervalList::SortedDisjointIntervalList(
@@ -372,7 +385,10 @@ SortedDisjointIntervalList::Iterator SortedDisjointIntervalList::GrowRightByOne(
   auto it_prev = it;
 
   // No interval containing or adjacent to "value" on the left (i.e. below).
-  if (it == begin() || ((--it_prev)->end < value - 1 && value != kint64min)) {
+  if (it != begin()) {
+    --it_prev;
+  }
+  if (it == begin() || ((value != kint64min) && it_prev->end < value - 1)) {
     *newly_covered = value;
     if (it == end() || it->start != value + 1) {
       // No interval adjacent to "value" on the right: insert a singleton.

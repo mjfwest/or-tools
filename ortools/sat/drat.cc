@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,12 +13,14 @@
 
 #include "ortools/sat/drat.h"
 
-#include "ortools/base/commandlineflags.h"
-#include "ortools/base/stringprintf.h"
+#include <algorithm>
+#include <cstdlib>
+#include <memory>
 
-DEFINE_string(
-    drat_output, "",
-    "If non-empty, a proof in DRAT format will be written to this file.");
+#include "ortools/base/logging.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/status.h"
 
 namespace operations_research {
 namespace sat {
@@ -28,16 +30,6 @@ DratWriter::~DratWriter() {
     CHECK_OK(file::WriteString(output_, buffer_, file::Defaults()));
     CHECK_OK(output_->Close(file::Defaults()));
   }
-}
-
-// static
-DratWriter* DratWriter::CreateInModel(Model* model) {
-  if (FLAGS_drat_output.empty()) return nullptr;
-  File* output;
-  CHECK_OK(file::Open(FLAGS_drat_output, "w", &output, file::Defaults()));
-  DratWriter* drat_writer = new DratWriter(/*in_binary_format=*/false, output);
-  model->TakeOwnership(drat_writer);
-  return drat_writer;
 }
 
 void DratWriter::ApplyMapping(

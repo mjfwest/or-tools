@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -12,6 +12,9 @@
 // limitations under the License.
 
 #include "ortools/sat/symmetry.h"
+
+#include "ortools/base/logging.h"
+#include "ortools/base/int_type.h"
 
 namespace operations_research {
 namespace sat {
@@ -145,7 +148,7 @@ gtl::Span<Literal> SymmetryPropagator::Reason(const Trail& trail,
                                                      int trail_index) const {
   SCOPED_TIME_STAT(&stats_);
   const ReasonInfo& reason_info = reasons_[trail_index];
-  std::vector<Literal>* reason = trail.GetVectorToStoreReason(trail_index);
+  std::vector<Literal>* reason = trail.GetEmptyVectorToStoreReason(trail_index);
   Permute(reason_info.symmetry_index,
           trail.Reason(trail[reason_info.source_trail_index].Variable()),
           reason);

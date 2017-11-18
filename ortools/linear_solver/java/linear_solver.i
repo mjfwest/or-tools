@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -136,8 +136,8 @@ import java.lang.reflect.*;
 // These aren't unit tested, as they only run on machines with a Gurobi license.
 %unignore operations_research::MPSolver::GUROBI_LINEAR_PROGRAMMING;
 %unignore operations_research::MPSolver::GUROBI_MIXED_INTEGER_PROGRAMMING;
-%unignore operations_research::MPSolver::SULUM_LINEAR_PROGRAMMING;
-%unignore operations_research::MPSolver::SULUM_MIXED_INTEGER_PROGRAMMING;
+%unignore operations_research::MPSolver::CPLEX_LINEAR_PROGRAMMING;
+%unignore operations_research::MPSolver::CPLEX_MIXED_INTEGER_PROGRAMMING;
 
 
 // Expose the MPSolver::ResultStatus enum.
@@ -209,6 +209,7 @@ import java.lang.reflect.*;
 %rename (name) operations_research::MPVariable::name;  // no test
 %rename (basisStatus) operations_research::MPVariable::basis_status;
 %rename (reducedCost) operations_research::MPVariable::reduced_cost;  // For experts only.
+%rename (index) operations_research::MPVariable::index;  // no test
 
 // MPConstraint: writer API.
 %rename (setCoefficient) operations_research::MPConstraint::SetCoefficient;

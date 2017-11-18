@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,10 +14,11 @@
 #include "ortools/sat/timetable.h"
 
 #include <algorithm>
+#include <functional>
+#include <memory>
 
-#include "ortools/sat/overload_checker.h"
-#include "ortools/sat/precedences.h"
-#include "ortools/sat/sat_solver.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/int_type.h"
 #include "ortools/util/sort.h"
 
 namespace operations_research {
@@ -315,7 +316,7 @@ void TimeTablingPerTask::ReverseProfile() {
 
 bool TimeTablingPerTask::SweepAllTasks() {
   // Tasks with a lower or equal demand will not be pushed.
-  const IntegerValue min_demand = CapacityMax() - profile_max_height_;
+  const IntegerValue min_demand = CapSub(CapacityMax(), profile_max_height_);
 
   for (int i = num_tasks_to_sweep_ - 1; i >= 0; --i) {
     const int t = tasks_to_sweep_[i];

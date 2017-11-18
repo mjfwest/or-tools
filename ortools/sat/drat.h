@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,8 +14,12 @@
 #ifndef OR_TOOLS_SAT_DRAT_H_
 #define OR_TOOLS_SAT_DRAT_H_
 
+#include <string>
+#include <vector>
+
 #include "ortools/base/file.h"
-#include "ortools/sat/model.h"
+#include "ortools/base/span.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/sat/sat_base.h"
 
 namespace operations_research {
@@ -34,10 +38,6 @@ class DratWriter {
         in_binary_format_(in_binary_format),
         output_(output) {}
   ~DratWriter();
-
-  // This tries to open the FLAGS_drat_file file and if it succeed it will
-  // return a non-nullptr DratWriter class.
-  static DratWriter* CreateInModel(Model* model);
 
   // During the presolve step, variable get deleted and the set of non-deleted
   // variable is remaped in a dense set. This allows to keep track of that and

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -60,7 +60,7 @@ int FixVariablesFromSat(const SatSolver& solver, glop::LinearProgram* lp);
 // polarity choices. The variable must have the same index in the solved lp
 // problem and in SAT for this to make sense.
 //
-// Returns false if a problem occured while trying to solve the lp.
+// Returns false if a problem occurred while trying to solve the lp.
 bool SolveLpAndUseSolutionForSatAssignmentPreference(
     const glop::LinearProgram& lp, SatSolver* sat_solver,
     double max_time_in_seconds);

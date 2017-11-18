@@ -22,10 +22,7 @@ from sys import version_info
 def read(fname):
     return open(pjoin(dirname(__file__), fname)).read()
 
-if version_info[0] >= 3:
-    install_requires = ["py3-ortools == VVVV"]
-else:
-    install_requires = ["ortools == VVVV"]
+install_requires = ["ortoolsXXXX == VVVV"]
 
 setup(
     name='ortools_examples',

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,7 +18,6 @@
 
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/port.h"
 #include "ortools/base/iterator_adaptors.h"
 
 namespace operations_research {
@@ -76,8 +75,12 @@ class AffineRelation {
     int representative;
     int64 coeff;
     int64 offset;
-    // TUPLE_DEFINE_STRUCT(Relation, (ctor, ostream, eq), (int, representative),
-    //                     (int64, coeff), (int64, offset));
+    Relation(int r, int64 c, int64 o)
+        : representative(r), coeff(c), offset(o) {}
+    const bool operator==(const Relation& other) const {
+      return representative == other.representative && coeff == other.coeff &&
+             offset == other.offset;
+    }
   };
   Relation Get(int x);
 

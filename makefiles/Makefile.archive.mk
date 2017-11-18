@@ -35,6 +35,8 @@ create_dirs:
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sgoogle
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sgraph
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sinclude$Sortools$Slinear_solver
+	$(MKDIR) temp$S$(INSTALL_DIR)$Sinclude$Sortools$Slp_data
+	$(MKDIR) temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sport
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sinclude$Sortools$Ssat
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sutil
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sexamples
@@ -59,6 +61,9 @@ create_dirs:
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sexamples$Sdata$Ssurvo_puzzle
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sexamples$Sdata$Squasigroup_completion
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sexamples$Sdata$Sdiscrete_tomography
+	$(MKDIR) temp$S$(INSTALL_DIR)$Sexamples$Sfsharp
+	$(MKDIR) temp$S$(INSTALL_DIR)$Sexamples$Sfsharp$Slib
+
 
 #credits
 	$(COPY) LICENSE-2.0.txt temp$S$(INSTALL_DIR)
@@ -84,12 +89,15 @@ cc_archive: cc
 	$(COPY) ortools$Sgraph$S*.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sgraph
 	$(COPY) ortools$Sgen$Sortools$Sgraph$S*.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sgraph
 	$(COPY) ortools$Slinear_solver$S*.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Slinear_solver
+	$(COPY) ortools$Slp_data$S*.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Slp_data
 	$(COPY) ortools$Sgen$Sortools$Slinear_solver$S*.pb.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Slinear_solver
+	$(COPY) ortools$Sport$S*.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sport
 	$(COPY) ortools$Ssat$S*.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Ssat
 	$(COPY) ortools$Sgen$Sortools$Ssat$S*.pb.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Ssat
 	$(COPY) ortools$Sutil$S*.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sutil
 
 ifeq "$(SYSTEM)" "win"
+	$(COPY) tools$Smake.exe temp$S$(INSTALL_DIR)
 	cd temp$S$(INSTALL_DIR) && ..$S..$Stools$Star.exe -C ..$S.. -c -v --exclude *svn* --exclude *roadef* examples$Sdata | ..$S..$Stools$Star.exe xvm
 
 	cd temp$S$(INSTALL_DIR)$Sinclude && ..$S..$S..$Stools$Star.exe -C ..$S..$S..$Sdependencies$Sinstall$Sinclude -c -v gflags | ..$S..$S..$Stools$Star.exe xvm
@@ -113,6 +121,9 @@ dotnet_archive: csharp
 	$(COPY) bin$SGoogle.Protobuf.dll temp$S$(INSTALL_DIR)$Sbin
 	$(COPY) bin$S$(CLR_ORTOOLS_DLL_NAME).dll temp$S$(INSTALL_DIR)$Sbin
 	$(COPY) examples$Scsharp$S*.cs temp$S$(INSTALL_DIR)$Sexamples$Scsharp
+	$(COPY) examples$Sfsharp$S*fsx temp$S$(INSTALL_DIR)$Sexamples$Sfsharp
+	$(COPY) examples$Sfsharp$SREADME.md temp$S$(INSTALL_DIR)$Sexamples$Sfsharp
+	$(COPY) examples$Sfsharp$Slib$S* temp$S$(INSTALL_DIR)$Sexamples$Sfsharp$Slib
 	$(COPY) examples$Scsharp$Ssolution$SProperties$S*.cs temp$S$(INSTALL_DIR)$Sexamples$Scsharp$Ssolution$SProperties
 	$(COPY) examples$Sdata$Sdiscrete_tomography$S* temp$S$(INSTALL_DIR)$Sexamples$Sdata$Sdiscrete_tomography
 	$(COPY) examples$Sdata$Sfill_a_pix$S* temp$S$(INSTALL_DIR)$Sexamples$Sdata$Sfill_a_pix

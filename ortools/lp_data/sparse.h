@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -341,8 +341,8 @@ class CompactSparseMatrix {
   //   const RowIndex row = compact_matrix_.EntryRow(i);
   //   const Fractional coefficient = compact_matrix_.EntryCoefficient(i);
   // }
-  IntegerRange<EntryIndex> Column(ColIndex col) const {
-    return IntegerRange<EntryIndex>(starts_[col], starts_[col + 1]);
+  util::IntegerRange<EntryIndex> Column(ColIndex col) const {
+    return util::IntegerRange<EntryIndex>(starts_[col], starts_[col + 1]);
   }
   Fractional EntryCoefficient(EntryIndex i) const { return coefficients_[i]; }
   RowIndex EntryRow(EntryIndex i) const { return rows_[i]; }

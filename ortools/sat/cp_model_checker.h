@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,7 +14,9 @@
 #ifndef OR_TOOLS_SAT_CP_MODEL_CHECKER_H_
 #define OR_TOOLS_SAT_CP_MODEL_CHECKER_H_
 
-#include "ortools/base/hash.h"
+#include <string>
+#include <vector>
+
 #include "ortools/base/integral_types.h"
 #include "ortools/sat/cp_model.pb.h"
 
@@ -29,7 +31,7 @@ namespace sat {
 std::string ValidateCpModel(const CpModelProto& model);
 
 // Verifies that the given variable assignment is a feasible solution of the
-// given model. The values vector should be in one to one correspondance with
+// given model. The values vector should be in one to one correspondence with
 // the model.variables() list of variables.
 bool SolutionIsFeasible(const CpModelProto& model,
                         const std::vector<int64>& variable_values);

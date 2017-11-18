@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -35,7 +35,7 @@
 //   store them.
 //
 // Provided implementations:
-//   - ListGraph<> for the simplest api
+//   - ListGraph<> for the simplest api. Also aliased to util::Graph.
 //   - StaticGraph<> for performance, but require calling Build(), see below
 //   - CompleteGraph<> if you need a fully connected graph
 //   - CompleteBipartiteGraph<> if you need a fully connected bipartite graph
@@ -153,8 +153,8 @@
 //   property incrementally rather than calling an algorithm that starts from
 //   scratch each time.
 
-#ifndef OR_TOOLS_GRAPH_GRAPH_H_
-#define OR_TOOLS_GRAPH_GRAPH_H_
+#ifndef UTIL_GRAPH_GRAPH_H_
+#define UTIL_GRAPH_GRAPH_H_
 
 #include <algorithm>
 #include <cstddef>
@@ -167,10 +167,10 @@
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
 #include "ortools/base/port.h"
-#include "ortools/util/iterators.h"
+#include "ortools/graph/iterators.h"
 
 
-namespace operations_research {
+namespace util {
 
 // Forward declaration.
 template <typename T>
@@ -2241,9 +2241,12 @@ IntegerRange<NodeIndexType> CompleteBipartiteGraph<
   }
 }
 
-}  // namespace operations_research
+// Defining the simplest Graph interface as Graph for convenience.
+typedef ListGraph<> Graph;
+
+}  // namespace util
 
 #undef DEFINE_RANGE_BASED_ARC_ITERATION
 #undef DEFINE_STL_ITERATOR_FUNCTIONS
 
-#endif  // OR_TOOLS_GRAPH_GRAPH_H_
+#endif  // UTIL_GRAPH_GRAPH_H_

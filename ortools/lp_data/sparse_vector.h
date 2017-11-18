@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -38,9 +38,9 @@
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"  // for CHECK*
 #include "ortools/base/stringprintf.h"
+#include "ortools/graph/iterators.h"
 #include "ortools/lp_data/lp_types.h"
 #include "ortools/lp_data/permutation.h"
-#include "ortools/util/iterators.h"
 #include "ortools/util/return_macros.h"
 
 namespace operations_research {
@@ -302,8 +302,8 @@ class SparseVector {
   //   for (const EntryIndex i : sparse_vector.AllEntryIndices()) { ... }
   // TODO(user): consider removing this, in favor of the natural range
   // iteration.
-  IntegerRange<EntryIndex> AllEntryIndices() const {
-    return IntegerRange<EntryIndex>(EntryIndex(0), num_entries_);
+ ::util::IntegerRange<EntryIndex> AllEntryIndices() const {
+    return ::util::IntegerRange<EntryIndex>(EntryIndex(0), num_entries_);
   }
 
   // Returns true if this vector is exactly equal to the given one, i.e. all its
@@ -595,18 +595,19 @@ void SparseVector<IndexType, IteratorType>::CleanUp() {
       entries.begin(), entries.end(),
       [](const std::pair<Index, Fractional>& a,
          const std::pair<Index, Fractional>& b) { return a.first < b.first; });
-  EntryIndex current_entry(0);
-  Index prev_index(-1);
-  for (const auto& entry : entries) {
-    if (prev_index == entry.first) --current_entry;
-    prev_index = entry.first;
-    if (entry.second != 0.0) {
-      MutableIndex(current_entry) = entry.first;
-      MutableCoefficient(current_entry) = entry.second;
-      ++current_entry;
+
+  EntryIndex new_size(0);
+  for (int i = 0; i < num_entries_; ++i) {
+    const std::pair<Index, Fractional> entry = entries[i];
+    if (entry.second == 0.0) continue;
+    if (i + 1 == num_entries_ ||
+        entry.first != entries[i + 1].first) {
+      MutableIndex(new_size) = entry.first;
+      MutableCoefficient(new_size) = entry.second;
+      ++new_size;
     }
   }
-  ResizeDown(current_entry);
+  ResizeDown(new_size);
   may_contain_duplicates_ = false;
 }
 

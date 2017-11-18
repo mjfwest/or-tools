@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -1608,7 +1608,7 @@ class RoutingDimension {
 
   // Accessors.
 #ifndef SWIG
-  const ReverseArcListGraph<int, int>& GetPrecedenceGraph() const {
+  const ::util::ReverseArcListGraph<int, int>& GetPrecedenceGraph() const {
     return precedence_graph_;
   }
 #endif
@@ -1690,7 +1690,7 @@ class RoutingDimension {
   std::vector<RoutingModel::TransitEvaluator2> class_evaluators_;
   std::vector<int64> vehicle_to_class_;
 #ifndef SWIG
-  ReverseArcListGraph<int, int> precedence_graph_;
+  ::util::ReverseArcListGraph<int, int> precedence_graph_;
 #endif
 
   // The transits of a dimension may depend on its cumuls or the cumuls of

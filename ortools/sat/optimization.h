@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,9 +19,13 @@
 #ifndef OR_TOOLS_SAT_OPTIMIZATION_H_
 #define OR_TOOLS_SAT_OPTIMIZATION_H_
 
-#include "ortools/sat/boolean_problem.h"
+#include <functional>
+#include <vector>
+
+#include "ortools/sat/boolean_problem.pb.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/model.h"
+#include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_solver.h"
 
 namespace operations_research {
@@ -35,6 +39,13 @@ namespace sat {
 // Important: The given SatSolver must be the one that just produced the given
 // core.
 void MinimizeCore(SatSolver* solver, std::vector<Literal>* core);
+
+// Like MinimizeCore() with a slower but strictly better heuristic. This
+// algorithm should produce a minimal core with respect to propagation. We put
+// each literal of the initial core "last" at least once, so if such literal can
+// be infered by propagation by any subset of the other literal, it will be
+// removed.
+void MinimizeCoreWithPropagation(SatSolver* solver, std::vector<Literal>* core);
 
 // Because the Solve*() functions below are also used in scripts that requires a
 // special output format, we use this to tell them whether or not to use the
@@ -132,12 +143,9 @@ SatSolver::Status MinimizeIntegerVariableWithLinearScanAndLazyEncoding(
     Model* model);
 
 // Same as MinimizeIntegerVariableWithLinearScanAndLazyEncoding() but use
-// a core-based approach instead. The given objective_var must be equal to the
-// sum of the given variables using the given coefficients.
-//
-// TODO(user): It is not needed to have objective_var and the linear objective
-// constraint encoded in the model. Remove this preconditions in order to
-// improve the solving time.
+// a core-based approach instead. Note that the given objective_var is just used
+// for reporting the lower-bound and do not need to be linked with its linear
+// representation.
 SatSolver::Status MinimizeWithCoreAndLazyEncoding(
     bool log_info, IntegerVariable objective_var,
     const std::vector<IntegerVariable>& variables,
@@ -146,18 +154,29 @@ SatSolver::Status MinimizeWithCoreAndLazyEncoding(
     const std::function<void(const Model&)>& feasible_solution_observer,
     Model* model);
 
-// Similar to MinimizeIntegerVariableWithLinearScanAndLazyEncoding() but use
-// a core based approach. Note that this require the objective to be given as
-// a weighted sum of literals
+#if defined(USE_CBC) || defined(USE_SCIP)
+// Generalization of the max-HS algorithm (HS stands for Hitting Set). This is
+// similar to MinimizeWithCoreAndLazyEncoding() but it uses an hybrid approach
+// with a MIP solver to handle the discovered infeasibility cores.
 //
-// TODO(user): The function above is more general, remove this one after
-// checking that the performances are similar.
-SatSolver::Status MinimizeWeightedLiteralSumWithCoreAndLazyEncoding(
-    bool log_info, const std::vector<Literal>& literals,
-    const std::vector<int64>& coeffs,
+// See, Jessica Davies and Fahiem Bacchus, "Solving MAXSAT by Solving a
+// Sequence of Simpler SAT Instances",
+// http://www.cs.toronto.edu/~jdavies/daviesCP11.pdf"
+//
+// Note that an implementation of this approach won the 2016 max-SAT competition
+// on the industrial category, see
+// http://maxsat.ia.udl.cat/results/#wpms-industrial
+//
+// TODO(user): This function brings dependency to the SCIP MIP solver which is
+// quite big, maybe we should find a way not to do that.
+SatSolver::Status MinimizeWithHittingSetAndLazyEncoding(
+    bool log_info, IntegerVariable objective_var,
+    std::vector<IntegerVariable> variables,
+    std::vector<IntegerValue> coefficients,
     const std::function<LiteralIndex()>& next_decision,
     const std::function<void(const Model&)>& feasible_solution_observer,
     Model* model);
+#endif  // defined(USE_CBC) || defined(USE_SCIP)
 
 }  // namespace sat
 }  // namespace operations_research

@@ -132,11 +132,6 @@ ifeq ($(PLATFORM),LINUX)
   CCC = g++ -fPIC -std=c++0x -fwrapv
   DYNAMIC_LD = g++ -shared
   CMAKE = cmake
-  ifeq ($(PTRLENGTH),64)
-    ARCH = -DARCH_K8
-  else
-    ARCH  =
-  endif
   CSC = $(PATH_TO_CSHARP_COMPILER)
   MONO = LD_LIBRARY_PATH=$(LIB_DIR):$(LD_LIBRARY_PATH) mono
 
@@ -145,7 +140,13 @@ ifeq ($(PLATFORM),LINUX)
   # This is needed to find libz.a
   ZLIB_LNK = -lz
   # This is needed to find libprotobuf.a
-  PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib/libprotobuf.a
+  ifeq ($(DISTRIBUTION_ID),Fedora)
+    PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib64/libprotobuf.a
+  else ifeq ($(DISTRIBUTION_ID),CentOS)
+    PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib64/libprotobuf.a
+  else
+    PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib/libprotobuf.a
+  endif
   # This is needed to find libglog.a
   GLOG_LNK = $(UNIX_GLOG_DIR)/lib/libglog.a
 
@@ -164,7 +165,7 @@ ifeq ($(PLATFORM),LINUX)
     else
       SCIP_ARCH = linux.x86.gnu.opt
     endif
-    SCIP_LNK = $(UNIX_SCIP_DIR)/lib/static/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libnlpi.cppad.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/liblpispx.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libsoplex.$(SCIP_ARCH).a
+    SCIP_LNK = $(UNIX_SCIP_DIR)/lib/static/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libnlpi.cppad.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/liblpispx2.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libsoplex.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libtpitny.$(SCIP_ARCH).a
   endif
   ifdef UNIX_GUROBI_DIR
     ifeq ($(PTRLENGTH),64)
@@ -214,7 +215,6 @@ ifeq ($(PLATFORM),MACOSX)
   PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib/libprotobuf.a
   GLOG_LNK = $(UNIX_GLOG_DIR)/lib/libglog.a
 
-  ARCH = -DARCH_K8
   SYS_LNK =
 
   JAVA_INC = -I$(JDK_DIRECTORY) -I$(JDK_DIRECTORY)/darwin
@@ -240,21 +240,21 @@ ifeq ($(PLATFORM),MACOSX)
   endif
   ifdef UNIX_SCIP_DIR
     SCIP_ARCH = darwin.x86_64.gnu.opt
-    SCIP_LNK = -force_load $(UNIX_SCIP_DIR)/lib/static/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libnlpi.cppad.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/static/liblpispx2.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/static/libsoplex.$(SCIP_ARCH).a
+    SCIP_LNK = -force_load $(UNIX_SCIP_DIR)/lib/static/libscip.$(SCIP_ARCH).a $(UNIX_SCIP_DIR)/lib/static/libnlpi.cppad.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/static/liblpispx2.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/static/libsoplex.$(SCIP_ARCH).a -force_load $(UNIX_SCIP_DIR)/lib/static/libtpitny.$(SCIP_ARCH).a
   endif
   ifdef UNIX_GUROBI_DIR
-    GUROBI_LNK = -L$(UNIX_GUROBI_DIR)/mac64/bin/ -m64 -lc -ldl -lm -lpthread -lgurobi$(GUROBI_LIB_VERSION)
+    GUROBI_LNK = -L$(UNIX_GUROBI_DIR)/mac64/bin/ -lc -ldl -lm -lpthread -lgurobi$(GUROBI_LIB_VERSION)
   endif
   ifdef UNIX_CPLEX_DIR
     CPLEX_LNK = -force_load $(UNIX_CPLEX_DIR)/cplex/lib/x86-64_osx/static_pic/libcplex.a -lm -lpthread -framework CoreFoundation -framework IOKit
   endif
 endif  # MAC OS X
 
-CFLAGS = $(DEBUG) -I$(INC_DIR) -I$(EX_DIR) -I$(GEN_DIR) $(GFLAGS_INC) $(ARCH) \
+CFLAGS = $(DEBUG) -I$(INC_DIR) -I$(EX_DIR) -I$(GEN_DIR) $(GFLAGS_INC) \
   -Wno-deprecated $(PROTOBUF_INC) $(CBC_INC) $(CLP_INC) $(GLPK_INC) \
         $(SCIP_INC) $(GUROBI_INC) $(CPLEX_INC) -DUSE_GLOP -DUSE_BOP $(GLOG_INC)
 
-JNIFLAGS = $(JNIDEBUG) -I$(INC_DIR) -I$(EX_DIR) -I$(GEN_DIR) $(GFLAGS_INC) $(ARCH) \
+JNIFLAGS = $(JNIDEBUG) -I$(INC_DIR) -I$(EX_DIR) -I$(GEN_DIR) $(GFLAGS_INC) \
         -Wno-deprecated $(PROTOBUF_INC) $(CBC_INC) $(CLP_INC) $(GLPK_INC) $(SCIP_INC) $(GUROBI_INC) $(CPLEX_INC) -DUSE_GLOP -DUSE_BOP
 DEPENDENCIES_LNK = $(GLPK_LNK) $(CBC_LNK) $(CLP_LNK) $(SCIP_LNK) $(LM_LNK) $(GUROBI_LNK) $(CPLEX_LNK) $(GFLAGS_LNK) $(PROTOBUF_LNK) $(GLOG_LNK)
 OR_TOOLS_LD_FLAGS = $(ZLIB_LNK) $(SYS_LNK)

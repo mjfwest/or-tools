@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,9 +14,14 @@
 #ifndef OR_TOOLS_SAT_CP_MODEL_SOLVER_H_
 #define OR_TOOLS_SAT_CP_MODEL_SOLVER_H_
 
+#include <functional>
+#include <string>
+#include <vector>
+
+#include "ortools/base/integral_types.h"
 #include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/integer.h"
 #include "ortools/sat/model.h"
+#include "ortools/sat/sat_parameters.pb.h"
 
 namespace operations_research {
 namespace sat {
@@ -33,15 +38,26 @@ std::string CpSolverResponseStats(const CpSolverResponse& response);
 // representation of the given CpModelProto. It is done this way so that it is
 // easy to set custom parameters or time limit on the model with calls like:
 //  - model->SetSingleton<TimeLimit>(std::move(time_limit));
-//  - model->Add(NewSatParameters(parameters_as_string));
+//  - model->Add(NewSatParameters(parameters_as_string_or_proto));
 CpSolverResponse SolveCpModel(const CpModelProto& model_proto, Model* model);
 
-// Same as above, but do not run the CpModelProto presolver. This is exposed for
-// internal usage, all client should use the version above.
+// Allows to register a solution "observer" with the model with
+//   model.Add(NewFeasibleSolutionObserver([](values){...}));
+// The given function will be called on each feasible solution found during the
+// search. The values will be in one to one correspondence with the variables
+// in the model_proto.
 //
-// TODO(user): add a parameters to enable/disable the presolve.
-CpSolverResponse SolveCpModelWithoutPresolve(const CpModelProto& model_proto,
-                                             Model* model);
+// Hack: For the non-fully instantiated variables, the value will be the
+// propagated lower bound. Note that this will be fixed with the TODO below.
+std::function<void(Model*)> NewFeasibleSolutionObserver(
+    const std::function<void(const CpSolverResponse& response)>& observer);
+
+// Allows to change the default parameters with
+//   model->Add(NewSatParameters(parameters_as_string_or_proto))
+// before calling SolveCpModel().
+std::function<SatParameters(Model*)> NewSatParameters(const std::string& params);
+std::function<SatParameters(Model*)> NewSatParameters(
+    const SatParameters& parameters);
 
 }  // namespace sat
 }  // namespace operations_research

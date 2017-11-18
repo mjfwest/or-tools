@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,8 +13,8 @@
 
 // A collections of i/o utilities for the Graph classes in ./graph.h.
 
-#ifndef OR_TOOLS_GRAPH_IO_H_
-#define OR_TOOLS_GRAPH_IO_H_
+#ifndef UTIL_GRAPH_IO_H_
+#define UTIL_GRAPH_IO_H_
 
 #include <algorithm>
 #include <memory>
@@ -22,16 +22,16 @@
 #include <string>
 #include <vector>
 
+#include "ortools/util/filelineiter.h"
 #include "ortools/base/join.h"
 #include "ortools/base/numbers.h"
 #include "ortools/base/split.h"
 #include "ortools/base/join.h"
 #include "ortools/graph/graph.h"
-#include "ortools/util/filelineiter.h"
 #include "ortools/base/status.h"
 #include "ortools/base/statusor.h"
 
-namespace operations_research {
+namespace util {
 
 // Returns a std::string representation of a graph.
 enum GraphToStringFormat {
@@ -135,11 +135,12 @@ util::StatusOr<Graph*> ReadGraphFile(
   int64 num_nodes = -1;
   int64 num_expected_lines = -1;
   int64 num_lines_read = 0;
-  for (const std::string& line : FileLines(filename)) {
+  for (const std::string& line : operations_research::FileLines(filename)) {
     ++num_lines_read;
     if (num_lines_read == 1) {
       std::vector<int64> header_ints;
-      if (!SplitStringAndParse(line, " ", &safe_strto64, &header_ints) ||
+      if (!SplitStringAndParse(line, " ", &operations_research::safe_strto64,
+                               &header_ints) ||
           header_ints.size() < 2 || header_ints[0] < 0 || header_ints[1] < 0) {
         return util::Status(
             util::error::INVALID_ARGUMENT,
@@ -278,6 +279,6 @@ util::Status WriteGraphToFile(const Graph& graph, const std::string& filename,
   return util::Status::OK;
 }
 
-}  // namespace operations_research
+}  // namespace util
 
-#endif  // OR_TOOLS_GRAPH_IO_H_
+#endif  // UTIL_GRAPH_IO_H_

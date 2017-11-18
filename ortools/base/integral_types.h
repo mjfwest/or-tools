@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,6 +15,16 @@
 #define OR_TOOLS_BASE_INTEGRAL_TYPES_H_
 
 #include <iostream>  // NOLINT
+
+// Detect 64 bit.
+#undef ARCH_K8
+#if defined(_MSC_VER) && defined(_WIN64)
+#define ARCH_K8
+#elif defined(__APPLE__) && defined(__GNUC__)
+#define ARCH_K8  // We only support 64 bit on Mac OS X.
+#elif defined(__GNUC__) && defined(__LP64__)  // Linux
+#define ARCH_K8
+#endif
 
 #ifndef SWIG
 // Standard typedefs

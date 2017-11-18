@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,12 +19,8 @@
 #include <string>
 #include <vector>
 
-#include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/sysinfo.h"
-#include "ortools/base/join.h"
 #include "ortools/base/stl_util.h"
-#include "ortools/util/time_limit.h"
 
 namespace operations_research {
 namespace sat {
@@ -540,7 +536,7 @@ void BinaryImplicationGraph::MinimizeConflictExperimental(
 
 void BinaryImplicationGraph::RemoveFixedVariables(
     int first_unprocessed_trail_index, const Trail& trail) {
-  const VariablesAssignment& assigment = trail.Assignment();
+  const VariablesAssignment& assignment = trail.Assignment();
   SCOPED_TIME_STAT(&stats_);
   is_marked_.ClearAndResize(LiteralIndex(implications_.size()));
   for (int i = first_unprocessed_trail_index; i < trail.Index(); ++i) {
@@ -557,9 +553,9 @@ void BinaryImplicationGraph::RemoveFixedVariables(
     STLClearObject(&(implications_[true_literal.NegatedIndex()]));
   }
   for (const LiteralIndex i : is_marked_.PositionsSetAtLeastOnce()) {
-    RemoveIf(&implications_[i],
-             std::bind1st(std::mem_fun(&VariablesAssignment::LiteralIsTrue),
-                          &assigment));
+    RemoveIf(&implications_[i], [&assignment](const Literal& lit) {
+      return assignment.LiteralIsTrue(lit);
+    });
   }
 }
 

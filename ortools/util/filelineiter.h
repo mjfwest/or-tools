@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -117,7 +117,8 @@ class FileLineIterator {
 class FileLines {
  public:
   FileLines(const std::string& filename, int options) : options_(options) {
-    file_ = File::Open(filename, "r");
+    if (!file::Open(filename, "r", &file_, file::Defaults()).ok()) return;
+
   }
   explicit FileLines(const std::string& filename)
       : FileLines(filename, FileLineIterator::DEFAULT) {}

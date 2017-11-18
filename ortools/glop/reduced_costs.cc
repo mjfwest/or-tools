@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -237,7 +237,6 @@ void ReducedCosts::PerturbCosts() {
   SCOPED_TIME_STAT(&stats_);
   VLOG(1) << "Perturbing the costs ... ";
 
-  // Note(user): The max_cost_magnitude should be 1.0 when cost scaling is on.
   Fractional max_cost_magnitude = 0.0;
   const ColIndex structural_size =
       matrix_.num_cols() - RowToColIndex(matrix_.num_rows());

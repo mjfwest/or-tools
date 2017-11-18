@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,21 +14,31 @@
 #ifndef OR_TOOLS_SAT_INTEGER_H_
 #define OR_TOOLS_SAT_INTEGER_H_
 
-#include <queue>
-#include <set>
+#include <deque>
+#include <functional>
+#include <unordered_map>
+#include <limits>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/port.h"
+#include "ortools/base/macros.h"
 #include "ortools/base/inlined_vector.h"
 #include "ortools/base/join.h"
 #include "ortools/base/span.h"
+#include "ortools/graph/iterators.h"
 #include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/map_util.h"
+#include "ortools/base/hash.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/util/bitset.h"
-#include "ortools/util/iterators.h"
 #include "ortools/util/rev.h"
 #include "ortools/util/saturated_arithmetic.h"
 #include "ortools/util/sorted_interval_list.h"
@@ -87,12 +97,13 @@ inline IntegerVariable NegationOf(IntegerVariable i) {
   return IntegerVariable(i.value() ^ 1);
 }
 
+inline bool VariableIsPositive(IntegerVariable i) {
+  return (i.value() & 1) == 0;
+}
+
 // Returns the vector of the negated variables.
 std::vector<IntegerVariable> NegationOf(
     const std::vector<IntegerVariable>& vars);
-
-class IntegerEncoder;
-class IntegerTrail;
 
 // The integer equivalent of a literal.
 // It represents an IntegerVariable and an upper/lower bound on it.
@@ -100,9 +111,6 @@ class IntegerTrail;
 // Overflow: all the bounds below kMinIntegerValue and kMaxIntegerValue are
 // treated as kMinIntegerValue - 1 and kMaxIntegerValue + 1.
 struct IntegerLiteral {
-  // This default constructor is needed for std::vector<IntegerLiteral>.
-  IntegerLiteral() : var(-1), bound(0) {}
-
   // Because IntegerLiteral should never be created at a bound less constrained
   // than an existing IntegerVariable bound, we don't allow GreaterOrEqual() to
   // have a bound lower than kMinIntegerValue, and LowerOrEqual() to have a
@@ -111,6 +119,13 @@ struct IntegerLiteral {
   // domain and the empty domain can always be represented.
   static IntegerLiteral GreaterOrEqual(IntegerVariable i, IntegerValue bound);
   static IntegerLiteral LowerOrEqual(IntegerVariable i, IntegerValue bound);
+
+  // Clients should prefer the static construction methods above.
+  IntegerLiteral() : var(-1), bound(0) {}
+  IntegerLiteral(IntegerVariable v, IntegerValue b) : var(v), bound(b) {
+    DCHECK_GE(bound, kMinIntegerValue);
+    DCHECK_LE(bound, kMaxIntegerValue + 1);
+  }
 
   // The negation of x >= bound is x <= bound - 1.
   IntegerLiteral Negated() const;
@@ -122,28 +137,15 @@ struct IntegerLiteral {
     return var != o.var || bound != o.bound;
   }
 
-  IntegerVariable Var() const { return IntegerVariable(var); }
-  IntegerValue Bound() const { return bound; }
-
   std::string DebugString() const {
-    return StrCat("I", var, ">=", bound.value());
+    return VariableIsPositive(var)
+               ? StrCat("I", var.value() / 2, ">=", bound.value())
+               : StrCat("I", var.value() / 2, "<=", -bound.value());
   }
 
- private:
-  friend class IntegerEncoder;
-  friend class IntegerTrail;
-
-  IntegerLiteral(IntegerVariable v, IntegerValue b) : var(v.value()), bound(b) {
-    DCHECK_GE(bound, kMinIntegerValue);
-    DCHECK_LE(bound, kMaxIntegerValue + 1);
-  }
-
-  // Our external API uses IntegerVariable but internally we only use an int for
-  // simplicity. TODO(user): change this?
-  //
-  // Note that bound is always in [kMinIntegerValue, kMaxIntegerValue + 1].
-  /*const*/ int var;
-  /*const*/ IntegerValue bound;
+  // Note that bound should be in [kMinIntegerValue, kMaxIntegerValue + 1].
+  IntegerVariable var;
+  IntegerValue bound;
 };
 
 inline std::ostream& operator<<(std::ostream& os, IntegerLiteral i_lit) {
@@ -152,6 +154,13 @@ inline std::ostream& operator<<(std::ostream& os, IntegerLiteral i_lit) {
 }
 
 using InlinedIntegerLiteralVector = gtl::InlinedVector<IntegerLiteral, 2>;
+
+// A singleton that holds the INITIAL integer variable domains.
+struct IntegerDomains
+    : public ITIVector<IntegerVariable,
+                       gtl::InlinedVector<ClosedInterval, 1>> {
+  explicit IntegerDomains(Model* model) {}
+};
 
 // Each integer variable x will be associated with a set of literals encoding
 // (x >= v) for some values of v. This class maintains the relationship between
@@ -173,27 +182,17 @@ using InlinedIntegerLiteralVector = gtl::InlinedVector<IntegerLiteral, 2>;
 // though.
 class IntegerEncoder {
  public:
-  explicit IntegerEncoder(SatSolver* sat_solver)
-      : sat_solver_(sat_solver), num_created_variables_(0) {}
+  explicit IntegerEncoder(Model* model)
+      : sat_solver_(model->GetOrCreate<SatSolver>()),
+        domains_(model->GetOrCreate<IntegerDomains>()),
+        num_created_variables_(0) {}
 
   ~IntegerEncoder() {
     VLOG(1) << "#variables created = " << num_created_variables_;
   }
 
-  static IntegerEncoder* CreateInModel(Model* model) {
-    SatSolver* sat_solver = model->GetOrCreate<SatSolver>();
-    IntegerEncoder* encoder = new IntegerEncoder(sat_solver);
-    model->TakeOwnership(encoder);
-    return encoder;
-  }
-
-  // Fully encode a variable. This can be called only once.
-  //
-  // Important: this should really only be called with
-  // integer_trail_->InitialVariableDomain() which can be updated with
-  // integer_trail_->UpdateInitialDomain().
-  //
-  // TODO(user): clean this up by enforcing this programmatically.
+  // Fully encode a variable using its current initial domain.
+  // This can be called only once.
   //
   // This creates new Booleans variables as needed:
   // 1) num_values for the literals X == value. Except when there is just
@@ -205,88 +204,81 @@ class IntegerEncoder {
   // The encoding for NegationOf(var) is automatically created too. It reuses
   // the same Boolean variable as the encoding of var.
   //
-  // Note(user): Calling this with just one value will cause a CHECK fail.
-  // We don't really want to create a fixed Boolean.
-  //
   // TODO(user): It is currently only possible to call that at the decision
   // level zero because we cannot add ternary clause in the middle of the
   // search (for now). This is Checked.
-  void FullyEncodeVariable(IntegerVariable var,
-                           const std::vector<ClosedInterval>& domain);
+  void FullyEncodeVariable(IntegerVariable var);
 
-  // Similar to FullyEncodeVariable() but use the given literal for each values.
-  // This can only be called on variable that are not fully encoded yet, This is
-  // checked. Duplicates values are not supported.
-  void FullyEncodeVariableUsingGivenLiterals(
-      IntegerVariable var, const std::vector<Literal>& literals,
-      const std::vector<IntegerValue>& values);
-
-  // Gets the full encoding of a variable on which FullyEncodeVariable() has
+  // Computes the full encoding of a variable on which FullyEncodeVariable() has
   // been called. The returned elements are always sorted by increasing
-  // IntegerValue. Once created, the encoding never changes, but some Boolean
-  // variables may become fixed.
-  //
-  // IMPORTANT: the returned vector will be sorted by value, but may contain
-  // duplicates values! IntegerTrail is doing the correct thing in this case.
-  // This allows us to direcly support the "int element" constraint and its
-  // variant at the core level.
+  // IntegerValue and we filter values associated to false literals.
   struct ValueLiteralPair {
     ValueLiteralPair(IntegerValue v, Literal l) : value(v), literal(l) {}
     bool operator==(const ValueLiteralPair& o) const {
       return value == o.value && literal == o.literal;
     }
-    bool operator<(const ValueLiteralPair& o) const { return value < o.value; }
     IntegerValue value;
     Literal literal;
   };
-  const std::vector<ValueLiteralPair>& FullDomainEncoding(
-      IntegerVariable var) const {
-    return full_encoding_[FindOrDie(full_encoding_index_, var)];
-  }
+  std::vector<ValueLiteralPair> FullDomainEncoding(IntegerVariable var) const;
 
   // Returns true if a variable is fully encoded.
   bool VariableIsFullyEncoded(IntegerVariable var) const {
-    return ContainsKey(full_encoding_index_, var);
+    if (var >= is_fully_encoded_.size()) return false;
+    return is_fully_encoded_[var];
   }
 
-  // Returns the set of variable encoded as the keys in a map. The map values
-  // only have an internal meaning. The set of encoded variables is returned
-  // with this "weird" api for efficiency.
-  const std::unordered_map<IntegerVariable, int>& GetFullyEncodedVariables() const {
-    return full_encoding_index_;
-  }
+  // Returns the "canonical" (i_lit, negation of i_lit) pair. This mainly
+  // deal with domain with initial hole like [1,2][5,6] so that if one ask
+  // for x <= 3, this get canonicalized in the pair (x <= 2, x >= 5).
+  //
+  // Note that it is an error to call this with a literal that is trivially true
+  // or trivially false according to the initial variable domain. This is
+  // CHECKed to make sure we don't create wasteful literal.
+  //
+  // TODO(user): This is linear in the domain "complexity", we can do better if
+  // needed.
+  std::pair<IntegerLiteral, IntegerLiteral> Canonicalize(
+      IntegerLiteral i_lit) const;
 
-  // Creates a new Boolean variable 'var' such that
+  // Returns, after creating it if needed, a Boolean literal such that:
   // - if true, then the IntegerLiteral is true.
   // - if false, then the negated IntegerLiteral is true.
   //
-  // Returns Literal(var, true).
+  // Note that this "canonicalize" the given literal first.
   //
   // This add the proper implications with the two "neighbor" literals of this
   // one if they exist. This is the "list encoding" in: Thibaut Feydy, Peter J.
   // Stuckey, "Lazy Clause Generation Reengineered", CP 2009.
-  //
-  // It is an error to call this with an already created literal. This is
-  // Checked.
-  //
-  // The second version use the given literal instead of creating a new
-  // variable.
-  Literal CreateAssociatedLiteral(IntegerLiteral i_lit);
-  void AssociateGivenLiteral(IntegerLiteral i_lit, Literal wanted);
-
-  // Same as CreateAssociatedLiteral() but safe to call if already created.
   Literal GetOrCreateAssociatedLiteral(IntegerLiteral i_lit);
+  Literal GetOrCreateLiteralAssociatedToEquality(IntegerVariable var,
+                                                 IntegerValue value);
 
-  // Only add the equivalence between i_lit and literal, if there is already an
-  // associated literal with i_lit, this make literal and this associated
-  // literal equivalent.
-  void HalfAssociateGivenLiteral(IntegerLiteral i_lit, Literal literal);
+  // Associates the Boolean literal to (X >= bound) or (X == value). If a
+  // literal was already associated to this fact, this will add an equality
+  // constraints between both literals. If the fact is trivially true or false,
+  // this will fix the given literal.
+  void AssociateToIntegerLiteral(Literal literal, IntegerLiteral i_lit);
+  void AssociateToIntegerEqualValue(Literal literal, IntegerVariable var,
+                                    IntegerValue value);
 
-  // Return true iff the given integer literal is associated.
+  // Returns true iff the given integer literal is associated. The second
+  // version returns the associated literal or kNoLiteralIndex. Note that none
+  // of these function call Canonicalize() first for speed, so it is possible
+  // that this returns false even though GetOrCreateAssociatedLiteral() would
+  // not create a new literal.
   bool LiteralIsAssociated(IntegerLiteral i_lit) const;
-
-  // Returns the associated literal or kNoLiteralIndex.
   LiteralIndex GetAssociatedLiteral(IntegerLiteral i_lit);
+
+  // Advanced usage. It is more efficient to create the associated literals in
+  // order, but it might be anoying to do so. Instead, you can first call
+  // DisableImplicationBetweenLiteral() and when you are done creating all the
+  // associated literals, you can call (only at level zero)
+  // AddAllImplicationsBetweenAssociatedLiterals() which will also turn back on
+  // the implications between literals for the one that will be added
+  // afterwards.
+  void DisableImplicationBetweenLiteral() { add_implications_ = false; }
+  void AddAllImplicationsBetweenAssociatedLiterals();
 
   // Returns the IntegerLiterals that were associated with the given Literal.
   const InlinedIntegerLiteralVector& GetIntegerLiterals(Literal lit) const {
@@ -306,13 +298,33 @@ class IntegerEncoder {
   // (x >= 2).
   LiteralIndex SearchForLiteralAtOrBefore(IntegerLiteral i) const;
 
+  // Get the literal always set to true, make it if it does not exist.
+  Literal GetLiteralTrue() {
+    DCHECK_EQ(0, sat_solver_->CurrentDecisionLevel());
+    if (literal_index_true_ == kNoLiteralIndex) {
+      const Literal literal_true =
+          Literal(sat_solver_->NewBooleanVariable(), true);
+      literal_index_true_ = literal_true.Index();
+      sat_solver_->AddUnitClause(literal_true);
+    }
+    return Literal(literal_index_true_);
+  }
+
  private:
+  // Only add the equivalence between i_lit and literal, if there is already an
+  // associated literal with i_lit, this make literal and this associated
+  // literal equivalent.
+  void HalfAssociateGivenLiteral(IntegerLiteral i_lit, Literal literal);
+
   // Adds the new associated_lit to encoding_by_var_.
   // Adds the implications: Literal(before) <= associated_lit <= Literal(after).
   void AddImplications(IntegerLiteral i, Literal associated_lit);
 
   SatSolver* sat_solver_;
-  int64 num_created_variables_;
+  IntegerDomains* domains_;
+
+  bool add_implications_ = true;
+  int64 num_created_variables_ = 0;
 
   // We keep all the literals associated to an Integer variable in a map ordered
   // by bound (so we can properly add implications between the literals
@@ -323,11 +335,18 @@ class IntegerEncoder {
   const InlinedIntegerLiteralVector empty_integer_literal_vector_;
   ITIVector<LiteralIndex, InlinedIntegerLiteralVector> reverse_encoding_;
 
-  // Full domain encoding. The map contains the index in full_encoding_ of
-  // the fully encoded variable. Each entry in full_encoding_ is sorted by
-  // IntegerValue and contains the encoding of one IntegerVariable.
-  std::unordered_map<IntegerVariable, int> full_encoding_index_;
-  std::vector<std::vector<ValueLiteralPair>> full_encoding_;
+  // Mapping (variable == value) -> associated literal. Note that even if
+  // there is more than one literal associated to the same fact, we just keep
+  // the first one that was added.
+  std::unordered_map<std::pair<IntegerVariable, IntegerValue>, Literal>
+      equality_to_associated_literal_;
+
+  // Variables that are fully encoded.
+  ITIVector<IntegerVariable, bool> is_fully_encoded_;
+
+  // A literal that is always true, convenient to encode trivial domains.
+  // This will be lazily created when needed.
+  LiteralIndex literal_index_true_ = kNoLiteralIndex;
 
   DISALLOW_COPY_AND_ASSIGN(IntegerEncoder);
 };
@@ -337,21 +356,15 @@ class IntegerEncoder {
 // to maintain the reason for each propagation.
 class IntegerTrail : public SatPropagator {
  public:
-  IntegerTrail(IntegerEncoder* encoder, Trail* trail)
+  explicit IntegerTrail(Model* model)
       : SatPropagator("IntegerTrail"),
         num_enqueues_(0),
-        encoder_(encoder),
-        trail_(trail) {}
-  ~IntegerTrail() final {}
-
-  static IntegerTrail* CreateInModel(Model* model) {
-    IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
-    Trail* trail = model->GetOrCreate<Trail>();
-    IntegerTrail* integer_trail = new IntegerTrail(encoder, trail);
-    model->GetOrCreate<SatSolver>()->AddPropagator(
-        std::unique_ptr<IntegerTrail>(integer_trail));
-    return integer_trail;
+        domains_(model->GetOrCreate<IntegerDomains>()),
+        encoder_(model->GetOrCreate<IntegerEncoder>()),
+        trail_(model->GetOrCreate<Trail>()) {
+    model->GetOrCreate<SatSolver>()->AddPropagator(this);
   }
+  ~IntegerTrail() final {}
 
   // SatPropagator interface. These functions make sure the current bounds
   // information is in sync with the current solver literal trail. Any
@@ -388,9 +401,15 @@ class IntegerTrail : public SatPropagator {
   std::vector<ClosedInterval> InitialVariableDomain(IntegerVariable var) const;
 
   // Takes the intersection with the current initial variable domain.
+  //
   // TODO(user): There is some memory inefficiency if this is called many time
   // because of the underlying data structure we use. In practice, when used
   // with a presolve, this is not often used, so that is fine though.
+  //
+  // TODO(user): The Enqueue() done at level zero on a variable are not
+  // reflected on its initial domain. That can causes issue if the variable
+  // is fully encoded afterwards because literals will be created for the values
+  // no longer relevant, and these will not be propagated right away.
   bool UpdateInitialDomain(IntegerVariable var,
                            std::vector<ClosedInterval> domain);
 
@@ -412,10 +431,11 @@ class IntegerTrail : public SatPropagator {
     return AddIntegerVariable(kMinIntegerValue, kMaxIntegerValue);
   }
 
-  // The domain [lb, ub] of an "optional" variable is allowed to be empty (i.e.
-  // ub < lb) if the given is_ignored literal is true. Moreover, if is_ignored
-  // is true, then the bound of such variable should NOT impact any non-ignored
-  // variable in any way (but the reverse is not true).
+  // For an optional variable, both its lb and ub must be valid bound assuming
+  // the fact that the variable is "present". However, the domain [lb, ub] is
+  // allowed to be empty (i.e. ub < lb) if the given is_ignored literal is true.
+  // Moreover, if is_ignored is true, then the bound of such variable should NOT
+  // impact any non-ignored variable in any way (but the reverse is not true).
   bool IsOptional(IntegerVariable i) const {
     return is_ignored_literals_[i] != kNoLiteralIndex;
   }
@@ -462,9 +482,18 @@ class IntegerTrail : public SatPropagator {
   // TODO(user): If the given bound is equal to the current bound, maybe the new
   // reason is better? how to decide and what to do in this case? to think about
   // it. Currently we simply don't do anything.
-  MUST_USE_RESULT bool Enqueue(IntegerLiteral bound,
+  MUST_USE_RESULT bool Enqueue(IntegerLiteral i_lit,
                                gtl::Span<Literal> literal_reason,
                                gtl::Span<IntegerLiteral> integer_reason);
+
+  // Same as Enqueue(), but takes an extra argument which if smaller than
+  // integer_trail_.size() is interpreted as the trail index of an old Enqueue()
+  // that had the same reason as this one. Note that the given Span must still
+  // be valid as they are used in case of conflict.
+  MUST_USE_RESULT bool Enqueue(IntegerLiteral i_lit,
+                               gtl::Span<Literal> literal_reason,
+                               gtl::Span<IntegerLiteral> integer_reason,
+                               int trail_index_with_same_reason);
 
   // Enqueues the given literal on the trail.
   // See the comment of Enqueue() for the reason format.
@@ -515,8 +544,16 @@ class IntegerTrail : public SatPropagator {
 
   // Returns true if the variable lower bound is still the one from level zero.
   bool VariableLowerBoundIsFromLevelZero(IntegerVariable var) const {
-    return vars_[var.value()].current_trail_index < vars_.size();
+    return vars_[var].current_trail_index < vars_.size();
   }
+
+  // Registers a reversible class. This class will always be synced with the
+  // correct decision level.
+  void RegisterReversibleClass(ReversibleInterface* rev) {
+    reversible_classes_.push_back(rev);
+  }
+
+  int Index() const { return integer_trail_.size(); }
 
  private:
   // Tests that all the literals in the given reason are assigned to false.
@@ -527,17 +564,18 @@ class IntegerTrail : public SatPropagator {
   void MergeReasonIntoInternal(std::vector<Literal>* output) const;
 
   // Helper used by Enqueue() to propagate one of the literal associated to
-  // the given i_lit and maintained by encoder_.
-  bool EnqueueAssociatedLiteral(Literal literal, IntegerLiteral i_lit,
+  // an integer literal and maintained by encoder_.
+  bool EnqueueAssociatedLiteral(Literal literal,
+                                int trail_index_with_same_reason,
                                 gtl::Span<Literal> literal_reason,
                                 gtl::Span<IntegerLiteral> integer_reason,
                                 BooleanVariable* variable_with_same_reason);
 
   // Returns a lower bound on the given var that will always be valid.
-  IntegerValue LevelZeroBound(int var) const {
+  IntegerValue LevelZeroBound(IntegerVariable var) const {
     // The level zero bounds are stored at the beginning of the trail and they
     // also serves as sentinels. Their index match the variables index.
-    return integer_trail_[var].bound;
+    return integer_trail_[var.value()].bound;
   }
 
   // Returns the lowest trail index of a TrailEntry that can be used to explain
@@ -548,8 +586,8 @@ class IntegerTrail : public SatPropagator {
   // Helper function to return the "dependencies" of a bound assignment.
   // All the TrailEntry at these indices are part of the reason for this
   // assignment.
-  BeginEndWrapper<std::vector<IntegerLiteral>::const_iterator> Dependencies(
-      int trail_index) const;
+  util::BeginEndWrapper<std::vector<IntegerLiteral>::const_iterator>
+  Dependencies(int trail_index) const;
 
   // Helper function to append the Literal part of the reason for this bound
   // assignment.
@@ -567,26 +605,32 @@ class IntegerTrail : public SatPropagator {
     // Trail index of the last TrailEntry in the trail refering to this var.
     int current_trail_index;
   };
-  std::vector<VarInfo> vars_;
+  ITIVector<IntegerVariable, VarInfo> vars_;
+
+  // This is used by FindLowestTrailIndexThatExplainBound() to speed up
+  // the lookup. It keeps a trail index for each variable that may or may not
+  // point to a TrailEntry regarding this variable. The validity of the index is
+  // verified before beeing used.
+  mutable ITIVector<IntegerVariable, int> var_trail_index_cache_;
 
   // Used by GetOrCreateConstantIntegerVariable() to return already created
   // constant variables that share the same value.
   std::unordered_map<IntegerValue, IntegerVariable> constant_map_;
 
   // The integer trail. It always start by num_vars sentinel values with the
-  // level 0 bounds (in one to one correspondance with vars_).
+  // level 0 bounds (in one to one correspondence with vars_).
   struct TrailEntry {
     IntegerValue bound;
-    int32 var;
+    IntegerVariable var;
     int32 prev_trail_index;
 
-    // Start index in the respective *_buffer_ vectors below.
-    int32 literals_reason_start_index;
-    int32 dependencies_start_index;
+    // Index in literals_reason_start_/bounds_reason_starts_
+    int32 reason_index;
   };
   std::vector<TrailEntry> integer_trail_;
 
   // Start of each decision levels in integer_trail_.
+  // TODO(user): use more general reversible mechanism?
   std::vector<int> integer_decision_levels_;
 
   // Buffer to store the reason of each trail entry.
@@ -594,6 +638,9 @@ class IntegerTrail : public SatPropagator {
   // IntegerLiteral, and is lazily replaced by the result of
   // FindLowestTrailIndexThatExplainBound() applied to these literals. The
   // encoding is a bit hacky, see Dependencies().
+  std::vector<int> reason_decision_levels_;
+  std::vector<int> literals_reason_starts_;
+  std::vector<int> bounds_reason_starts_;
   std::vector<Literal> literals_reason_buffer_;
   mutable std::vector<IntegerLiteral> bounds_reason_buffer_;
 
@@ -616,11 +663,11 @@ class IntegerTrail : public SatPropagator {
 
   // Temporary data used by MergeReasonInto().
   mutable std::vector<int> tmp_queue_;
-  mutable std::vector<int> tmp_to_clear_;
-  mutable std::vector<int> tmp_var_to_trail_index_in_queue_;
+  mutable std::vector<IntegerVariable> tmp_to_clear_;
+  mutable ITIVector<IntegerVariable, int> tmp_var_to_trail_index_in_queue_;
 
   // For EnqueueLiteral(), we store a special TrailEntry to recover the reason
-  // lazily. This vector indicates the correspondance between a literal that
+  // lazily. This vector indicates the correspondence between a literal that
   // was pushed by this class at a given trail index, and the index of its
   // TrailEntry in integer_trail_.
   std::vector<int> boolean_trail_index_to_integer_one_;
@@ -628,7 +675,9 @@ class IntegerTrail : public SatPropagator {
   int64 num_enqueues_;
 
   std::vector<SparseBitset<IntegerVariable>*> watchers_;
+  std::vector<ReversibleInterface*> reversible_classes_;
 
+  IntegerDomains* domains_;
   IntegerEncoder* encoder_;
   Trail* trail_;
 
@@ -670,33 +719,29 @@ class PropagatorInterface {
   }
 };
 
+// Singleton for basic reversible types. We need the wrapper so that they can be
+// accessed with model->GetOrCreate<>() and properly registered at creation.
+class RevIntRepository : public RevRepository<int> {
+ public:
+  explicit RevIntRepository(Model* model) {
+    model->GetOrCreate<IntegerTrail>()->RegisterReversibleClass(this);
+  }
+};
+class RevIntegerValueRepository : public RevRepository<IntegerValue> {
+ public:
+  explicit RevIntegerValueRepository(Model* model) {
+    model->GetOrCreate<IntegerTrail>()->RegisterReversibleClass(this);
+  }
+};
+
 // This class allows registering Propagator that will be called if a
 // watched Literal or LbVar changes.
 //
 // TODO(user): Move this to its own file. Add unit tests!
 class GenericLiteralWatcher : public SatPropagator {
  public:
-  explicit GenericLiteralWatcher(IntegerTrail* trail,
-                                 RevRepository<int>* rev_int_repository);
+  explicit GenericLiteralWatcher(Model* model);
   ~GenericLiteralWatcher() final {}
-
-  static GenericLiteralWatcher* CreateInModel(Model* model) {
-    // TODO(user): Have a general mecanism to register "global" reversible
-    // classes and keep them synchronized with the search.
-    std::unique_ptr<RevRepository<int>> rev_int_repository(
-        new RevRepository<int>());
-    GenericLiteralWatcher* watcher = new GenericLiteralWatcher(
-        model->GetOrCreate<IntegerTrail>(), rev_int_repository.get());
-    model->SetSingleton(std::move(rev_int_repository));
-
-    // TODO(user): This propagator currently needs to be last because it is the
-    // only one enforcing that a fix-point is reached on the integer variables.
-    // Figure out a better interaction between the sat propagation loop and
-    // this one.
-    model->GetOrCreate<SatSolver>()->AddLastPropagator(
-        std::unique_ptr<GenericLiteralWatcher>(watcher));
-    return watcher;
-  }
 
   // On propagate, the registered propagators will be called if they need to
   // until a fixed point is reached. Propagators with low ids will tend to be
@@ -766,7 +811,7 @@ class GenericLiteralWatcher : public SatPropagator {
   void UpdateCallingNeeds(Trail* trail);
 
   IntegerTrail* integer_trail_;
-  RevRepository<int>* rev_int_repository_;
+  RevIntRepository* rev_int_repository_;
 
   struct WatchData {
     int id;
@@ -819,17 +864,17 @@ inline IntegerLiteral IntegerLiteral::Negated() const {
 }
 
 inline IntegerValue IntegerTrail::LowerBound(IntegerVariable i) const {
-  return vars_[i.value()].current_bound;
+  return vars_[i].current_bound;
 }
 
 inline IntegerValue IntegerTrail::PreviousLowerBound(IntegerVariable i) const {
-  const int index = vars_[i.value()].current_trail_index;
+  const int index = vars_[i].current_trail_index;
   if (index < vars_.size()) return LowerBound(i);
   return integer_trail_[integer_trail_[index].prev_trail_index].bound;
 }
 
 inline IntegerValue IntegerTrail::UpperBound(IntegerVariable i) const {
-  return -vars_[NegationOf(i).value()].current_bound;
+  return -vars_[NegationOf(i)].current_bound;
 }
 
 inline IntegerLiteral IntegerTrail::LowerBoundAsLiteral(
@@ -922,21 +967,13 @@ class LiteralViews {
  public:
   explicit LiteralViews(Model* model) : model_(model) {}
 
-  static LiteralViews* CreateInModel(Model* model) {
-    LiteralViews* const views = new LiteralViews(model);
-    model->TakeOwnership(views);
-    return views;
-  }
-
   IntegerVariable GetIntegerView(const Literal lit) {
     const LiteralIndex index = lit.Index();
 
     if (!ContainsKey(literal_index_to_integer_, index)) {
       const IntegerVariable int_var = model_->Add(NewIntegerVariable(0, 1));
-      model_->GetOrCreate<IntegerEncoder>()
-          ->FullyEncodeVariableUsingGivenLiterals(
-              int_var, {lit.Negated(), lit},
-              {IntegerValue(0), IntegerValue(1)});
+      model_->GetOrCreate<IntegerEncoder>()->AssociateToIntegerEqualValue(
+          lit, int_var, IntegerValue(1));
       literal_index_to_integer_[index] = int_var;
     }
 
@@ -953,7 +990,14 @@ class LiteralViews {
 inline std::function<IntegerVariable(Model*)> NewIntegerVariableFromLiteral(
     Literal lit) {
   return [=](Model* model) {
-    return model->GetOrCreate<LiteralViews>()->GetIntegerView(lit);
+    const auto& assignment = model->GetOrCreate<SatSolver>()->Assignment();
+    if (assignment.LiteralIsTrue(lit)) {
+      return model->Add(ConstantIntegerVariable(1));
+    } else if (assignment.LiteralIsFalse(lit)) {
+      return model->Add(ConstantIntegerVariable(0));
+    } else {
+      return model->GetOrCreate<LiteralViews>()->GetIntegerView(lit);
+    }
   };
 }
 
@@ -1021,19 +1065,6 @@ inline std::function<void(Model*)> Equality(IntegerVariable v, int64 value) {
   };
 }
 
-// Associate the given literal to the given integer inequality.
-inline std::function<void(Model*)> Equality(IntegerLiteral i, Literal l) {
-  return [=](Model* model) {
-    IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
-    if (encoder->LiteralIsAssociated(i)) {
-      const Literal current = encoder->GetOrCreateAssociatedLiteral(i);
-      model->Add(Equality(current, l));
-    } else {
-      encoder->AssociateGivenLiteral(i, l);
-    }
-  };
-}
-
 // TODO(user): This is one of the rare case where it is better to use Equality()
 // rather than two Implications(). Maybe we should modify our internal
 // implementation to use half-reified encoding? that is do not propagate the
@@ -1043,14 +1074,14 @@ inline std::function<void(Model*)> Equality(IntegerLiteral i, Literal l) {
 inline std::function<void(Model*)> Implication(Literal l, IntegerLiteral i) {
   return [=](Model* model) {
     IntegerTrail* integer_trail = model->GetOrCreate<IntegerTrail>();
-    if (i.Bound() <= integer_trail->LowerBound(i.Var())) {
+    if (i.bound <= integer_trail->LowerBound(i.var)) {
       // Always true! nothing to do.
-    } else if (i.Bound() > integer_trail->UpperBound(i.Var())) {
+    } else if (i.bound > integer_trail->UpperBound(i.var)) {
       // Always false.
       model->Add(ClauseConstraint({l.Negated()}));
     } else {
       // TODO(user): Double check what happen when we associate a trivially
-      // true or false literal. This applies to Equality() too.
+      // true or false literal.
       IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
       const Literal current = encoder->GetOrCreateAssociatedLiteral(i);
       model->Add(Implication(l, current));
@@ -1058,27 +1089,15 @@ inline std::function<void(Model*)> Implication(Literal l, IntegerLiteral i) {
   };
 }
 
-// in_interval <=> v in [lb, ub].
-inline std::function<void(Model*)> ReifiedInInterval(IntegerVariable v,
-                                                     int64 lb, int64 ub,
-                                                     Literal in_interval) {
+// in_interval => v in [lb, ub].
+inline std::function<void(Model*)> ImpliesInInterval(Literal in_interval,
+                                                     IntegerVariable v,
+                                                     int64 lb, int64 ub) {
   return [=](Model* model) {
-    IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
-    const auto lb_lit = IntegerLiteral::GreaterOrEqual(v, IntegerValue(lb));
-    const auto ub_lit = IntegerLiteral::LowerOrEqual(v, IntegerValue(ub));
-    if (lb <= model->Get(LowerBound(v))) {
-      if (ub >= model->Get(UpperBound(v))) {
-        model->GetOrCreate<SatSolver>()->AddUnitClause(in_interval);
-      } else {
-        model->Add(Equality(ub_lit, in_interval));
-      }
-    } else if (ub >= model->Get(UpperBound(v))) {
-      model->Add(Equality(lb_lit, in_interval));
-    } else {
-      const Literal is_ge_lb = encoder->GetOrCreateAssociatedLiteral(lb_lit);
-      const Literal is_le_ub = encoder->GetOrCreateAssociatedLiteral(ub_lit);
-      model->Add(ReifiedBoolAnd({is_ge_lb, is_le_ub}, in_interval));
-    }
+    model->Add(Implication(
+        in_interval, IntegerLiteral::GreaterOrEqual(v, IntegerValue(lb))));
+    model->Add(Implication(in_interval,
+                           IntegerLiteral::LowerOrEqual(v, IntegerValue(ub))));
   };
 }
 
@@ -1091,8 +1110,7 @@ FullyEncodeVariable(IntegerVariable var) {
   return [=](Model* model) {
     IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
     if (!encoder->VariableIsFullyEncoded(var)) {
-      encoder->FullyEncodeVariable(
-          var, model->GetOrCreate<IntegerTrail>()->InitialVariableDomain(var));
+      encoder->FullyEncodeVariable(var);
     }
     return encoder->FullDomainEncoding(var);
   };
@@ -1131,6 +1149,12 @@ std::function<LiteralIndex()> FirstUnassignedVarAtItsMinHeuristic(
 // with the lowest min has a value <= this min.
 std::function<LiteralIndex()> UnassignedVarWithLowestMinAtItsMinHeuristic(
     const std::vector<IntegerVariable>& vars, Model* model);
+
+// Combines search heuristics in order: if the i-th one returns kNoLiteralIndex,
+// ask the (i+1)-th. If every heuristic returned kNoLiteralIndex,
+// returns kNoLiteralIndex.
+std::function<LiteralIndex()> SequentialSearch(
+    std::vector<std::function<LiteralIndex()>> heuristics);
 
 // Same as ExcludeCurrentSolutionAndBacktrack() but this version works for an
 // integer problem with optional variables. The issue is that an optional

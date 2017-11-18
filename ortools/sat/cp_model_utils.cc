@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,8 +13,6 @@
 
 #include "ortools/sat/cp_model_utils.h"
 
-#include "ortools/base/stl_util.h"
-
 namespace operations_research {
 namespace sat {
 
@@ -22,7 +20,7 @@ namespace {
 
 template <typename IntList>
 void AddIndices(const IntList& indices, std::unordered_set<int>* output) {
-  for (const int index : indices) output->insert(index);
+  output->insert(indices.begin(), indices.end());
 }
 
 }  // namespace
@@ -72,6 +70,19 @@ void AddReferencesUsedByConstraint(const ConstraintProto& ct,
       break;
     case ConstraintProto::ConstraintCase::kCircuit:
       AddIndices(ct.circuit().nexts(), &output->variables);
+      break;
+    case ConstraintProto::ConstraintCase::kRoutes:
+      AddIndices(ct.routes().literals(), &output->literals);
+      break;
+    case ConstraintProto::ConstraintCase::kCircuitCovering:
+      AddIndices(ct.circuit_covering().nexts(), &output->variables);
+      break;
+    case ConstraintProto::ConstraintCase::kInverse:
+      AddIndices(ct.inverse().f_direct(), &output->variables);
+      AddIndices(ct.inverse().f_inverse(), &output->variables);
+      break;
+    case ConstraintProto::ConstraintCase::kReservoir:
+      AddIndices(ct.reservoir().times(), &output->variables);
       break;
     case ConstraintProto::ConstraintCase::kTable:
       AddIndices(ct.table().vars(), &output->variables);
@@ -145,6 +156,15 @@ void ApplyToAllLiteralIndices(const std::function<void(int*)>& f,
       break;
     case ConstraintProto::ConstraintCase::kCircuit:
       break;
+    case ConstraintProto::ConstraintCase::kRoutes:
+      APPLY_TO_REPEATED_FIELD(routes, literals);
+      break;
+    case ConstraintProto::ConstraintCase::kCircuitCovering:
+      break;
+    case ConstraintProto::ConstraintCase::kInverse:
+      break;
+    case ConstraintProto::ConstraintCase::kReservoir:
+      break;
     case ConstraintProto::ConstraintCase::kTable:
       break;
     case ConstraintProto::ConstraintCase::kAutomata:
@@ -205,6 +225,18 @@ void ApplyToAllVariableIndices(const std::function<void(int*)>& f,
     case ConstraintProto::ConstraintCase::kCircuit:
       APPLY_TO_REPEATED_FIELD(circuit, nexts);
       break;
+    case ConstraintProto::ConstraintCase::kRoutes:
+      break;
+    case ConstraintProto::ConstraintCase::kCircuitCovering:
+      APPLY_TO_REPEATED_FIELD(circuit_covering, nexts);
+      break;
+    case ConstraintProto::ConstraintCase::kInverse:
+      APPLY_TO_REPEATED_FIELD(inverse, f_direct);
+      APPLY_TO_REPEATED_FIELD(inverse, f_inverse);
+      break;
+    case ConstraintProto::ConstraintCase::kReservoir:
+      APPLY_TO_REPEATED_FIELD(reservoir, times);
+      break;
     case ConstraintProto::ConstraintCase::kTable:
       APPLY_TO_REPEATED_FIELD(table, vars);
       break;
@@ -256,6 +288,14 @@ void ApplyToAllIntervalIndices(const std::function<void(int*)>& f,
       break;
     case ConstraintProto::ConstraintCase::kCircuit:
       break;
+    case ConstraintProto::ConstraintCase::kRoutes:
+      break;
+    case ConstraintProto::ConstraintCase::kCircuitCovering:
+      break;
+    case ConstraintProto::ConstraintCase::kInverse:
+      break;
+    case ConstraintProto::ConstraintCase::kReservoir:
+      break;
     case ConstraintProto::ConstraintCase::kTable:
       break;
     case ConstraintProto::ConstraintCase::kAutomata:
@@ -306,6 +346,14 @@ std::string ConstraintCaseName(ConstraintProto::ConstraintCase constraint_case) 
       return "kElement";
     case ConstraintProto::ConstraintCase::kCircuit:
       return "kCircuit";
+    case ConstraintProto::ConstraintCase::kRoutes:
+      return "kRoutes";
+    case ConstraintProto::ConstraintCase::kCircuitCovering:
+      return "kCircuitCovering";
+    case ConstraintProto::ConstraintCase::kInverse:
+      return "kInverse";
+    case ConstraintProto::ConstraintCase::kReservoir:
+      return "kReservoir";
     case ConstraintProto::ConstraintCase::kTable:
       return "kTable";
     case ConstraintProto::ConstraintCase::kAutomata:

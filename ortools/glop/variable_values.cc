@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,8 +13,8 @@
 
 #include "ortools/glop/variable_values.h"
 
+#include "ortools/graph/iterators.h"
 #include "ortools/lp_data/lp_utils.h"
-#include "ortools/util/iterators.h"
 
 namespace operations_research {
 namespace glop {
@@ -180,7 +180,8 @@ void VariableValues::ResetPrimalInfeasibilityInformation() {
   const RowIndex num_rows = matrix_.num_rows();
   primal_squared_infeasibilities_.resize(num_rows, 0.0);
   primal_infeasible_positions_.ClearAndResize(num_rows);
-  UpdatePrimalInfeasibilities(IntegerRange<RowIndex>(RowIndex(0), num_rows));
+  UpdatePrimalInfeasibilities(
+      util::IntegerRange<RowIndex>(RowIndex(0), num_rows));
 }
 
 void VariableValues::UpdatePrimalInfeasibilityInformation(

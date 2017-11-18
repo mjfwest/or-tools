@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "ortools/base/integral_types.h"
+#include "ortools/base/span.h"
 
 namespace operations_research {
 
@@ -70,8 +71,8 @@ bool IntervalsAreSortedAndDisjoint(
 //
 // TODO(user): This works in O(n), but could be made to work in O(log n) for
 // long list of intervals.
-bool SortedDisjointIntervalsContain(
-    const std::vector<ClosedInterval>& intervals, int64 value);
+bool SortedDisjointIntervalsContain(gtl::Span<ClosedInterval> intervals,
+                                    int64 value);
 
 // Returns the intersection of two lists of sorted disjoint intervals in a
 // sorted disjoint interval form.
@@ -114,6 +115,10 @@ std::vector<ClosedInterval> PreciseMultiplicationOfSortedDisjointIntervals(
 // that it is not the same as given the domains of x, return the domain of x /
 // coeff because of how the integer division work.
 std::vector<ClosedInterval> InverseMultiplicationOfSortedDisjointIntervals(
+    std::vector<ClosedInterval> intervals, int64 coeff);
+
+// Given the domain of x, this returns the domain of x / coeff.
+std::vector<ClosedInterval> DivisionOfSortedDisjointIntervals(
     std::vector<ClosedInterval> intervals, int64 coeff);
 
 // This class represents a sorted list of disjoint, closed intervals.  When an

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,8 +14,12 @@
 #include "ortools/sat/timetable_edgefinding.h"
 
 #include <algorithm>
+#include <functional>
+#include <memory>
 #include <vector>
 
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
 #include "ortools/base/int_type.h"
 #include "ortools/util/sort.h"
 

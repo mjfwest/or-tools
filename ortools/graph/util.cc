@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,7 +13,7 @@
 
 #include "ortools/graph/util.h"
 
-namespace operations_research {
+namespace util {
 
 bool IsSubsetOf0N(const std::vector<int>& v, int n) {
   std::vector<bool> mask(n, false);
@@ -24,4 +24,4 @@ bool IsSubsetOf0N(const std::vector<int>& v, int n) {
   return true;
 }
 
-}  // namespace operations_research
+}  // namespace util

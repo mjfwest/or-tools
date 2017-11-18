@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -132,6 +132,15 @@ class InlinedVector {
   void clear() {
     DiscardStorage();
     u_.data[kSize - 1] = 0;
+  }
+
+  template <typename InputIterator>
+  void assign(
+      InputIterator range_start, InputIterator range_end,
+      typename std::enable_if<!std::is_integral<InputIterator>::value>::type* =
+          NULL) {
+    clear();
+    AppendRange(range_start, range_end);
   }
 
   // Return the ith element

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,7 +13,16 @@
 
 #include "ortools/sat/all_different.h"
 
-#include "ortools/base/strongly_connected_components.h"
+#include <algorithm>
+#include <unordered_set>
+#include <map>
+#include <memory>
+
+#include "ortools/base/logging.h"
+#include "ortools/graph/strongly_connected_components.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/map_util.h"
+#include "ortools/sat/sat_solver.h"
 #include "ortools/util/sort.h"
 
 namespace operations_research {
@@ -22,40 +31,22 @@ namespace sat {
 std::function<void(Model*)> AllDifferentBinary(
     const std::vector<IntegerVariable>& vars) {
   return [=](Model* model) {
-    std::unordered_set<IntegerValue> fixed_values;
-
-    // First, we fully encode all the given integer variables.
-    for (const IntegerVariable var : vars) {
-      const IntegerValue lb(model->Get(LowerBound(var)));
-      const IntegerValue ub(model->Get(UpperBound(var)));
-      if (lb == ub) {
-        fixed_values.insert(lb);
-      } else {
-        model->Add(FullyEncodeVariable(var));
-      }
-    }
-
-    // Then we construct a mapping value -> List of literal each indicating
-    // that a given variable takes this value.
-    std::unordered_map<IntegerValue, std::vector<Literal>> value_to_literals;
+    // Fully encode all the given variables and construct a mapping value ->
+    // List of literal each indicating that a given variable takes this value.
+    //
+    // Note that we use a map to always add the constraints in the same order.
+    std::map<IntegerValue, std::vector<Literal>> value_to_literals;
     IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
     for (const IntegerVariable var : vars) {
-      if (!encoder->VariableIsFullyEncoded(var)) continue;
+      model->Add(FullyEncodeVariable(var));
       for (const auto& entry : encoder->FullDomainEncoding(var)) {
         value_to_literals[entry.value].push_back(entry.literal);
       }
     }
 
-    // Finally, we add an at most one constraint for each value.
+    // Add an at most one constraint for each value.
     for (const auto& entry : value_to_literals) {
-      if (ContainsKey(fixed_values, entry.first)) {
-        VLOG(1) << "Case could be presolved.";
-        // Fix all the literal to false!
-        SatSolver* sat_solver = model->GetOrCreate<SatSolver>();
-        for (const Literal l : entry.second) {
-          sat_solver->AddUnitClause(l.Negated());
-        }
-      } else if (entry.second.size() > 1) {
+      if (entry.second.size() > 1) {
         model->Add(AtMostOneConstraint(entry.second));
       }
     }
@@ -117,8 +108,7 @@ AllDifferentConstraint::AllDifferentConstraint(
 
     // Force full encoding if not already done.
     if (!encoder->VariableIsFullyEncoded(variables_[x])) {
-      encoder->FullyEncodeVariable(
-          variables_[x], integer_trail_->InitialVariableDomain(variables_[x]));
+      encoder->FullyEncodeVariable(variables_[x]);
     }
 
     // Fill cache with literals, default value is kFalseLiteralIndex.
@@ -390,10 +380,7 @@ bool AllDifferentConstraint::Propagate() {
         MakeAugmentingPath(old_variable);
         DCHECK_EQ(variable_to_value_[old_variable], -1);  // No reassignment.
 
-        // TODO(user): use a local temp vector, it is cleaner than reusing
-        // the one from MutableConflict().
-        std::vector<Literal>* reason = trail_->MutableConflict();
-        reason->clear();
+        std::vector<Literal>* reason = trail_->GetEmptyVectorToStoreReason();
         for (int y = 0; y < num_variables_; y++) {
           if (!variable_visited_[y]) continue;
           for (int value = variable_min_value_[y];
@@ -406,17 +393,11 @@ bool AllDifferentConstraint::Propagate() {
           }
         }
 
-        const int index = trail_->Index();
-        LiteralIndex li =
+        const LiteralIndex li =
             VariableLiteralIndexOf(x, offset_value + min_all_values_);
         DCHECK_NE(li, kTrueLiteralIndex);
         DCHECK_NE(li, kFalseLiteralIndex);
-
-        const Literal deduction = Literal(li).Negated();
-        trail_->Enqueue(deduction, AssignmentType::kCachedReason);
-        *trail_->GetVectorToStoreReason(index) = *reason;
-        trail_->NotifyThatReasonIsCached(deduction.Variable());
-        return true;
+        return trail_->EnqueueWithStoredReason(Literal(li).Negated());
       }
     }
   }

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,9 +13,12 @@
 
 #include "ortools/sat/integer_expr.h"
 
+#include <algorithm>
+#include <memory>
 #include <unordered_map>
 
 #include "ortools/base/stl_util.h"
+#include "ortools/util/sorted_interval_list.h"
 
 namespace operations_research {
 namespace sat {
@@ -23,12 +26,13 @@ namespace sat {
 IntegerSumLE::IntegerSumLE(LiteralIndex reified_literal,
                            const std::vector<IntegerVariable>& vars,
                            const std::vector<IntegerValue>& coeffs,
-                           IntegerValue upper, Trail* trail,
-                           IntegerTrail* integer_trail)
+                           IntegerValue upper, Model* model)
     : reified_literal_(reified_literal),
       upper_bound_(upper),
-      trail_(trail),
-      integer_trail_(integer_trail),
+      trail_(model->GetOrCreate<Trail>()),
+      integer_trail_(model->GetOrCreate<IntegerTrail>()),
+      rev_integer_value_repository_(
+          model->GetOrCreate<RevIntegerValueRepository>()),
       vars_(vars),
       coeffs_(coeffs) {
   // TODO(user): deal with this corner case.
@@ -76,7 +80,7 @@ bool IntegerSumLE::Propagate() {
   }
 
   // Save the current number of fixed variables.
-  rev_repository_integer_value_.SaveState(&rev_lb_fixed_vars_);
+  rev_integer_value_repository_->SaveState(&rev_lb_fixed_vars_);
 
   // Compute the new lower bound and update the reversible structures.
   IntegerValue lb_unfixed_vars = IntegerValue(0);
@@ -143,6 +147,7 @@ bool IntegerSumLE::Propagate() {
 
   // The lower bound of all the variables minus one can be used to update the
   // upper bound of the last one.
+  int trail_index_with_same_reason = -1;
   for (int i = rev_num_fixed_vars_; i < vars_.size(); ++i) {
     const IntegerVariable var = vars_[i];
     const IntegerValue coeff = coeffs_[i];
@@ -161,12 +166,19 @@ bool IntegerSumLE::Propagate() {
         saved = integer_reason_[index];
         integer_reason_[index] = integer_reason_.back();
         integer_reason_.pop_back();
+      } else if (trail_index_with_same_reason == -1) {
+        // All the push for which index < 0 share the same reason, so we save
+        // the index of the first push so that we do not need to copy the reason
+        // of the next ones.
+        trail_index_with_same_reason = integer_trail_->Index();
       }
 
       const IntegerValue new_ub =
           integer_trail_->LowerBound(var) + slack / coeff;
       if (!integer_trail_->Enqueue(IntegerLiteral::LowerOrEqual(var, new_ub),
-                                   literal_reason_, integer_reason_)) {
+                                   literal_reason_, integer_reason_,
+                                   index >= 0 ? integer_trail_->Index()
+                                              : trail_index_with_same_reason)) {
         return false;
       }
 
@@ -192,7 +204,6 @@ void IntegerSumLE::RegisterWith(GenericLiteralWatcher* watcher) {
     watcher->WatchLiteral(Literal(reified_literal_), id);
   }
   watcher->RegisterReversibleInt(id, &rev_num_fixed_vars_);
-  watcher->RegisterReversibleClass(id, &rev_repository_integer_value_);
 }
 
 MinPropagator::MinPropagator(const std::vector<IntegerVariable>& vars,
@@ -392,6 +403,74 @@ void PositiveProductPropagator::RegisterWith(GenericLiteralWatcher* watcher) {
   watcher->WatchIntegerVariable(p_, id);
 }
 
+SquarePropagator::SquarePropagator(IntegerVariable x, IntegerVariable s,
+                                   IntegerTrail* integer_trail)
+    : x_(x), s_(s), integer_trail_(integer_trail) {}
+
+bool SquarePropagator::Propagate() {
+  bool may_propagate = true;
+  while (may_propagate) {
+    may_propagate = false;
+    IntegerValue min_x = integer_trail_->LowerBound(x_);
+    IntegerValue max_x = integer_trail_->UpperBound(x_);
+    IntegerValue min_s = integer_trail_->LowerBound(s_);
+    IntegerValue max_s = integer_trail_->UpperBound(s_);
+
+    // TODO(user): support this case.
+    CHECK_GE(min_x, 0);
+
+    // Propagation from x to s: s in [min_x*min_x, max_x*max_x].
+    if (min_x * min_x > min_s) {
+      may_propagate = true;
+      min_s = min_x * min_x;
+      if (!integer_trail_->Enqueue(
+              IntegerLiteral::GreaterOrEqual(s_, min_s), {},
+              {IntegerLiteral::GreaterOrEqual(x_, min_x)})) {
+        return false;
+      }
+    }
+    if (max_x * max_x < max_s) {
+      may_propagate = true;
+      max_s = max_x * max_x;
+      if (!integer_trail_->Enqueue(IntegerLiteral::LowerOrEqual(s_, max_s), {},
+                                   {IntegerLiteral::LowerOrEqual(x_, max_x)})) {
+        return false;
+      }
+    }
+
+    // Propagation from s to x: x in [ceil(sqrt(min_s)), floor(sqrt(max_s))].
+    if (max_x * max_x > max_s) {
+      may_propagate = true;
+      // TODO(user): O(log(max_x)) version or someone will be unhappy.
+      while (max_x * max_x > max_s) max_x--;
+      if (!integer_trail_->Enqueue(IntegerLiteral::LowerOrEqual(x_, max_x), {},
+                                   {IntegerLiteral::LowerOrEqual(
+                                       s_, (max_x + 1) * (max_x + 1) - 1)})) {
+        return false;
+      }
+    }
+    if (min_x * min_x < min_s) {
+      may_propagate = true;
+      // TODO(user): O(log(min_x)) version or someone will be unhappy.
+      while (min_x * min_x < min_s) min_x++;
+      if (!integer_trail_->Enqueue(IntegerLiteral::GreaterOrEqual(x_, min_x),
+                                   {},
+                                   {IntegerLiteral::GreaterOrEqual(
+                                       s_, (min_x - 1) * (min_x - 1) + 1)})) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+void SquarePropagator::RegisterWith(GenericLiteralWatcher* watcher) {
+  const int id = watcher->Register(this);
+  watcher->WatchIntegerVariable(x_, id);
+  watcher->WatchIntegerVariable(s_, id);
+}
+
 DivisionPropagator::DivisionPropagator(IntegerVariable a, IntegerVariable b,
                                        IntegerVariable c,
                                        IntegerTrail* integer_trail)
@@ -452,9 +531,6 @@ std::function<void(Model*)> IsOneOf(IntegerVariable var,
   return [=](Model* model) {
     IntegerTrail* integer_trail = model->GetOrCreate<IntegerTrail>();
     IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
-    if (encoder->VariableIsFullyEncoded(var)) {
-      LOG(FATAL) << "TODO(fdid): Not implemented.";
-    }
 
     CHECK(!values.empty());
     CHECK_EQ(values.size(), selectors.size());
@@ -473,19 +549,19 @@ std::function<void(Model*)> IsOneOf(IntegerVariable var,
       return;
     }
 
-    std::vector<Literal> new_selectors;
+    // Note that it is more efficient to call AssociateToIntegerEqualValue()
+    // with the values ordered, like we do here.
     for (const int64 v : unique_values) {
-      if (value_to_selector[v].size() == 1) {
-        new_selectors.push_back(value_to_selector[v][0]);
+      const std::vector<Literal>& selectors = value_to_selector[v];
+      if (selectors.size() == 1) {
+        encoder->AssociateToIntegerEqualValue(selectors[0], var,
+                                              IntegerValue(v));
       } else {
         const Literal l(model->Add(NewBooleanVariable()), true);
-        model->Add(ReifiedBoolOr(value_to_selector[v], l));
-        new_selectors.push_back(l);
+        model->Add(ReifiedBoolOr(selectors, l));
+        encoder->AssociateToIntegerEqualValue(l, var, IntegerValue(v));
       }
     }
-    encoder->FullyEncodeVariableUsingGivenLiterals(
-        var, new_selectors,
-        std::vector<IntegerValue>(unique_values.begin(), unique_values.end()));
   };
 }
 

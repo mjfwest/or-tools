@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,6 +24,7 @@
 
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
+#include "ortools/graph/graph.h"
 #include "ortools/graph/eulerian_path.h"
 #include "ortools/graph/minimum_spanning_tree.h"
 #include "ortools/linear_solver/linear_solver.h"
@@ -31,15 +32,17 @@
 
 namespace operations_research {
 
+using ::util::CompleteGraph;
+
 template <typename CostType, typename ArcIndex = int64,
           typename NodeIndex = int32,
           typename CostFunction = std::function<CostType(NodeIndex, NodeIndex)>>
 class ChristofidesPathSolver {
  public:
   enum class MatchingAlgorithm {
-#if defined(USE_CBC) || defined(USE_SCIP)
+    #if defined(USE_CBC) || defined(USE_SCIP)
     MINIMUM_WEIGHT_MATCHING,
-#endif  // defined(USE_CBC) || defined(USE_SCIP)
+    #endif  // defined(USE_CBC) || defined(USE_SCIP)
     MINIMAL_WEIGHT_MATCHING,
   };
   ChristofidesPathSolver(NodeIndex num_nodes, CostFunction costs);
@@ -134,21 +137,19 @@ std::vector<typename GraphType::ArcIndex> ComputeMinimumWeightMatchingWithMIP(
       }
     }
   }
-#if defined(USE_SCIP)
-  MPSolver scip_solver("MatchingWithSCIP",
-                       MPSolver::SCIP_MIXED_INTEGER_PROGRAMMING);
-#elif defined(USE_CBC)
-  MPSolver scip_solver("MatchingWithCBC",
+  #if defined(USE_SCIP)
+  MPSolver mp_solver("MatchingWithSCIP",
+                     MPSolver::SCIP_MIXED_INTEGER_PROGRAMMING);
+  #elif defined(USE_CBC)
+    MPSolver mp_solver("MatchingWithCBC",
                        MPSolver::CBC_MIXED_INTEGER_PROGRAMMING);
-#endif
-  // TODO(user): Glip performs significantly faster on very small problems;
-  // investigate the necessity of switching solvers depending on model size.
+  #endif
   std::string error;
-  scip_solver.LoadModelFromProto(model, &error);
-  MPSolver::ResultStatus status = scip_solver.Solve();
+  mp_solver.LoadModelFromProto(model, &error);
+  MPSolver::ResultStatus status = mp_solver.Solve();
   CHECK_EQ(status, MPSolver::OPTIMAL);
   MPSolutionResponse response;
-  scip_solver.FillSolutionResponseProto(&response);
+  mp_solver.FillSolutionResponseProto(&response);
   std::vector<ArcIndex> matching;
   for (auto arc : variable_indices) {
     if (response.variable_value(arc.second) > .9) {
@@ -227,7 +228,7 @@ void ChristofidesPathSolver<CostType, ArcIndex, NodeIndex,
   CompleteGraph<NodeIndex, ArcIndex> reduced_graph(reduced_size);
   std::vector<ArcIndex> closure_arcs;
   switch (matching_) {
-#if defined(USE_CBC) || defined(USE_SCIP)
+    #if defined(USE_CBC) || defined(USE_SCIP)
     case MatchingAlgorithm::MINIMUM_WEIGHT_MATCHING: {
       closure_arcs = ComputeMinimumWeightMatchingWithMIP(
           reduced_graph, [this, &reduced_graph,
@@ -237,7 +238,7 @@ void ChristofidesPathSolver<CostType, ArcIndex, NodeIndex,
           });
       break;
     }
-#endif  // defined(USE_CBC) || defined(USE_SCIP)
+    #endif  // defined(USE_CBC) || defined(USE_SCIP)
     case MatchingAlgorithm::MINIMAL_WEIGHT_MATCHING: {
       // TODO(user): Cost caching was added and can gain up to 20% but
       // increases memory usage; see if we can avoid caching.
@@ -271,7 +272,7 @@ void ChristofidesPathSolver<CostType, ArcIndex, NodeIndex,
   // Build Eulerian path on minimum spanning tree + closing edges from matching
   // and extract a solution to the Traveling Salesman from the path by skipping
   // duplicate nodes.
-  ReverseArcListGraph<NodeIndex, ArcIndex> egraph(
+  ::util::ReverseArcListGraph<NodeIndex, ArcIndex> egraph(
       num_nodes, closure_arcs.size() + mst.size());
   for (ArcIndex arc : mst) {
     const NodeIndex tail = graph_.Tail(arc);

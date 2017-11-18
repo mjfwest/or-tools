@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,6 +13,8 @@
 
 #ifndef OR_TOOLS_BASE_MACROS_H_
 #define OR_TOOLS_BASE_MACROS_H_
+
+#include <cstdlib>  // for size_t.
 
 #if (defined(COMPILER_GCC3) || defined(OS_MACOSX)) && !defined(SWIG)
 #define ATTRIBUTE_UNUSED __attribute__ ((__unused__))

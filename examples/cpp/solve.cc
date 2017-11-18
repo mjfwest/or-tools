@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -45,8 +45,8 @@ DEFINE_string(params_file, "",
               "If this flag is set, the --params flag is ignored.");
 DEFINE_string(params, "", "Solver specific parameters");
 DEFINE_int64(time_limit_ms, 0,
-             "If stricitly positive, specifies a limit in ms on the solving"
-             " time.");
+             "If strictly positive, specifies a limit in ms on the solving "
+             "time. Otherwise, no time limit will be imposed.");
 DEFINE_string(forced_mps_format, "",
               "Set to force the mps format to use: free, fixed");
 
@@ -70,6 +70,8 @@ DEFINE_bool(dump_gzip, false,
 DEFINE_string(dump_model, "", "If non-empty, dumps MPModelProto there.");
 DEFINE_string(dump_request, "", "If non-empty, dumps MPModelRequest there.");
 DEFINE_string(dump_response, "", "If non-empty, dumps MPModelResponse there.");
+
+DECLARE_bool(verify_solution);  // Defined in ./linear_solver.cc
 
 static const char kUsageStr[] =
     "Run MPSolver on the given input file. Many formats are supported: \n"
@@ -237,6 +239,7 @@ void Run() {
     solver.set_time_limit(
         static_cast<int64>(1000.0 * request_proto.solver_time_limit_seconds()));
   }
+  // Note, the underlying MPSolver treats time limit equal to 0 as no limit.
   if (FLAGS_time_limit_ms >= 0) {
     solver.set_time_limit(FLAGS_time_limit_ms);
   }
@@ -289,6 +292,14 @@ void Run() {
     }
     CHECK_OK(file::SetContents(FLAGS_output_csv, csv_file, file::Defaults()));
   }
+  // If --verify_solution is true, we already verified it. If not, we add
+  // a verification step here.
+  if (has_solution && !FLAGS_verify_solution) {
+    LOG(INFO) << "Verifying the solution";
+    solver.VerifySolution(/*tolerance=*/param.GetDoubleParam(
+                              MPSolverParameters::PRIMAL_TOLERANCE),
+                          /*log_errors=*/true);
+  }
 
   printf("%-12s: %s\n", "Status",
          MPSolverResponseStatus_Name(
@@ -297,6 +308,10 @@ void Run() {
   printf("%-12s: %15.15e\n", "Objective",
          has_solution ? solver.Objective().Value() : 0.0);
   printf("%-12s: %lld\n", "Iterations", solver.iterations());
+  // NOTE(user): nodes() for non-MIP solvers crashes in debug mode by design.
+  if (solver.IsMIP()) {
+    printf("%-12s: %lld\n", "Nodes", solver.nodes());
+  }
   printf("%-12s: %-6.4g\n", "Time", solving_time_in_sec);
 }
 }  // namespace

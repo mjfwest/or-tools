@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,11 +13,21 @@
 
 #include "ortools/sat/table.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
+#include <memory>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 
+#include "ortools/base/logging.h"
+#include "ortools/base/int_type.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
+#include "ortools/sat/sat_solver.h"
+#include "ortools/util/sorted_interval_list.h"
 
 namespace operations_research {
 namespace sat {
@@ -79,9 +89,13 @@ void ProcessOneColumn(const std::vector<Literal>& line_literals,
   // is false too (i.e not possible).
   for (int i = 0; i < values.size(); ++i) {
     const IntegerValue v = values[i];
-    value_to_list_of_line_literals[v].push_back(line_literals[i]);
-    model->Add(Implication(FindOrDie(encoding, v).Negated(),
-                           line_literals[i].Negated()));
+    if (!ContainsKey(encoding, v)) {
+      model->Add(ClauseConstraint({line_literals[i].Negated()}));
+    } else {
+      value_to_list_of_line_literals[v].push_back(line_literals[i]);
+      model->Add(Implication(FindOrDie(encoding, v).Negated(),
+                             line_literals[i].Negated()));
+    }
   }
 
   // If all the tuples containing a value are false, then this value must be
@@ -143,13 +157,13 @@ std::function<void(Model*)> TableConstraint(
     // new BooleanVariable corresponding to this line since we can use the one
     // corresponding to this value in that column.
     std::vector<Literal> tuple_literals;
+    tuple_literals.reserve(new_tuples.size());
     for (int i = 0; i < new_tuples.size(); ++i) {
-      tuple_literals.push_back(Literal(model->Add(NewBooleanVariable()), true));
+      tuple_literals.emplace_back(model->Add(NewBooleanVariable()), true);
     }
 
     // Fully encode the variables using all the values appearing in the tuples.
     IntegerTrail* interger_trail = model->GetOrCreate<IntegerTrail>();
-    std::unordered_map<IntegerValue, Literal> encoding;
     const std::vector<std::vector<int64>> tr_tuples = Transpose(new_tuples);
     for (int i = 0; i < n; ++i) {
       const int64 first = tr_tuples[i].front();
@@ -160,11 +174,10 @@ std::function<void(Model*)> TableConstraint(
         interger_trail->UpdateInitialDomain(
             vars[i], SortedDisjointIntervalsFromValues(tr_tuples[i]));
         model->Add(FullyEncodeVariable(vars[i]));
-        encoding = GetEncoding(vars[i], model);
         ProcessOneColumn(
             tuple_literals,
             std::vector<IntegerValue>(tr_tuples[i].begin(), tr_tuples[i].end()),
-            encoding, model);
+            GetEncoding(vars[i], model), model);
       }
     }
   };
@@ -208,19 +221,28 @@ std::function<void(Model*)> NegatedTableConstraintWithoutFullEncoding(
     std::vector<Literal> clause;
     for (const std::vector<int64>& tuple : tuples) {
       clause.clear();
+      bool add = true;
       for (int i = 0; i < n; ++i) {
         const int64 value = tuple[i];
-        if (value > model->Get(LowerBound(vars[i]))) {
+        const int64 lb = model->Get(LowerBound(vars[i]));
+        const int64 ub = model->Get(UpperBound(vars[i]));
+        // TODO(user): test the full initial domain instead of just checking
+        // the bounds.
+        if (value < lb || value > ub) {
+          add = false;
+          break;
+        }
+        if (value > lb) {
           clause.push_back(encoder->GetOrCreateAssociatedLiteral(
               IntegerLiteral::LowerOrEqual(vars[i], IntegerValue(value - 1))));
         }
-        if (value < model->Get(UpperBound(vars[i]))) {
+        if (value < ub) {
           clause.push_back(encoder->GetOrCreateAssociatedLiteral(
               IntegerLiteral::GreaterOrEqual(vars[i],
                                              IntegerValue(value + 1))));
         }
       }
-      model->Add(ClauseConstraint(clause));
+      if (add) model->Add(ClauseConstraint(clause));
     }
   };
 }

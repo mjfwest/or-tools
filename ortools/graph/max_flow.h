@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -132,9 +132,9 @@
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
+#include "ortools/graph/graph.h"
 #include "ortools/graph/ebert_graph.h"
 #include "ortools/graph/flow_problem.pb.h"
-#include "ortools/graph/graph.h"
 #include "ortools/util/stats.h"
 #include "ortools/util/zvector.h"
 
@@ -235,7 +235,7 @@ class SimpleMaxFlow {
 
   // Note that we cannot free the graph before we stop using the max-flow
   // instance that uses it.
-  typedef ReverseArcStaticGraph<NodeIndex, ArcIndex> Graph;
+  typedef ::util::ReverseArcStaticGraph<NodeIndex, ArcIndex> Graph;
   std::unique_ptr<Graph> underlying_graph_;
   std::unique_ptr<GenericMaxFlow<Graph> > underlying_max_flow_;
 

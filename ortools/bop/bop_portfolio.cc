@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -307,7 +307,8 @@ void PortfolioOptimizer::CreateOptimizers(
     for (int i = 0; i < generators.size(); ++i) {
       propagator->AddSymmetry(std::move(generators[i]));
     }
-    sat_propagator_.AddPropagator(std::move(propagator));
+    sat_propagator_.AddPropagator(propagator.get());
+    sat_propagator_.TakePropagatorOwnership(std::move(propagator));
   }
 
   const int max_num_optimizers =

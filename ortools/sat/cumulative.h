@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,10 +14,12 @@
 #ifndef OR_TOOLS_SAT_CUMULATIVE_H_
 #define OR_TOOLS_SAT_CUMULATIVE_H_
 
+#include <functional>
+#include <vector>
+
 #include "ortools/sat/integer.h"
 #include "ortools/sat/intervals.h"
 #include "ortools/sat/model.h"
-#include "ortools/sat/sat_base.h"
 
 namespace operations_research {
 namespace sat {

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,13 +13,13 @@
 
 // Helper classes to make it easy to implement range-based for loops.
 
-#ifndef OR_TOOLS_UTIL_ITERATORS_H_
-#define OR_TOOLS_UTIL_ITERATORS_H_
+#ifndef UTIL_GRAPH_ITERATORS_H_
+#define UTIL_GRAPH_ITERATORS_H_
 
 #include <iterator>
 #include <vector>
 
-namespace operations_research {
+namespace util {
 
 // This is useful for wrapping iterators of a class that support many different
 // iterations. For instance, on a Graph class, one can write:
@@ -142,7 +142,6 @@ class IntegerRangeIterator
 //
 // for (const ArcIndex arc : graph.AllOutgoingArcs());
 // for (const NodeIndex node : graph.AllNodes());
-// for (const EntryIndex i : sparse_column.AllEntryIndex());
 template <typename IntegerType>
 class IntegerRange : public BeginEndWrapper<IntegerRangeIterator<IntegerType>> {
  public:
@@ -174,6 +173,6 @@ struct MutableVectorIteration {
  private:
   std::vector<T>* const v_;
 };
-}  // namespace operations_research
+}  // namespace util
 
-#endif  // OR_TOOLS_UTIL_ITERATORS_H_
+#endif  // UTIL_GRAPH_ITERATORS_H_

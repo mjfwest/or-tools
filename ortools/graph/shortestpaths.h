@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -67,4 +67,5 @@ bool AStarShortestPath(int node_count, int start_node, int end_node,
                        int64 disconnected_distance, std::vector<int>* nodes);
 
 }  // namespace operations_research
+
 #endif  // OR_TOOLS_GRAPH_SHORTESTPATHS_H_

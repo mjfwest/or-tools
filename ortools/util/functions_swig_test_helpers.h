@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -70,5 +70,17 @@ class FunctionSwigTestHelpers {
     fun(x);
   }
 };
+
+class DelayedFunctionSwigTestHelpers {
+ public:
+  DelayedFunctionSwigTestHelpers(std::function<int64(int64, int64)> fun)
+      : fun_(fun) {}
+
+  int64 NoOpInt64PairToInt64(int64 x, int64 y) { return fun_(x, y); }
+
+ private:
+  const std::function<int64(int64, int64)> fun_;
+};
+
 }  // namespace operations_research
 #endif  // OR_TOOLS_UTIL_FUNCTIONS_SWIG_TEST_HELPERS_H_

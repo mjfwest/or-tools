@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -100,20 +100,16 @@ class LinearProgram {
   ColIndex FindOrCreateVariable(const std::string& variable_id);
   RowIndex FindOrCreateConstraint(const std::string& constraint_id);
 
-  // Functions to set the name of a variable or constraint.
+  // Functions to set the name of a variable or constraint. Note that you
+  // won't be able to find those named variables/constraints with
+  // FindOrCreate{Variable|Constraint}().
+  // TODO(user): Add PopulateIdsFromNames() so names added via
+  // Set{Variable|Constraint}Name() can be found.
   void SetVariableName(ColIndex col, const std::string& name);
   void SetConstraintName(RowIndex row, const std::string& name);
 
   // Set the type of the variable.
   void SetVariableType(ColIndex col, VariableType type);
-
-  // Records the fact that the variable at column col must only take integer
-  // values.
-  // Note(user): For the time being, this is not handled. The continuous
-  // relaxation of the problem (with integrality constraints removed) is solved
-  // instead.
-  // TODO(user): Improve the support of integer variables.
-  void SetVariableIntegrality(ColIndex col, bool is_integer);
 
   // Returns whether the variable at column col is constrained to be integer.
   bool IsVariableInteger(ColIndex col) const;
@@ -299,6 +295,7 @@ class LinearProgram {
   // format var1 = X, var2 = Y, var3 = Z, ...
   std::string DumpSolution(const DenseRow& variable_values) const;
 
+
   // Returns a comma-separated std::string of integers containing (in that order)
   // num_constraints_, num_variables_in_file_, num_entries_,
   // num_objective_non_zeros_, num_rhs_non_zeros_, num_less_than_constraints_,
@@ -413,6 +410,13 @@ class LinearProgram {
   // Populates the calling object with the given LinearProgram.
   void PopulateFromLinearProgram(const LinearProgram& linear_program);
 
+  // Populates the calling object with the given LinearProgram while permuting
+  // variables and constraints. This is useful mainly for testing to generate
+  // a model with the same optimal objective value.
+  void PopulateFromPermutedLinearProgram(
+      const LinearProgram& lp, const RowPermutation& row_permutation,
+      const ColumnPermutation& col_permutation);
+
   // Populates the calling object with the variables of the given LinearProgram.
   // The function preserves the bounds, the integrality, the names of the
   // variables and their objective coefficients. No constraints are copied (the
@@ -456,9 +460,34 @@ class LinearProgram {
   // Scales the problem using the given scaler.
   void Scale(SparseMatrixScaler* scaler);
 
-  // Scales the costs to always have a maximum cost magnitude of 1.0 and returns
-  // the used cost scaling factor.
+  // While Scale() makes sure the coefficients inside the linear program matrix
+  // are in [-1, 1], the objective coefficients, variable bounds and constraint
+  // bounds can still take large values (originally or due to the matrix
+  // scaling).
+  //
+  // It makes a lot of sense to also scale them given that internally we use
+  // absolute tolerances, and that it is nice to have the same behavior if users
+  // scale their problems. For instance one could change the unit of ALL the
+  // variables from Bytes to MBytes if they denote memory quantities. Or express
+  // a cost in dollars instead of thousands of dollars.
+  //
+  // Here, we are quite prudent and just make sure that the range of the
+  // non-zeros magnitudes contains one. So for instance if all non-zeros costs
+  // are in [1e4, 1e6], we will divide them by 1e4 so that the new range is
+  // [1, 1e2].
+  //
+  // TODO(user): Another more aggressive idea is to set the median/mean/geomean
+  // of the magnitudes to one. Investigate if this leads to better results. It
+  // does look more robust.
+  //
+  // Both functions update objective_scaling_factor()/objective_offset() and
+  // return the scaling coefficient so that:
+  // - For ScaleObjective(), the old coefficients can be retrieved by
+  //   multiplying the new ones by the returned factor.
+  // - For ScaleBounds(), the old variable and constraint bounds can be
+  //   retrieved by multiplying the new ones by the returned factor.
   Fractional ScaleObjective();
+  Fractional ScaleBounds();
 
   // Removes the given row indices from the LinearProgram.
   // This needs to allocate O(num_variables) memory.
@@ -483,6 +512,24 @@ class LinearProgram {
   // variables have been added. This is also called "computational form" in some
   // of the literature.
   bool IsInEquationForm() const;
+
+  // Returns true if all integer variables in the linear program have strictly
+  // integer bounds.
+  bool BoundsOfIntegerVariablesAreInteger(Fractional tolerance) const;
+
+  // Returns true if all integer constraints in the linear program have strictly
+  // integer bounds.
+  bool BoundsOfIntegerConstraintsAreInteger(Fractional tolerance) const;
+
+  // Advanced usage. Bypass the costly call to CleanUp() when we known that the
+  // change we made kept the matrix columns "clean" (see the comment of
+  // CleanUp()). This is unsafe but can save a big chunk of the running time
+  // when one does a small amount of incremental changes to the problem (like
+  // adding a new row with no duplicates or zero entries).
+  void NotifyThatColumnsAreClean() {
+    DCHECK(matrix_.IsCleanedUp());
+    columns_are_known_to_be_clean_ = true;
+  }
 
  private:
   // A helper function that updates the vectors integer_variables_list_,

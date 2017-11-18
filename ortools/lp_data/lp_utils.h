@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,6 +34,12 @@ typedef AccurateSum<Fractional> KahanSum;
 // Returns the square of a Fractional.
 // Useful to shorten the code when f is an expression or a long name.
 inline Fractional Square(Fractional f) { return f * f; }
+
+// Returns distance from a given fractional number to the closest integer. It
+// means that the result is always contained in range of [0.0, 0.5].
+static inline Fractional Fractionality(Fractional f) {
+  return std::abs(f - std::round(f));
+}
 
 // Returns the scalar product between u and v.
 // The precise versions use KahanSum and are about two times slower.

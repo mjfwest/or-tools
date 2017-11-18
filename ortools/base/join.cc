@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,9 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "ortools/base/join.h"
 #include <string>
 #include "ortools/base/basictypes.h"
-#include "ortools/base/join.h"
 #include "ortools/base/string_view.h"
 #include "ortools/base/stringprintf.h"
 
@@ -86,6 +86,24 @@ void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b,
   StrAppend(s, e, f, g, h, i, j, k);
 }
 
+void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b,
+               const AlphaNum& c, const AlphaNum& d, const AlphaNum& e,
+               const AlphaNum& f, const AlphaNum& g, const AlphaNum& h,
+               const AlphaNum& i, const AlphaNum& j, const AlphaNum& k,
+               const AlphaNum& l) {
+  StrAppend(s, a, b, c, d, e);
+  StrAppend(s, f, g, h, i, j, k, l);
+}
+
+void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b,
+               const AlphaNum& c, const AlphaNum& d, const AlphaNum& e,
+               const AlphaNum& f, const AlphaNum& g, const AlphaNum& h,
+               const AlphaNum& i, const AlphaNum& j, const AlphaNum& k,
+               const AlphaNum& l, const AlphaNum& m) {
+  StrAppend(s, a, b, c, d, e, f);
+  StrAppend(s, g, h, i, j, k, l, m);
+}
+
 std::string StrCat(const AlphaNum& a) { return std::string(a.data(), a.size()); }
 std::string StrCat(const AlphaNum& a, const AlphaNum& b) {
   std::string out;
@@ -153,3 +171,20 @@ std::string StrCat(const AlphaNum& a, const AlphaNum& b, const AlphaNum& c,
   return out;
 }
 
+std::string StrCat(const AlphaNum& a, const AlphaNum& b, const AlphaNum& c,
+              const AlphaNum& d, const AlphaNum& e, const AlphaNum& f,
+              const AlphaNum& g, const AlphaNum& h, const AlphaNum& i,
+              const AlphaNum& j, const AlphaNum& k, const AlphaNum& l) {
+  std::string out;
+  StrAppend(&out, a, b, c, d, e, f, g, h, i, j, k, l);
+  return out;
+}
+std::string StrCat(const AlphaNum& a, const AlphaNum& b, const AlphaNum& c,
+              const AlphaNum& d, const AlphaNum& e, const AlphaNum& f,
+              const AlphaNum& g, const AlphaNum& h, const AlphaNum& i,
+              const AlphaNum& j, const AlphaNum& k, const AlphaNum& l,
+              const AlphaNum& m) {
+  std::string out;
+  StrAppend(&out, a, b, c, d, e, f, g, h, i, j, k, l, m);
+  return out;
+}

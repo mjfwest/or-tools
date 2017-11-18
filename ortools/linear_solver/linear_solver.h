@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -216,6 +216,11 @@ class MPSolver {
   // targets that you linked).
   static bool SupportsProblemType(OptimizationProblemType problem_type);
 
+  // Parses the name of the solver. Returns true if the solver type is
+  // successfully parsed as one of the OptimizationProblemType.
+  static bool ParseSolverType(const std::string& solver,
+                              OptimizationProblemType* type);
+
   bool IsMIP() const;
 
   std::string Name() const {
@@ -276,7 +281,12 @@ class MPSolver {
   // Returns the array of constraints handled by the MPSolver.
   // (They are listed in the order in which they were created.)
   const std::vector<MPConstraint*>& constraints() const { return constraints_; }
-  // Look up a constraint by name, and return NULL if it does not exist.
+
+  // Sets whether constraints should be indexed. Setting to false makes adding
+  // constraints faster and uses less memory.
+  void SetIndexConstraints(bool enabled);
+  // Look up a constraint by name, and return nullptr if it does not exist or if
+  // constraints are not indexed.
   MPConstraint* LookupConstraintOrNull(const std::string& constraint_name) const;
 
   // Creates a linear constraint with given bounds. Bounds can be
@@ -326,10 +336,6 @@ class MPSolver {
   ResultStatus Solve();
   // Solves the problem using the specified parameter values.
   ResultStatus Solve(const MPSolverParameters& param);
-
-  // Call only after calling MPSolver::Solve. Evaluates "linear_expr" for the
-  // variable values at the solution found by solving.
-  double SolutionValue(const LinearExpr& linear_expr) const;
 
   // Writes the model using the solver internal write function.  Currently only
   // available for Gurobi.
@@ -565,6 +571,7 @@ class MPSolver {
   friend class MPSolverInterface;
   friend class GLOPInterface;
   friend class BopInterface;
+  friend class SatInterface;
   friend class KnapsackInterface;
 
   // Debugging: verify that the given MPVariable* belongs to this solver.
@@ -579,6 +586,9 @@ class MPSolver {
 
   // Returns true if the model has constraints with lower bound > upper bound.
   bool HasInfeasibleConstraints() const;
+
+  // Returns true if the model has at least 1 integer variable.
+  bool HasIntegerVariables() const;
 
   // The name of the linear programming problem.
   const std::string name_;
@@ -599,7 +609,7 @@ class MPSolver {
   // The vector of constraints in the problem.
   std::vector<MPConstraint*> constraints_;
   // A map from a constraint's name to its index in constraints_.
-  std::unordered_map<std::string, int> constraint_name_to_index_;
+  std::unique_ptr<std::unordered_map<std::string, int> > constraint_name_to_index_;
   // Whether constraints have been extracted to the underlying interface.
   std::vector<bool> constraint_is_extracted_;
 
@@ -726,6 +736,7 @@ class MPObjective {
   friend class CplexInterface;
   friend class GLOPInterface;
   friend class BopInterface;
+  friend class SatInterface;
   friend class KnapsackInterface;
 
   // Constructor. An objective points to a single MPSolverInterface
@@ -801,6 +812,7 @@ class MPVariable {
   friend class GLOPInterface;
   friend class MPVariableSolutionValueTest;
   friend class BopInterface;
+  friend class SatInterface;
   friend class KnapsackInterface;
 
   // Constructor. A variable points to a single MPSolverInterface that
@@ -901,6 +913,7 @@ class MPConstraint {
   friend class CplexInterface;
   friend class GLOPInterface;
   friend class BopInterface;
+  friend class SatInterface;
   friend class KnapsackInterface;
 
   // Constructor. A constraint points to a single MPSolverInterface

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -126,11 +126,11 @@ message GlopParameters {
   //
   // Note that this value can temporarily increase during the execution of the
   // algorithm if the estimated precision of the reduced costs is higher than
-  // this tolerance. Note also that we always scale the costs so that the
-  // maximum cost magnitude is 1.0 (in the presolve step).
+  // this tolerance. Note also that we scale the costs (in the presolve step) so
+  // that the cost magnitude range contains one.
   //
   // This is also known as the optimality tolerance in other solvers.
-  optional double dual_feasibility_tolerance = 11 [default = 1e-10];
+  optional double dual_feasibility_tolerance = 11 [default = 1e-8];
 
   // During the primal simplex (resp. dual simplex), the coefficients of the
   // direction (resp. update row) with a magnitude lower than this threshold are

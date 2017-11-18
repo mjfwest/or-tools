@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -846,7 +846,7 @@ class ForwardStaticGraph
 
   // To be used in a DCHECK().
   bool TailArrayComplete() const {
-    CHECK_NOTNULL(tail_.get());
+    CHECK(tail_);
     for (ArcIndexType arc = kFirstArc; arc < num_arcs_; ++arc) {
       CHECK(CheckTailIndexValidity(arc));
       CHECK(IsNodeValid((*tail_)[arc]));
@@ -1684,7 +1684,7 @@ class ForwardEbertGraph
 
   // To be used in a DCHECK().
   bool TailArrayComplete() const {
-    CHECK_NOTNULL(tail_.get());
+    CHECK(tail_);
     for (ArcIndexType arc = kFirstArc; arc < num_arcs_; ++arc) {
       CHECK(CheckTailIndexValidity(arc));
       CHECK(IsNodeValid((*tail_)[arc]));
@@ -1778,7 +1778,7 @@ class ForwardEbertGraph
   // used.
   void SetTail(const ArcIndexType arc, const NodeIndexType tail) {
     DCHECK(CheckTailIndexValidity(arc));
-    CHECK_NOTNULL(tail_.get());
+    CHECK(tail_);
     representation_clean_ = false;
     tail_->Set(arc, tail);
   }

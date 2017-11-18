@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@
 #include <algorithm>
 
 #include "ortools/base/stringprintf.h"
+#include "ortools/graph/graph.h"
 #include "ortools/graph/graphs.h"
 
 namespace operations_research {
@@ -685,14 +686,15 @@ bool GenericMaxFlow<Graph>::SaturateOutgoingArcsFromSource() {
     if (flow == 0 || node_potential_[Head(arc)] >= num_nodes) continue;
 
     // We are careful in case the sum of the flow out of the source is greater
-    // than kMaxFlowQuantity to avoid overflow. Since we sum two positive
-    // integers, we detect an integer overflow when their sum is negative.
+    // than kMaxFlowQuantity to avoid overflow.
     const FlowQuantity current_flow_out_of_source = -node_excess_[source_];
-    if (flow + current_flow_out_of_source < 0) {
+    DCHECK_GE(flow, 0) << flow;
+    DCHECK_GE(current_flow_out_of_source, 0) << current_flow_out_of_source;
+    const FlowQuantity capped_flow =
+        kMaxFlowQuantity - current_flow_out_of_source;
+    if (capped_flow < flow) {
       // We push as much flow as we can so the current flow on the network will
       // be kMaxFlowQuantity.
-      const FlowQuantity capped_flow =
-          kMaxFlowQuantity - current_flow_out_of_source;
 
       // Since at the beginning of the function, current_flow_out_of_source
       // was different from kMaxFlowQuantity, we are sure to have pushed some
@@ -980,8 +982,8 @@ FlowModel GenericMaxFlow<Graph>::CreateFlowModel() {
 // TODO(user): moves this code out of a .cc file and include it at the end of
 // the header so it can work with any graph implementation ?
 template class GenericMaxFlow<StarGraph>;
-template class GenericMaxFlow<ReverseArcListGraph<> >;
-template class GenericMaxFlow<ReverseArcStaticGraph<> >;
-template class GenericMaxFlow<ReverseArcMixedGraph<> >;
+template class GenericMaxFlow<::util::ReverseArcListGraph<> >;
+template class GenericMaxFlow<::util::ReverseArcStaticGraph<> >;
+template class GenericMaxFlow<::util::ReverseArcMixedGraph<> >;
 
 }  // namespace operations_research

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,9 +14,16 @@
 #include "ortools/sat/cumulative.h"
 
 #include <algorithm>
+#include <memory>
 
+#include "ortools/base/logging.h"
+#include "ortools/base/int_type.h"
 #include "ortools/sat/disjunctive.h"
 #include "ortools/sat/overload_checker.h"
+#include "ortools/sat/pb_constraint.h"
+#include "ortools/sat/precedences.h"
+#include "ortools/sat/sat_base.h"
+#include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/sat/timetable.h"
 #include "ortools/sat/timetable_edgefinding.h"
@@ -54,7 +61,7 @@ std::function<void(Model*)> Cumulative(
 
       // At this point, we know that the duration variable is not fixed.
       const Literal size_condition =
-          encoder->CreateAssociatedLiteral(IntegerLiteral::GreaterOrEqual(
+          encoder->GetOrCreateAssociatedLiteral(IntegerLiteral::GreaterOrEqual(
               intervals->SizeVar(vars[i]), IntegerValue(1)));
 
       if (intervals->IsOptional(vars[i])) {
@@ -189,6 +196,7 @@ std::function<void(Model*)> CumulativeTimeDecomposition(
     for (IntegerValue time = min_start; time < max_end; ++time) {
       std::vector<LiteralWithCoeff> literals_with_coeff;
       for (int t = 0; t < num_tasks; ++t) {
+        sat_solver->Propagate();
         const IntegerValue start_min = integer_trail->LowerBound(start_vars[t]);
         const IntegerValue end_max = integer_trail->UpperBound(end_vars[t]);
         if (end_max <= time || time < start_min || demands[t] == 0) continue;
@@ -203,11 +211,11 @@ std::function<void(Model*)> CumulativeTimeDecomposition(
         }
 
         // Task t overlaps time.
-        consume_condition.push_back(encoder->CreateAssociatedLiteral(
+        consume_condition.push_back(encoder->GetOrCreateAssociatedLiteral(
             IntegerLiteral::LowerOrEqual(start_vars[t], IntegerValue(time))));
-        consume_condition.push_back(
-            encoder->CreateAssociatedLiteral(IntegerLiteral::GreaterOrEqual(
-                end_vars[t], IntegerValue(time + 1))));
+        consume_condition.push_back(encoder->GetOrCreateAssociatedLiteral(
+            IntegerLiteral::GreaterOrEqual(end_vars[t],
+                                           IntegerValue(time + 1))));
 
         model->Add(ReifiedBoolAnd(consume_condition, consume));
 

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,10 +14,18 @@
 #ifndef OR_TOOLS_SAT_INTEGER_EXPR_H_
 #define OR_TOOLS_SAT_INTEGER_EXPR_H_
 
+#include <functional>
+#include <vector>
+
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/macros.h"
+#include "ortools/base/int_type.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/precedences.h"
 #include "ortools/sat/sat_base.h"
+#include "ortools/sat/sat_solver.h"
 
 namespace operations_research {
 namespace sat {
@@ -44,8 +52,7 @@ class IntegerSumLE : public PropagatorInterface {
   IntegerSumLE(LiteralIndex reified_literal,
                const std::vector<IntegerVariable>& vars,
                const std::vector<IntegerValue>& coefficients,
-               IntegerValue upper_bound, Trail* trail,
-               IntegerTrail* integer_trail);
+               IntegerValue upper_bound, Model* model);
 
   // We propagate:
   // - If the sum of the individual lower-bound is > upper_bound, we fail.
@@ -66,8 +73,7 @@ class IntegerSumLE : public PropagatorInterface {
 
   Trail* trail_;
   IntegerTrail* integer_trail_;
-
-  RevRepository<IntegerValue> rev_repository_integer_value_;
+  RevIntegerValueRepository* rev_integer_value_repository_;
 
   // Reversible sum of the lower bound of the fixed variables.
   IntegerValue rev_lb_fixed_vars_;
@@ -176,6 +182,24 @@ class DivisionPropagator : public PropagatorInterface {
   DISALLOW_COPY_AND_ASSIGN(DivisionPropagator);
 };
 
+// Propagates x * x = s.
+// TODO(user): Only works for x nonnegative.
+class SquarePropagator : public PropagatorInterface {
+ public:
+  SquarePropagator(IntegerVariable x, IntegerVariable s,
+                   IntegerTrail* integer_trail);
+
+  bool Propagate() final;
+  void RegisterWith(GenericLiteralWatcher* watcher);
+
+ private:
+  const IntegerVariable x_;
+  const IntegerVariable s_;
+  IntegerTrail* integer_trail_;
+
+  DISALLOW_COPY_AND_ASSIGN(SquarePropagator);
+};
+
 // =============================================================================
 // Model based functions.
 // =============================================================================
@@ -213,8 +237,7 @@ inline std::function<void(Model*)> WeightedSumLowerOrEqual(
     IntegerSumLE* constraint = new IntegerSumLE(
         kNoLiteralIndex, vars,
         std::vector<IntegerValue>(coefficients.begin(), coefficients.end()),
-        IntegerValue(upper_bound), model->GetOrCreate<Trail>(),
-        model->GetOrCreate<IntegerTrail>());
+        IntegerValue(upper_bound), model);
     constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
     model->TakeOwnership(constraint);
   };
@@ -281,8 +304,7 @@ inline std::function<void(Model*)> ConditionalWeightedSumLowerOrEqual(
     IntegerSumLE* constraint = new IntegerSumLE(
         is_le.Index(), vars,
         std::vector<IntegerValue>(coefficients.begin(), coefficients.end()),
-        IntegerValue(upper_bound), model->GetOrCreate<Trail>(),
-        model->GetOrCreate<IntegerTrail>());
+        IntegerValue(upper_bound), model);
     constraint->RegisterWith(model->GetOrCreate<GenericLiteralWatcher>());
     model->TakeOwnership(constraint);
   };
@@ -474,7 +496,18 @@ inline std::function<void(Model*)> ProductConstraint(IntegerVariable a,
                                                      IntegerVariable p) {
   return [=](Model* model) {
     IntegerTrail* integer_trail = model->GetOrCreate<IntegerTrail>();
-    if (model->Get(LowerBound(a)) >= 0 && model->Get(LowerBound(b)) >= 0) {
+    if (a == b) {
+      if (model->Get(LowerBound(a)) >= 0) {
+        RegisterAndTransferOwnership(model,
+                                     new SquarePropagator(a, p, integer_trail));
+      } else if (model->Get(UpperBound(a)) <= 0) {
+        RegisterAndTransferOwnership(
+            model, new SquarePropagator(NegationOf(a), p, integer_trail));
+      } else {
+        LOG(FATAL) << "Not supported";
+      }
+    } else if (model->Get(LowerBound(a)) >= 0 &&
+               model->Get(LowerBound(b)) >= 0) {
       RegisterAndTransferOwnership(
           model, new PositiveProductPropagator(a, b, p, integer_trail));
     } else if (model->Get(LowerBound(a)) >= 0 &&

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -12,6 +12,8 @@
 // limitations under the License.
 
 #include "ortools/sat/intervals.h"
+
+#include <memory>
 
 #include "ortools/util/sort.h"
 
@@ -43,18 +45,8 @@ IntervalVariable IntervalsRepository::CreateInterval(IntegerVariable start,
   }
   if (IsOptional(i)) {
     const Literal literal(is_present);
-    precedences_->MarkIntegerVariableAsOptional(StartVar(i), literal);
     integer_trail_->MarkIntegerVariableAsOptional(StartVar(i), literal);
-    precedences_->MarkIntegerVariableAsOptional(EndVar(i), literal);
     integer_trail_->MarkIntegerVariableAsOptional(EndVar(i), literal);
-    if (SizeVar(i) != kNoIntegerVariable) {
-      // TODO(user): This is not currently fully supported in precedences_
-      // if the size is not a constant variable.
-      CHECK_EQ(integer_trail_->LowerBound(SizeVar(i)),
-               integer_trail_->UpperBound(SizeVar(i)));
-      precedences_->MarkIntegerVariableAsOptional(SizeVar(i), literal);
-      integer_trail_->MarkIntegerVariableAsOptional(SizeVar(i), literal);
-    }
   }
   return i;
 }

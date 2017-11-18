@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -398,7 +398,8 @@ class ImpactRecorder : public SearchMonitor {
       return;
     }
     d->Accept(&find_var_);
-    if (find_var_.operation() == FindVar::ASSIGN) {
+    if (find_var_.operation() == FindVar::ASSIGN &&
+        ContainsKey(var_map_, find_var_.var())) {
       current_var_ = var_map_[find_var_.var()];
       current_value_ = find_var_.value();
       current_log_space_ = domain_watcher_->LogSearchSpaceSize();

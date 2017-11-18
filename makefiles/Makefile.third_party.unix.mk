@@ -1,9 +1,9 @@
 # SVN tags of dependencies to checkout.
 
-GFLAGS_TAG = 2.2.0
-PROTOBUF_TAG = 3.3.0
+GFLAGS_TAG = 2.2.1
+PROTOBUF_TAG = 3.5.0
 GLOG_TAG = 0.3.5
-CBC_TAG = 2.9.8
+CBC_TAG = 2.9.9
 
 # Detect if patchelf is needed
 ifeq ($(PLATFORM), LINUX)
@@ -15,7 +15,7 @@ ifeq ($(PLATFORM), MACOSX)
 endif
 
 # Main target.
-.PHONY: makefile_third_party missing_directories install_java_protobuf
+.PHONY: makefile_third_party missing_directories
 third_party: makefile_third_party install_third_party
 
 # Create missing directories
@@ -28,23 +28,27 @@ MISSING_DIRECTORIES = \
 	objs/bop \
 	objs/com/google/ortools \
 	objs/constraint_solver \
+	objs/data \
 	objs/flatzinc \
 	objs/glop \
 	objs/graph \
 	objs/linear_solver \
 	objs/lp_data \
 	objs/sat \
+	objs/port \
 	objs/swig \
 	objs/util \
 	ortools/gen/com/google/ortools/algorithms \
 	ortools/gen/com/google/ortools/constraintsolver \
 	ortools/gen/com/google/ortools/flatzinc \
 	ortools/gen/com/google/ortools/graph \
+	ortools/gen/com/google/ortools/sat \
 	ortools/gen/com/google/ortools/linearsolver \
 	ortools/gen/com/google/ortools/properties \
 	ortools/gen/ortools/algorithms \
 	ortools/gen/ortools/bop \
 	ortools/gen/ortools/constraint_solver \
+	ortools/gen/ortools/data \
 	ortools/gen/ortools/flatzinc \
 	ortools/gen/ortools/glop \
 	ortools/gen/ortools/graph \
@@ -82,6 +86,9 @@ objs/com/google/ortools:
 objs/constraint_solver:
 	$(MKDIR_P) objs$Sconstraint_solver
 
+objs/data:
+	$(MKDIR_P) objs$Sdata
+
 objs/flatzinc:
 	$(MKDIR_P) objs$Sflatzinc
 
@@ -96,6 +103,9 @@ objs/linear_solver:
 
 objs/lp_data:
 	$(MKDIR_P) objs$Slp_data
+
+objs/port:
+	$(MKDIR_P) objs$Sport
 
 objs/sat:
 	$(MKDIR_P) objs$Ssat
@@ -121,6 +131,9 @@ ortools/gen/com/google/ortools/linearsolver:
 ortools/gen/com/google/ortools/flatzinc:
 	$(MKDIR_P) ortools$Sgen$Scom$Sgoogle$Sortools$Sflatzinc
 
+ortools/gen/com/google/ortools/sat:
+	$(MKDIR_P) ortools$Sgen$Scom$Sgoogle$Sortools$Ssat
+
 ortools/gen/com/google/ortools/properties:
 	$(MKDIR_P) ortools$Sgen$Scom$Sgoogle$Sortools$Sproperties
 
@@ -132,6 +145,9 @@ ortools/gen/ortools/bop:
 
 ortools/gen/ortools/constraint_solver:
 	$(MKDIR_P) ortools$Sgen$Sortools$Sconstraint_solver
+
+ortools/gen/ortools/data:
+	$(MKDIR_P) ortools$Sgen$Sortools$Sdata
 
 ortools/gen/ortools/flatzinc:
 	$(MKDIR_P) ortools$Sgen$Sortools$Sflatzinc
@@ -232,13 +248,12 @@ dependencies/sources/patchelf-0.8/configure: dependencies/archives/patchelf-0.8.
 
 # Install Java protobuf
 
-install_java_protobuf: dependencies/install/lib/protobuf.jar
-
 dependencies/install/lib/protobuf.jar: dependencies/install/bin/protoc
 	cd dependencies/sources/protobuf-$(PROTOBUF_TAG)/java && \
 	  ../../../install/bin/protoc --java_out=core/src/main/java -I../src \
 	  ../src/google/protobuf/descriptor.proto
-	cd dependencies/sources/protobuf-$(PROTOBUF_TAG)/java/core/src/main/java && jar cvf ../../../../../../../install/lib/protobuf.jar com/google/protobuf/*java
+	cd dependencies/sources/protobuf-$(PROTOBUF_TAG)/java/core/src/main/java && $(JAVAC_BIN) com/google/protobuf/*java
+	cd dependencies/sources/protobuf-$(PROTOBUF_TAG)/java/core/src/main/java && jar cvf ../../../../../../../install/lib/protobuf.jar com/google/protobuf/*class
 
 # Install C# protobuf
 
@@ -280,7 +295,10 @@ Makefile.local: makefiles/Makefile.third_party.unix.mk
 	@echo "# Define UNIX_GLPK_DIR to point to a compiled version of GLPK to use it" >> Makefile.local
 	@echo "# Define UNIX_SCIP_DIR to point to a compiled version of SCIP to use it ">> Makefile.local
 	@echo "#   i.e.: <path>/scipoptsuite-4.0.0/scip-4.0.0" >> Makefile.local
-	@echo "#   compile scip with GMP=false READLINE=false" >> Makefile.local
+	@echo "#   On Mac OS X, compile scip with: " >> Makefile.local
+	@echo "#     make GMP=false READLINE=false TPI=tny" >> Makefile.local
+	@echo "#   On Linux, compile scip with: " >> Makefile.local
+	@echo "#     make GMP=false READLINE=false TPI=tny USRCFLAGS=-fPIC USRCXXFLAGS=-fPIC USRCPPFLAGS=-fPIC" >> Makefile.local
 	@echo "# Define UNIX_GUROBI_DIR and GUROBI_LIB_VERSION to use Gurobi" >> Makefile.local
 	@echo "# Define UNIX_CPLEX_DIR to use CPLEX" >> Makefile.local
 	@echo >> Makefile.local

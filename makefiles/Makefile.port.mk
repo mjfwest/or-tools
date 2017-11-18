@@ -29,6 +29,8 @@ ifeq ("$(SYSTEM)","unix")
       CANDIDATE_JDK_ROOTS = \
         /usr/local/buildtools/java/jdk-64 \
         /usr/lib/jvm/java-1.7.0-openjdk.x86_64 \
+        /usr/lib/jvm/java-1.8.0-openjdk \
+        /usr/lib/jvm/java-1.7.0-openjdk \
         /usr/lib64/jvm/java-1.6.0-openjdk-1.6.0 \
         /usr/lib64/jvm/java-6-sun-1.6.0.26 \
         /usr/lib/jvm/java-1.6.0-openjdk-1.6.0.0.x86_64 \
@@ -94,7 +96,6 @@ ifeq ("$(SYSTEM)","win")
     PLATFORM = WIN64
     PTRLENGTH = 64
     CMAKE_SUFFIX = Win64
-    ARCH= /DARCH_K8
     CBC_PLATFORM_PREFIX = x64
     GLPK_PLATFORM = w64
     NETPLATFORM = x64
@@ -103,7 +104,6 @@ ifeq ("$(SYSTEM)","win")
       PLATFORM = WIN64
       PTRLENGTH = 64
       CMAKE_SUFFIX = Win64
-      ARCH= /DARCH_K8
       CBC_PLATFORM_PREFIX = x64
       GLPK_PLATFORM = w64
       NETPLATFORM = x64
@@ -111,7 +111,6 @@ ifeq ("$(SYSTEM)","win")
       PLATFORM = Win32
       PTRLENGTH = 32
       CMAKE_SUFFIX =
-      ARCH =
       CBC_PLATFORM_PREFIX = Win32
       GLPK_PLATFORM = w32
       NETPLATFORM = x86

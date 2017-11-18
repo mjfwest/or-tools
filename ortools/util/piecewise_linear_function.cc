@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -118,7 +118,7 @@ int64 PiecewiseSegment::Value(int64 x) const {
 
 int64 PiecewiseSegment::SafeValuePostReference(int64 x) const {
   DCHECK_GE(x, reference_x_);
-  const uint64 span_x = x - reference_x_;
+  const uint64 span_x = static_cast<uint64>(x) - reference_x_;
   if (span_x == 0) {
     return reference_y_;
   }
@@ -135,7 +135,7 @@ int64 PiecewiseSegment::SafeValuePostReference(int64 x) const {
       return unsigned_sum > kint64max ? kint64max
                                       : static_cast<int64>(unsigned_sum);
     } else {
-      const uint64 opp_reference_y = static_cast<uint64>(-reference_y_);
+      const uint64 opp_reference_y = -static_cast<uint64>(reference_y_);
       if (span_y >= opp_reference_y) {
         return span_y - opp_reference_y > kint64max
                    ? kint64max
@@ -152,7 +152,7 @@ int64 PiecewiseSegment::SafeValuePostReference(int64 x) const {
     if (reference_y_ == 0) {
       return span_y > kint64max ? kint64min : -static_cast<int64>(span_y);
     } else if (reference_y_ < 0) {
-      const uint64 opp_reference_y = static_cast<uint64>(-reference_y_);
+      const uint64 opp_reference_y = -static_cast<uint64>(reference_y_);
       const uint64 opp_unsigned_sum = UnsignedCapAdd(opp_reference_y, span_y);
       return opp_unsigned_sum > kint64max
                  ? kint64min
@@ -173,7 +173,7 @@ int64 PiecewiseSegment::SafeValuePostReference(int64 x) const {
 
 int64 PiecewiseSegment::SafeValuePreReference(int64 x) const {
   DCHECK_LE(x, reference_x_);
-  const uint64 span_x = reference_x_ - x;
+  const uint64 span_x = static_cast<uint64>(reference_x_) - x;
   if (slope_ == 0) {
     // Zero slope segment.
     return reference_y_;
@@ -190,14 +190,14 @@ int64 PiecewiseSegment::SafeValuePreReference(int64 x) const {
       } else {
         return span_y - reference_y_ > static_cast<uint64>(kint64max) + 1
                    ? kint64min
-                   : -static_cast<int64>(span_y - reference_y_);
+                   : -static_cast<uint64>(span_y - reference_y_);
       }
     } else {
-      const uint64 opp_reference_y = static_cast<uint64>(-reference_y_);
+      const uint64 opp_reference_y = -static_cast<uint64>(reference_y_);
       const uint64 opp_unsigned_sum = UnsignedCapAdd(opp_reference_y, span_y);
       return opp_unsigned_sum > kint64max
                  ? kint64min
-                 : -static_cast<int64>(opp_unsigned_sum);
+                 : -static_cast<uint64>(opp_unsigned_sum);
     }
   } else {
     // Negative slope segment.
@@ -205,7 +205,7 @@ int64 PiecewiseSegment::SafeValuePreReference(int64 x) const {
     if (reference_y_ == 0) {
       return span_y > kint64max ? kint64max : span_y;
     } else if (reference_y_ < 0) {
-      const uint64 opp_reference_y = static_cast<uint64>(-reference_y_);
+      const uint64 opp_reference_y = -static_cast<uint64>(reference_y_);
       if (span_y >= opp_reference_y) {
         return span_y - opp_reference_y > kint64max
                    ? kint64max
@@ -213,7 +213,7 @@ int64 PiecewiseSegment::SafeValuePreReference(int64 x) const {
       } else {
         return opp_reference_y - span_y > static_cast<uint64>(kint64max) + 1
                    ? kint64min
-                   : -static_cast<int64>(opp_reference_y - span_y);
+                   : -static_cast<uint64>(opp_reference_y - span_y);
       }
     } else {
       const uint64 unsigned_sum = UnsignedCapAdd(reference_y_, span_y);

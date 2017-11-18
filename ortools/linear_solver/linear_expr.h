@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -92,7 +92,7 @@ class MPVariable;
 //   * Get the value of the quantity after solving, e.g.
 //
 //     solver.Solve();
-//     solver.SolutionValue(linear_expr);
+//     linear_expr.SolutionValue();
 //
 // LinearExpr is allowed to delete variables with coefficient zero from the map,
 // but is not obligated to do so.
@@ -122,6 +122,10 @@ class LinearExpr {
     return terms_;
   }
 
+  // Call only after calling MPSolver::Solve. Evaluates the value of this
+  // expression at the solution found.
+  double SolutionValue() const;
+
  private:
   double offset_;
   std::unordered_map<const MPVariable*, double> terms_;
@@ -148,7 +152,7 @@ LinearExpr operator*(double lhs, LinearExpr rhs);
 // MPSolver::AddRowConstraint(const LinearRange& range[, const std::string& name]);
 class LinearRange {
  public:
-  LinearRange();
+  LinearRange() : lower_bound_(0), upper_bound_(0) {}
   // The bounds of the linear range are updated so that they include the offset
   // from "linear_expr", i.e., we form the range:
   // lower_bound - offset <= linear_expr - offset <= upper_bound - offset.

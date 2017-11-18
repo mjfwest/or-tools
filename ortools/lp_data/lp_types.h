@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,7 +17,7 @@
 #ifndef OR_TOOLS_LP_DATA_LP_TYPES_H_
 #define OR_TOOLS_LP_DATA_LP_TYPES_H_
 
-#include <math.h>
+#include <cmath>
 #include <limits>
 #include "ortools/base/basictypes.h"
 #include "ortools/base/int_type.h"
@@ -246,8 +246,7 @@ ConstraintStatus VariableToConstraintStatus(VariableStatus status);
 // to use the index type for the size.
 //
 // TODO(user): This should probably move into ITIVector, but note that this
-// version is more strict and does not allow any other size types nor a resize()
-// or creation with a default value.
+// version is more strict and does not allow any other size types.
 template <typename IntType, typename T>
 class StrictITIVector : public ITIVector<IntType, T> {
  public:
@@ -260,13 +259,20 @@ class StrictITIVector : public ITIVector<IntType, T> {
       : ParentType(init_list.begin(), init_list.end()) {}
 #endif
   StrictITIVector() : ParentType() {}
+  explicit StrictITIVector(IntType size) : ParentType(size.value()) {}
   StrictITIVector(IntType size, const T& v) : ParentType(size.value(), v) {}
   template <typename InputIteratorType>
   StrictITIVector(InputIteratorType first, InputIteratorType last)
       : ParentType(first, last) {}
+
+  void resize(IntType size) { ParentType::resize(size.value()); }
   void resize(IntType size, const T& v) { ParentType::resize(size.value(), v); }
+
   void assign(IntType size, const T& v) { ParentType::assign(size.value(), v); }
+
   IntType size() const { return IntType(ParentType::size()); }
+
+  IntType capacity() const { return IntType(ParentType::capacity()); }
 
   // Since calls to resize() must use a default value, we introduce a new
   // function for convenience to reduce the size of a vector.

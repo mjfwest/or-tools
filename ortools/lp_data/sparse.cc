@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,6 +22,8 @@ namespace operations_research {
 namespace glop {
 
 namespace {
+
+using ::util::Reverse;
 
 template <typename Matrix>
 EntryIndex ComputeNumEntries(const Matrix& matrix) {
@@ -279,7 +281,7 @@ void SparseMatrix::DeleteColumns(const DenseBooleanRow& columns_to_delete) {
       ++new_index;
     }
   }
-  columns_.resize_down(new_index);
+  columns_.resize(new_index);
 }
 
 void SparseMatrix::DeleteRows(RowIndex new_num_rows,

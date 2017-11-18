@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,18 +13,24 @@
 
 #include "ortools/sat/boolean_problem.h"
 
-#include <cmath>
+#include <algorithm>
+#include <cstdlib>
 #include <unordered_map>
+#include <limits>
+#include <numeric>
+#include <utility>
 
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
 #include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
+#include "ortools/graph/io.h"
+#include "ortools/graph/util.h"
+#include "ortools/base/int_type.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/hash.h"
 #include "ortools/algorithms/find_graph_symmetries.h"
-#include "ortools/graph/graph.h"
-#include "ortools/graph/io.h"
-#include "ortools/graph/util.h"
+#include "ortools/sat/sat_parameters.pb.h"
 
 DEFINE_string(debug_dump_symmetry_graph_to_file, "",
               "If this flag is non-empty, an undirected graph whose"
@@ -34,6 +40,8 @@ DEFINE_string(debug_dump_symmetry_graph_to_file, "",
 
 namespace operations_research {
 namespace sat {
+
+using util::RemapGraph;
 
 void ExtractAssignment(const LinearBooleanProblem& problem,
                        const SatSolver& solver, std::vector<bool>* assignemnt) {
@@ -130,6 +138,63 @@ util::Status ValidateBooleanProblem(const LinearBooleanProblem& problem) {
                         StringPrintf("Invalid objective: ") + error);
   }
   return util::Status::OK;
+}
+
+CpModelProto BooleanProblemToCpModelproto(const LinearBooleanProblem& problem) {
+  CpModelProto result;
+  for (int i = 0; i < problem.num_variables(); ++i) {
+    IntegerVariableProto* var = result.add_variables();
+    if (problem.var_names_size() > i) {
+      var->set_name(problem.var_names(i));
+    }
+    var->add_domain(0);
+    var->add_domain(1);
+  }
+  for (const LinearBooleanConstraint& constraint : problem.constraints()) {
+    ConstraintProto* ct = result.add_constraints();
+    ct->set_name(constraint.name());
+    LinearConstraintProto* linear = ct->mutable_linear();
+    int64 offset = 0;
+    for (int i = 0; i < constraint.literals_size(); ++i) {
+      // Note that the new format is slightly different.
+      const int lit = constraint.literals(i);
+      const int64 coeff = constraint.coefficients(i);
+      if (lit > 0) {
+        linear->add_vars(lit - 1);
+        linear->add_coeffs(coeff);
+      } else {
+        // The term was coeff * (1 - var).
+        linear->add_vars(-lit - 1);
+        linear->add_coeffs(-coeff);
+        offset -= coeff;
+      }
+    }
+    linear->add_domain(constraint.has_lower_bound()
+                           ? constraint.lower_bound() + offset
+                           : kint32min + offset);
+    linear->add_domain(constraint.has_upper_bound()
+                           ? constraint.upper_bound() + offset
+                           : kint32max + offset);
+  }
+  if (problem.has_objective()) {
+    CpObjectiveProto* objective = result.mutable_objective();
+    int64 offset = 0;
+    for (int i = 0; i < problem.objective().literals_size(); ++i) {
+      const int lit = problem.objective().literals(i);
+      const int64 coeff = problem.objective().coefficients(i);
+      if (lit > 0) {
+        objective->add_vars(lit - 1);
+        objective->add_coeffs(coeff);
+      } else {
+        objective->add_vars(-lit - 1);
+        objective->add_coeffs(-coeff);
+        offset -= coeff;
+      }
+    }
+    objective->set_offset(offset + problem.objective().offset());
+    objective->set_scaling_factor(problem.objective().scaling_factor());
+  }
+  return result;
 }
 
 void ChangeOptimizationDirection(LinearBooleanProblem* problem) {
@@ -232,20 +297,21 @@ bool LoadAndConsumeBooleanProblem(LinearBooleanProblem* problem,
 void UseObjectiveForSatAssignmentPreference(const LinearBooleanProblem& problem,
                                             SatSolver* solver) {
   const LinearObjective& objective = problem.objective();
-  double max_weight = 0;
-  for (int i = 0; i < objective.literals_size(); ++i) {
-    max_weight = std::max(max_weight,
-                          fabs(static_cast<double>(objective.coefficients(i))));
+  CHECK_EQ(objective.literals_size(), objective.coefficients_size());
+  int64 max_abs_weight = 0;
+  for (const int64 coefficient : objective.coefficients()) {
+    max_abs_weight = std::max(max_abs_weight, std::abs(coefficient));
   }
+  const double max_abs_weight_double = max_abs_weight;
   for (int i = 0; i < objective.literals_size(); ++i) {
-    const double weight =
-        fabs(static_cast<double>(objective.coefficients(i))) / max_weight;
-    if (objective.coefficients(i) > 0) {
-      solver->SetAssignmentPreference(Literal(objective.literals(i)).Negated(),
-                                      weight);
-    } else {
-      solver->SetAssignmentPreference(Literal(objective.literals(i)), weight);
-    }
+    const Literal literal(objective.literals(i));
+    const int64 coefficient = objective.coefficients(i);
+    const double abs_weight = std::abs(coefficient) / max_abs_weight_double;
+    // Because this is a minimization problem, we prefer to assign a Boolean
+    // variable to its "low" objective value. So if a literal has a positive
+    // weight when true, we want to set it to false.
+    solver->SetAssignmentPreference(
+        coefficient > 0 ? literal.Negated() : literal, abs_weight);
   }
 }
 
@@ -614,7 +680,7 @@ void FindLinearBooleanProblemSymmetries(
       new_node_index[node] = next_index_by_class[equivalence_classes[node]]++;
     }
     std::unique_ptr<Graph> remapped_graph = RemapGraph(*graph, new_node_index);
-    const util::Status status = WriteGraphToFile(
+    const util::Status status = util::WriteGraphToFile(
         *remapped_graph, FLAGS_debug_dump_symmetry_graph_to_file,
         /*directed=*/false, class_size);
     if (!status.ok()) {

@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,8 +16,6 @@
 
 #include <utility>
 #include "ortools/base/logging.h"
-
-namespace operations_research {
 
 // Perform a lookup in a map or std::unordered_map.
 // If the key is present in the map then the value associated with that
@@ -161,6 +159,26 @@ const typename Collection::value_type::second_type& FindOrDie(
   return it->second;
 }
 
+// Same as FindOrDie above, but doesn't log the key on failure.
+template <class Collection>
+const typename Collection::value_type::second_type& FindOrDieNoPrint(
+    const Collection& collection,
+    const typename Collection::value_type::first_type& key) {
+  typename Collection::const_iterator it = collection.find(key);
+  CHECK(it != collection.end()) << "Map key not found";
+  return it->second;
+}
+
+// Same as above, but returns a non-const reference.
+template <class Collection>
+typename Collection::value_type::second_type& FindOrDieNoPrint(
+    Collection& collection,  // NOLINT
+    const typename Collection::value_type::first_type& key) {
+  typename Collection::iterator it = collection.find(key);
+  CHECK(it != collection.end()) << "Map key not found";
+  return it->second;
+}
+
 // Lookup a key in a map or std::unordered_map, insert it if it is not present.
 // Returns a reference to the value associated with the key.
 template <class Collection>
@@ -172,6 +190,5 @@ typename Collection::value_type::second_type& LookupOrInsert(
       collection->insert(typename Collection::value_type(key, value));
   return ret.first->second;
 }
-}  // namespace operations_research
 
 #endif  // OR_TOOLS_BASE_MAP_UTIL_H_

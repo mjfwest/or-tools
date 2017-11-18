@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -1323,7 +1323,6 @@ void RoutingModel::AddDisjunction(const std::vector<NodeIndex>& nodes,
 
 void RoutingModel::AddDisjunction(const std::vector<NodeIndex>& nodes,
                                   int64 penalty, int64 max_cardinality) {
-  CHECK_GE(penalty, 0) << "Penalty must be positive";
   CHECK_GE(max_cardinality, 1);
   AddDisjunctionInternal(nodes, penalty, max_cardinality);
 }
@@ -1883,7 +1882,7 @@ void RoutingModel::CloseModelWithParameters(
   // Dimension precedences, discovered by model inspection (which must be
   // performed before adding path transit precedences.
   for (const RoutingDimension* const dimension : dimensions_) {
-    const ReverseArcListGraph<int, int>& graph =
+    const ::util::ReverseArcListGraph<int, int>& graph =
         dimension->GetPrecedenceGraph();
     std::vector<std::pair<int, int>> precedences;
     for (const auto tail : graph.AllNodes()) {

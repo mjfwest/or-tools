@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -49,9 +49,6 @@
 //  where xT = (x1, x2, x3),
 //  s1 is an m1-vector (m1 being the height of A1),
 //  s2 is an m2-vector (m2 being the height of A2).
-//
-// See Design Document at
-// or search for "Google Linear Programming" in Docs
 //
 // The following are very good references for terminology, data structures,
 // and algorithms. They all contain a wealth of references.
@@ -179,6 +176,13 @@ class RevisedSimplex {
   // Uses the given state as a warm-start for the next Solve() call.
   void LoadStateForNextSolve(const BasisState& state);
 
+  // Advanced usage. Tells the next Solve() that the matrix inside the linear
+  // program will not change compared to the one used the last time Solve() was
+  // called. This allows to bypass the somewhat costly check of comparing both
+  // matrices. Note that this call will be ignored if Solve() was never called
+  // or if ClearStateForNextSolve() was called.
+  void NotifyThatMatrixIsUnchangedForNextSolve();
+
   // Getters to retrieve all the information computed by the last Solve().
   RowIndex GetProblemNumRows() const;
   ColIndex GetProblemNumCols() const;
@@ -228,7 +232,7 @@ class RevisedSimplex {
   // Computes the dictionary B^-1*N on-the-fly row by row. Returns the resulting
   // matrix as a vector of sparse rows so that it is easy to use it on the left
   // side in the matrix multiplication. Runs in O(num_non_zeros_in_matrix).
-  RowMajorSparseMatrix ComputeDictionary();
+  RowMajorSparseMatrix ComputeDictionary(const SparseMatrixScaler* scaler);
 
  private:
   // Propagates parameters_ to all the other classes that need it.
@@ -655,6 +659,10 @@ class RevisedSimplex {
   BasisState solution_state_;
   bool solution_state_has_been_set_externally_;
 
+  // Flag used by NotifyThatMatrixIsUnchangedForNextSolve() and changing
+  // the behavior of Initialize().
+  bool notify_that_matrix_is_unchanged_ = false;
+
   // This is known as 'd' in the literature and is set during each pivot to the
   // right inverse of the basic entering column of A by ComputeDirection().
   // ComputeDirection() also fills direction_non_zero_ with the position of the
@@ -799,17 +807,19 @@ class RevisedSimplexDictionary {
 
   // RevisedSimplex cannot be passed const because we have to call a non-const
   // method ComputeDictionary.
-  explicit RevisedSimplexDictionary(RevisedSimplex* revised_simplex)
-      : dictionary_(CHECK_NOTNULL(revised_simplex)->ComputeDictionary()),
+  RevisedSimplexDictionary(const SparseMatrixScaler* scaler,
+                           RevisedSimplex* revised_simplex)
+      : dictionary_(CHECK_NOTNULL(revised_simplex)->ComputeDictionary(scaler)),
         basis_vars_(CHECK_NOTNULL(revised_simplex)->GetBasisVector()) {}
 
   ConstIterator begin() const { return dictionary_.begin(); }
   ConstIterator end() const { return dictionary_.end(); }
 
-  size_t size() const { return dictionary_.size(); }
+  size_t NumRows() const { return dictionary_.size(); }
 
-  // TODO(user): this function is a better fit for the future custom iterator.
-  ColIndex GetVariableIndex(RowIndex r) const { return basis_vars_[r]; }
+  // TODO(user): This function is a better fit for the future custom iterator.
+  ColIndex GetBasicColumnForRow(RowIndex r) const { return basis_vars_[r]; }
+  SparseRow GetRow(RowIndex r) const { return dictionary_[r]; }
 
  private:
   const RowMajorSparseMatrix dictionary_;

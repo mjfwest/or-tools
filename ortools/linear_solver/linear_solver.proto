@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -228,6 +228,12 @@ message MPModelRequest {
     CPLEX_MIXED_INTEGER_PROGRAMMING = 11;  // Commercial, needs a valid license.
     BOP_INTEGER_PROGRAMMING = 12;
 
+    // WARNING: This solver will currently interpret all variables as integer,
+    // so any solution you get will be valid, but the optimal might be far away
+    // for the real one (when you authorise non-integer value for continuous
+    // variables).
+    SAT_INTEGER_PROGRAMMING = 14;
+
     KNAPSACK_MIXED_INTEGER_PROGRAMMING = 13;
   }
   optional SolverType solver_type = 2;
@@ -262,6 +268,7 @@ message MPModelRequest {
   // rejected and yield an RPC Application error with code
   // MPSOLVER_MODEL_INVALID_SOLVER_PARAMETERS.
   optional string solver_specific_parameters = 5;
+
 }
 
 // Status returned by the solver. They follow a hierarchical nomenclature, to
@@ -309,7 +316,7 @@ enum MPSolverResponseStatus {
   // (resp. maximization) problem.
   MPSOLVER_UNBOUNDED = 0x3;
 
-  // An error (most probably numerical) occured.
+  // An error (most probably numerical) occurred.
   // One likely cause for such errors is a large numerical range among variable
   // coefficients (eg. 1e-16, 1e20), in which case one should try to shrink it.
   MPSOLVER_ABNORMAL = 0x4;

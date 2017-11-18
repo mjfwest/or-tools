@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -29,7 +29,6 @@
 #include "ortools/base/port.h"
 #include "ortools/base/timer.h"
 #include "ortools/base/time_support.h"
-#include "ortools/base/sysinfo.h"
 #include "ortools/util/running_stat.h"
 
 // Enables to change the behavior of the TimeLimit class to use "usertime"
@@ -178,7 +177,7 @@ class TimeLimit {
 
   // Returns the time elapsed in seconds since the construction of this object.
   double GetElapsedTime() const {
-return 1e-9 * (base::GetCurrentTimeNanos() - start_ns_);
+    return 1e-9 * (base::GetCurrentTimeNanos() - start_ns_);
   }
 
   // Returns the elapsed deterministic time since the construction of this
@@ -212,7 +211,7 @@ return 1e-9 * (base::GetCurrentTimeNanos() - start_ns_);
   const int64 safety_buffer_ns_;
   RunningMax<int64> running_max_;
 
-// Only used when FLAGS_time_limit_use_usertime is true.
+  // Only used when FLAGS_time_limit_use_usertime is true.
   UserTimer user_timer_;
   double limit_in_seconds_;
 

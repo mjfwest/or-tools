@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,19 +11,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef OR_TOOLS_FLATZINC_SAT_FZ_SOLVER_H_
-#define OR_TOOLS_FLATZINC_SAT_FZ_SOLVER_H_
+#ifndef OR_TOOLS_SAT_CP_MODEL_EXPAND_H_
+#define OR_TOOLS_SAT_CP_MODEL_EXPAND_H_
 
-#include "ortools/flatzinc/model.h"
-#include "ortools/flatzinc/solver.h"
+#include "ortools/sat/cp_model.pb.h"
 
 namespace operations_research {
 namespace sat {
 
-void SolveWithSat(const fz::Model& model, const fz::FlatzincParameters& p,
-                  bool* interup_solve);
+// Expands a given CpModelProto by rewriting complex constraints into
+// simpler constraints.
+// This is different from PresolveCpModel() as there are no reduction or
+// simplification of the model. Furthermore, this expansion is mandatory.
+CpModelProto ExpandCpModel(const CpModelProto& initial_model);
 
 }  // namespace sat
 }  // namespace operations_research
 
-#endif  // OR_TOOLS_FLATZINC_SAT_FZ_SOLVER_H_
+#endif  // OR_TOOLS_SAT_CP_MODEL_EXPAND_H_

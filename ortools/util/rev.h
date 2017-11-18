@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -121,9 +121,9 @@ class RevMap : ReversibleInterface {
   void SetLevel(int level) final;
   int Level() const { return first_op_index_of_next_level_.size(); }
 
-  bool ContainsKey(key_type key) const { return operations_research::ContainsKey(map_, key); }
+  bool ContainsKey(key_type key) const { return ::ContainsKey(map_, key); }
   const mapped_type& FindOrDie(key_type key) const {
-    return operations_research::FindOrDie(map_, key);
+    return ::FindOrDie(map_, key);
   }
 
   void EraseOrDie(key_type key);

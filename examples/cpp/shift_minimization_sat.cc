@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -39,6 +39,7 @@
 #include "ortools/util/filelineiter.h"
 #include "ortools/base/split.h"
 #include "ortools/sat/cp_constraints.h"
+#include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/integer_expr.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/optimization.h"
@@ -47,7 +48,6 @@
 
 DEFINE_string(input, "", "Input file.");
 DEFINE_string(params, "", "Sat parameters in text proto format.");
-DEFINE_bool(use_core, false, "Use the core based solver.");
 
 namespace operations_research {
 namespace sat {
@@ -308,13 +308,6 @@ void LoadAndSolve(const std::string& file_name) {
             << " active worker literals, and reused them "
             << num_reused_literals << " times.";
   LOG(INFO) << "Lower bound = " << max_intersection_size;
-
-  if (FLAGS_use_core) {
-    const std::vector<int64> coeffs(num_workers, 1);
-    MinimizeWeightedLiteralSumWithCoreAndLazyEncoding(
-        /*log_info=*/true, active_workers, coeffs, nullptr, nullptr, &model);
-    return;
-  }
 
   // Objective.
   std::vector<int> weights(num_workers, 1);

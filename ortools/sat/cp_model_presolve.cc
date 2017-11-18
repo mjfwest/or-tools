@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,18 +13,30 @@
 
 #include "ortools/sat/cp_model_presolve.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <deque>
-#include <functional>
-#include <numeric>
-#include <unordered_map>
 #include <unordered_set>
+#include <map>
+#include <memory>
+#include <numeric>
+#include <set>
+#include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include "ortools/base/join.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
+#include <unordered_set>
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
+#include "ortools/base/hash.h"
 #include "ortools/sat/cp_model_checker.h"
 #include "ortools/sat/cp_model_utils.h"
+#include "ortools/sat/sat_base.h"
+#include "ortools/sat/sat_parameters.pb.h"
+#include "ortools/sat/simplification.h"
 #include "ortools/util/affine_relation.h"
 #include "ortools/util/bitset.h"
 #include "ortools/util/sorted_interval_list.h"
@@ -165,6 +177,11 @@ struct PresolveContext {
   int64 MaxOf(int ref) const {
     return RefIsPositive(ref) ? domains[ref].Max()
                               : -domains[PositiveRef(ref)].Min();
+  }
+
+  bool IsUniqueOrFixed(int ref) {
+    return var_to_constraints[PositiveRef(ref)].size() == 1 ||
+           domains[PositiveRef(ref)].IsFixed();
   }
 
   // Regroups fixed variables with the same value.
@@ -321,12 +338,25 @@ MUST_USE_RESULT bool MarkConstraintAsFalse(ConstraintProto* ct,
 
 bool PresolveEnforcementLiteral(ConstraintProto* ct, PresolveContext* context) {
   if (!HasEnforcementLiteral(*ct)) return false;
+
   const int literal = ct->enforcement_literal(0);
   if (context->LiteralIsTrue(literal)) {
     context->UpdateRuleStats("true enforcement literal");
     ct->clear_enforcement_literal();
     return true;
   }
+
+  // TODO(user): because the cumulative and disjunctive constraint refer to this
+  // interval, we cannot simply remove the constraint even if we know that this
+  // optional interval will not be present. We could fix that by removing this
+  // interval from these constraints, but it is difficult to do that in a
+  // general code, so we will need the presolve for these constraint to take
+  // care of that, and then we would be able to remove this interval if it is
+  // not longer used.
+  if (ct->constraint_case() == ConstraintProto::ConstraintCase::kInterval) {
+    return false;
+  }
+
   if (context->LiteralIsFalse(literal)) {
     context->UpdateRuleStats("false enforcement literal");
     return RemoveConstraint(ct, context);
@@ -370,6 +400,7 @@ bool PresolveBoolOr(ConstraintProto* ct, PresolveContext* context) {
     // used in any other constraint (note that we artifically bump the
     // objective var usage by 1).
     if (context->var_to_constraints[PositiveRef(literal)].size() == 1) {
+      context->UpdateRuleStats("bool_or: singleton");
       context->SetLiteralToTrue(literal);
       return RemoveConstraint(ct, context);
     }
@@ -592,6 +623,31 @@ bool PresolveIntProd(ConstraintProto* ct, PresolveContext* context) {
     }
   }
   return RemoveConstraint(ct, context);
+}
+
+bool PresolveIntDiv(ConstraintProto* ct, PresolveContext* context) {
+  // For now, we only presolve the case where the divisor is constant.
+  const int target = ct->int_div().target();
+  const int ref_x = ct->int_div().vars(0);
+  const int ref_div = ct->int_div().vars(1);
+  if (!RefIsPositive(target) || !RefIsPositive(ref_x) ||
+      !RefIsPositive(ref_div) || !context->domains[ref_div].IsFixed()) {
+    return false;
+  }
+
+  const int64 divisor = context->domains[ref_div].Min();
+  if (divisor == 1) {
+    context->UpdateRuleStats("TODO int_div: rewrite to equality");
+  }
+  if (context->domains[target].IntersectWith(DivisionOfSortedDisjointIntervals(
+          context->GetRefDomain(ref_x), divisor))) {
+    context->UpdateRuleStats(
+        "int_div: updated domain of target in target = X / cte");
+  }
+
+  // TODO(user): reduce the domain of X by introducing an
+  // InverseDivisionOfSortedDisjointIntervals().
+  return false;
 }
 
 bool ExploitEquivalenceRelations(ConstraintProto* ct,
@@ -993,24 +1049,39 @@ bool PresolveInterval(ConstraintProto* ct, PresolveContext* context) {
 
 bool PresolveElement(ConstraintProto* ct, PresolveContext* context) {
   const int index_ref = ct->element().index();
-  if (context->var_to_constraints[PositiveRef(index_ref)].size() == 1) {
-    context->UpdateRuleStats("TODO element: index not used elsewhere");
-  }
   const int target_ref = ct->element().target();
-  if (context->var_to_constraints[PositiveRef(target_ref)].size() == 1) {
-    context->UpdateRuleStats("TODO element: target not used elsewhere");
-  }
+  const bool unique_index = context->IsUniqueOrFixed(index_ref);
+  const bool unique_target = context->IsUniqueOrFixed(target_ref);
 
+  // TODO(user): think about this once we do have such constraint.
   if (HasEnforcementLiteral(*ct)) return false;
 
+  int num_vars = 0;
+  bool all_constants = true;
+  std::unordered_set<int64> constant_set;
+
+  bool all_included_in_target_domain = true;
   bool reduced_index_domain = false;
+  const std::vector<ClosedInterval> index_domain =
+      context->GetRefDomain(index_ref);
+  if (index_domain.front().start < 0 ||
+      index_domain.back().end >= ct->element().vars_size()) {
+    reduced_index_domain = true;
+    if (RefIsPositive(index_ref)) {
+      context->domains[PositiveRef(index_ref)].IntersectWith(
+          {{0, ct->element().vars_size() - 1}});
+    } else {
+      context->domains[PositiveRef(index_ref)].IntersectWith(
+          {{-ct->element().vars_size() + 1, 0}});
+    }
+  }
   std::vector<ClosedInterval> infered_domain;
   const std::vector<ClosedInterval> target_dom =
       context->GetRefDomain(target_ref);
   for (const ClosedInterval interval : context->GetRefDomain(index_ref)) {
     for (int i = interval.start; i <= interval.end; ++i) {
       CHECK_GE(i, 0);
-      CHECK_LE(i, ct->element().vars_size());
+      CHECK_LT(i, ct->element().vars_size());
       const int ref = ct->element().vars(i);
       const auto& domain = context->GetRefDomain(ref);
       if (IntersectionOfSortedDisjointIntervals(target_dom, domain).empty()) {
@@ -1018,6 +1089,17 @@ bool PresolveElement(ConstraintProto* ct, PresolveContext* context) {
             RefIsPositive(index_ref) ? i : -i);
         reduced_index_domain = true;
       } else {
+        ++num_vars;
+        if (domain.front().start == domain.back().end) {
+          constant_set.insert(domain.front().start);
+        } else {
+          all_constants = false;
+        }
+        if (IntersectionOfSortedDisjointIntervals(
+                target_dom, ComplementOfSortedDisjointIntervals(domain))
+                .empty()) {
+          all_included_in_target_domain = false;
+        }
         infered_domain = UnionOfSortedDisjointIntervals(infered_domain, domain);
       }
     }
@@ -1031,6 +1113,33 @@ bool PresolveElement(ConstraintProto* ct, PresolveContext* context) {
   if (context->domains[PositiveRef(target_ref)].IntersectWith(infered_domain)) {
     context->UpdateRuleStats("element: reduced target domain");
   }
+  if (all_constants && unique_index) {
+    // This constraint is just here to reduce the domain of the target! We can
+    // add it to the mapping_model to reconstruct the index value during
+    // postsolve and get rid of it now.
+    context->UpdateRuleStats("element: trivial target domain reduction");
+    *(context->mapping_model->add_constraints()) = *ct;
+    return RemoveConstraint(ct, context);
+  }
+  if (all_included_in_target_domain && unique_target) {
+    context->UpdateRuleStats("element: trivial index domain reduction");
+    *(context->mapping_model->add_constraints()) = *ct;
+    return RemoveConstraint(ct, context);
+  }
+
+  if (all_constants && num_vars == constant_set.size()) {
+    // TODO(user): We should be able to do something for simple mapping.
+    context->UpdateRuleStats("TODO element: one to one mapping");
+  }
+  if (unique_target) {
+    context->UpdateRuleStats("TODO element: target not used elsewhere");
+  }
+  if (context->domains[PositiveRef(index_ref)].IsFixed()) {
+    context->UpdateRuleStats("TODO element: fixed index.");
+  } else if (unique_index) {
+    context->UpdateRuleStats("TODO element: index not used elsewhere");
+  }
+
   return false;
 }
 
@@ -1230,6 +1339,180 @@ bool PresolveCumulative(ConstraintProto* ct, PresolveContext* context) {
   return false;
 }
 
+template <typename ClauseContainer>
+void ExtractClauses(const ClauseContainer& container, CpModelProto* proto) {
+  // We regroup the "implication" into bool_and to have a more consise proto and
+  // also for nicer information about the number of binary clauses.
+  std::unordered_map<int, int> ref_to_bool_and;
+  for (int i = 0; i < container.NumClauses(); ++i) {
+    const std::vector<Literal>& clause = container.Clause(i);
+    if (clause.empty()) continue;
+
+    // bool_and.
+    if (clause.size() == 2) {
+      const int a = clause[0].IsPositive()
+                        ? clause[0].Variable().value()
+                        : NegatedRef(clause[0].Variable().value());
+      const int b = clause[1].IsPositive()
+                        ? clause[1].Variable().value()
+                        : NegatedRef(clause[1].Variable().value());
+      if (ContainsKey(ref_to_bool_and, NegatedRef(a))) {
+        const int ct_index = ref_to_bool_and[NegatedRef(a)];
+        proto->mutable_constraints(ct_index)->mutable_bool_and()->add_literals(
+            b);
+      } else if (ContainsKey(ref_to_bool_and, NegatedRef(b))) {
+        const int ct_index = ref_to_bool_and[NegatedRef(b)];
+        proto->mutable_constraints(ct_index)->mutable_bool_and()->add_literals(
+            a);
+      } else {
+        ref_to_bool_and[NegatedRef(a)] = proto->constraints_size();
+        ConstraintProto* ct = proto->add_constraints();
+        ct->add_enforcement_literal(NegatedRef(a));
+        ct->mutable_bool_and()->add_literals(b);
+      }
+      continue;
+    }
+
+    // bool_or.
+    ConstraintProto* ct = proto->add_constraints();
+    for (const Literal l : clause) {
+      if (l.IsPositive()) {
+        ct->mutable_bool_or()->add_literals(l.Variable().value());
+      } else {
+        ct->mutable_bool_or()->add_literals(NegatedRef(l.Variable().value()));
+      }
+    }
+  }
+}
+
+void PresolvePureSatPart(PresolveContext* context) {
+  const int num_variables = context->working_model->variables_size();
+  SatPostsolver postsolver(num_variables);
+  SatPresolver presolver(&postsolver);
+  presolver.SetNumVariables(num_variables);
+
+  SatParameters params;
+
+  // TODO(user): enable blocked clause. The problem is that our postsolve
+  // do not support changing the value of a variable from the solution of the
+  // presolved problem, and we do need this for blocked clause.
+  params.set_presolve_blocked_clause(false);
+
+  // TODO(user): BVA takes times and do not seems to help on the minizinc
+  // benchmarks. That said, it was useful on pure sat problems, so we may
+  // want to enable it.
+  params.set_presolve_use_bva(false);
+  presolver.SetParameters(params);
+
+  // Converts a cp_model literal ref to a sat::Literal used by SatPresolver.
+  auto convert = [](int ref) {
+    if (RefIsPositive(ref)) return Literal(BooleanVariable(ref), true);
+    return Literal(BooleanVariable(NegatedRef(ref)), false);
+  };
+
+  // Load all Clauses into the presolver and remove them from the current model.
+  //
+  // TODO(user): The removing and adding back of the same clause when nothing
+  // happens in the presolve "seems" bad. That said, complexity wise, it is
+  // a lot faster that what happens in the presolve though.
+  std::vector<Literal> clause;
+  int num_removed_constraints = 0;
+  for (int i = 0; i < context->working_model->constraints_size(); ++i) {
+    const ConstraintProto& ct = context->working_model->constraints(i);
+
+    if (ct.constraint_case() == ConstraintProto::ConstraintCase::kBoolOr) {
+      ++num_removed_constraints;
+      clause.clear();
+      for (const int ref : ct.bool_or().literals()) {
+        clause.push_back(convert(ref));
+      }
+      presolver.AddClause(clause);
+
+      context->working_model->mutable_constraints(i)->Clear();
+      context->UpdateConstraintVariableUsage(i);
+      continue;
+    }
+
+    if (ct.constraint_case() == ConstraintProto::ConstraintCase::kBoolAnd) {
+      ++num_removed_constraints;
+      const Literal l = convert(ct.enforcement_literal(0)).Negated();
+      CHECK(!ct.bool_and().literals().empty());
+      for (const int ref : ct.bool_and().literals()) {
+        presolver.AddClause({l, convert(ref)});
+      }
+
+      context->working_model->mutable_constraints(i)->Clear();
+      context->UpdateConstraintVariableUsage(i);
+      continue;
+    }
+  }
+
+  // Abort early if there was no Boolean constraints.
+  if (num_removed_constraints == 0) return;
+
+  // Mark the variables appearing elsewhere or in the objective as non-removable
+  // by the sat presolver.
+  //
+  // TODO(user): do not remove variable that appear in the decision heuristic?
+  // TODO(user): We could go further for variable with only one polarity by
+  // removing variable from the objective if they can be set to their "low"
+  // objective value, and also removing enforcement literal that can be set to
+  // false and don't appear elsewhere.
+  int num_removable = 0;
+  std::vector<bool> can_be_removed(num_variables, false);
+  for (int i = 0; i < num_variables; ++i) {
+    if (context->var_to_constraints[i].empty()) {
+      ++num_removable;
+      can_be_removed[i] = true;
+    }
+  }
+
+  // Run the presolve for a small number of passes.
+  // TODO(user): Add probing like we do in the pure sat solver presolve loop?
+  // TODO(user): Add a time limit, this can be slow on big SAT problem.
+  VLOG(1) << "num removable Booleans: " << num_removable;
+  const int num_passes = params.presolve_use_bva() ? 4 : 1;
+  for (int i = 0; i < num_passes; ++i) {
+    const int old_num_clause = postsolver.NumClauses();
+    if (!presolver.Presolve(can_be_removed)) {
+      LOG(INFO) << "UNSAT during SAT presolve.";
+      context->is_unsat = true;
+      return;
+    }
+    if (old_num_clause == postsolver.NumClauses()) break;
+  }
+
+  // Add any new variables to our internal structure.
+  //
+  // TODO(user): This code is not really safe, as it is easy to forget to
+  // resize one vector of the context. Clean this up.
+  const int new_num_variables = presolver.NumVariables();
+  if (new_num_variables > context->working_model->variables_size()) {
+    LOG(INFO) << "New variables added by the SAT presolver.";
+    for (int i = context->working_model->variables_size();
+         i < new_num_variables; ++i) {
+      IntegerVariableProto* var_proto = context->working_model->add_variables();
+      var_proto->add_domain(0);
+      var_proto->add_domain(1);
+      context->domains.push_back(Domain(*var_proto, i, nullptr));
+    }
+    context->var_to_constraints.resize(new_num_variables);
+  }
+
+  // Add the presolver clauses back into the model.
+  const int old_ct_index = context->working_model->constraints_size();
+  ExtractClauses(presolver, context->working_model);
+
+  // Update the variable statistics.
+  for (int ct_index = old_ct_index;
+       ct_index < context->working_model->constraints_size(); ct_index++) {
+    context->UpdateConstraintVariableUsage(ct_index);
+  }
+
+  // Add the postsolver clauses to mapping_model.
+  ExtractClauses(postsolver, context->mapping_model);
+}
+
 }  // namespace.
 
 // =============================================================================
@@ -1291,8 +1574,10 @@ void PresolveCpModel(const CpModelProto& initial_model,
 
   // Hack for the objective so that it is never considered to appear in only one
   // constraint.
-  for (const CpObjectiveProto& obj : initial_model.objectives()) {
-    context.var_to_constraints[PositiveRef(obj.objective_var())].insert(-1);
+  if (initial_model.has_objective()) {
+    for (const int obj_var : initial_model.objective().vars()) {
+      context.var_to_constraints[PositiveRef(obj_var)].insert(-1);
+    }
   }
 
   while (!queue.empty() && !context.is_unsat) {
@@ -1304,11 +1589,11 @@ void PresolveCpModel(const CpModelProto& initial_model,
       const int old_num_constraint = context.working_model->constraints_size();
       ConstraintProto* ct = context.working_model->mutable_constraints(c);
 
-      // Special generic presolve for reified constraint.
-      bool changed = PresolveEnforcementLiteral(ct, &context);
-
       // Generic presolve to exploit variable/literal equivalence.
-      changed |= ExploitEquivalenceRelations(ct, &context);
+      bool changed = ExploitEquivalenceRelations(ct, &context);
+
+      // Generic presolve for reified constraint.
+      changed |= PresolveEnforcementLiteral(ct, &context);
 
       // Because the functions below relies on proper usage stats, we need
       // to update it now.
@@ -1334,10 +1619,16 @@ void PresolveCpModel(const CpModelProto& initial_model,
         case ConstraintProto::ConstraintCase::kIntProd:
           changed |= PresolveIntProd(ct, &context);
           break;
+        case ConstraintProto::ConstraintCase::kIntDiv:
+          changed |= PresolveIntDiv(ct, &context);
+          break;
         case ConstraintProto::ConstraintCase::kLinear:
           changed |= PresolveLinear(ct, &context);
           if (ct->constraint_case() ==
               ConstraintProto::ConstraintCase::kLinear) {
+            // Tricky: This is needed in case the variables have been mapped to
+            // their representative by PresolveLinear() above.
+            if (changed) context.UpdateConstraintVariableUsage(c);
             changed |= PresolveLinearIntoClauses(ct, &context);
           }
           break;
@@ -1382,8 +1673,7 @@ void PresolveCpModel(const CpModelProto& initial_model,
     // not enter an infinite loop, we call each (var, constraint) pair at most
     // once.
     for (int v = 0; v < context.var_to_constraints.size(); ++v) {
-      const std::unordered_set<int>& constraints =
-          context.var_to_constraints[v];
+      const auto& constraints = context.var_to_constraints[v];
       if (constraints.size() != 1) continue;
       const int c = *constraints.begin();
       if (c < 0) continue;
@@ -1414,6 +1704,14 @@ void PresolveCpModel(const CpModelProto& initial_model,
     modified_domains.SparseClearAll();
   }
 
+  // Run SAT specific presolve on the pure-SAT part of the problem.
+  // Note that because this can only remove/fix variable not used in the other
+  // part of the problem, there is no need to redo more presolve afterwards.
+  //
+  // TODO(user): expose the parameters here so we can use
+  // cp_model_use_sat_presolve().
+  PresolvePureSatPart(&context);
+
   if (context.is_unsat) {
     // Set presolved_model to the simplest UNSAT problem (empty clause).
     presolved_model->Clear();
@@ -1421,10 +1719,131 @@ void PresolveCpModel(const CpModelProto& initial_model,
     return;
   }
 
+  // If the objective is a single variable, try to find a linear equation that
+  // "defines" it and expand the objective into its longer linear
+  // representation.
+  // TODO(user): Insert in main loop.
+  if (context.working_model->has_objective() &&
+      context.working_model->objective().vars_size() == 1) {
+    // Canonicalize the objective to make it easier on us by always making the
+    // coefficient equal to 1.0.
+    {
+      const int old_ref = context.working_model->objective().vars(0);
+      const int64 old_coeff = context.working_model->objective().coeffs(0);
+      const double muliplier = static_cast<double>(std::abs(old_coeff));
+      if (old_coeff < 0) {
+        context.working_model->mutable_objective()->set_vars(
+            0, NegatedRef(old_ref));
+      }
+      if (muliplier != 1.0) {
+        double old_factor = context.working_model->objective().scaling_factor();
+        if (old_factor == 0.0) old_factor = 1.0;
+        const double old_offset = context.working_model->objective().offset();
+        context.working_model->mutable_objective()->set_scaling_factor(
+            old_factor * muliplier);
+        context.working_model->mutable_objective()->set_offset(old_offset /
+                                                               muliplier);
+      }
+      context.working_model->mutable_objective()->set_coeffs(0, 1.0);
+    }
+
+    const int initial_obj_ref = context.working_model->objective().vars(0);
+
+    // TODO(user): Expand the linear equation recursively in order to have
+    // as much term as possible? This would also enable expanding an objective
+    // with multiple terms.
+    int expanded_linear_index = -1;
+    int64 objective_coeff_in_expanded_constraint;
+    int64 size_of_expanded_constraint = 0;
+    for (int ct_index = 0; ct_index < context.working_model->constraints_size();
+         ++ct_index) {
+      const ConstraintProto& ct = context.working_model->constraints(ct_index);
+      // Skip everything that is not a linear equality constraint.
+      if (!ct.enforcement_literal().empty()) continue;
+      if (ct.constraint_case() != ConstraintProto::ConstraintCase::kLinear) {
+        continue;
+      }
+      if (ct.linear().domain().size() != 2) continue;
+      if (ct.linear().domain(0) != ct.linear().domain(1)) continue;
+
+      // Find out if initial_obj_ref appear in this constraint.
+      bool present = false;
+      int64 objective_coeff;
+      const int num_terms = ct.linear().vars_size();
+      for (int i = 0; i < num_terms; ++i) {
+        const int ref = ct.linear().vars(i);
+        const int64 coeff = ct.linear().coeffs(i);
+        if (PositiveRef(ref) == PositiveRef(initial_obj_ref)) {
+          CHECK(!present) << "Duplicate variables not supported";
+          present = true;
+          objective_coeff = (ref == initial_obj_ref) ? coeff : -coeff;
+        }
+      }
+
+      // We use the longest equality we can find.
+      // TODO(user): Deal with objective_coeff with a magnitude greater than 1?
+      if (present && std::abs(objective_coeff) == 1 &&
+          num_terms > size_of_expanded_constraint) {
+        expanded_linear_index = ct_index;
+        size_of_expanded_constraint = num_terms;
+        objective_coeff_in_expanded_constraint = objective_coeff;
+      }
+    }
+
+    if (expanded_linear_index != -1) {
+      context.UpdateRuleStats("objective: expanded single objective");
+
+      // Rewrite the objective. Note that we can do that because the objective
+      // variable coefficient magnitude was one and so we can take its inverse.
+      CHECK_EQ(std::abs(objective_coeff_in_expanded_constraint), 1);
+      const int64 inverse = 1 / objective_coeff_in_expanded_constraint;
+
+      const ConstraintProto& ct =
+          context.working_model->constraints(expanded_linear_index);
+      CpObjectiveProto* const mutable_objective =
+          context.working_model->mutable_objective();
+      const int64 offset_diff = ct.linear().domain(0) * inverse;
+      mutable_objective->set_offset(mutable_objective->offset() +
+                                    static_cast<double>(offset_diff));
+      mutable_objective->clear_coeffs();
+      mutable_objective->clear_vars();
+      const int num_terms = ct.linear().vars_size();
+      for (int i = 0; i < num_terms; ++i) {
+        const int ref = ct.linear().vars(i);
+        if (PositiveRef(ref) != PositiveRef(initial_obj_ref)) {
+          mutable_objective->add_vars(ref);
+          mutable_objective->add_coeffs(-ct.linear().coeffs(i) * inverse);
+        }
+      }
+      FillDomain(AdditionOfSortedDisjointIntervals(
+                     context.GetRefDomain(initial_obj_ref),
+                     {{-offset_diff, -offset_diff}}),
+                 mutable_objective);
+
+      // Remove the objective variable special case and make sure the new
+      // objective variables cannot be removed.
+      for (int ref : ct.linear().vars()) {
+        context.var_to_constraints[PositiveRef(ref)].insert(-1);
+      }
+      context.var_to_constraints[PositiveRef(initial_obj_ref)].erase(-1);
+
+      // If the objective variable wasn't used in other constraint, we can
+      // remove the linear equation.
+      if (context.var_to_constraints[PositiveRef(initial_obj_ref)].size() ==
+          1) {
+        context.UpdateRuleStats("objective: removed old objective definition.");
+        *(context.mapping_model->add_constraints()) = ct;
+        context.working_model->mutable_constraints(expanded_linear_index)
+            ->Clear();
+        context.UpdateConstraintVariableUsage(expanded_linear_index);
+      }
+    }
+  }
+
   // Remove all empty or affine constraints (they will be re-added later if
   // needed) in the presolved model. Note that we need to remap the interval
   // references.
-  std::vector<int> interval_mapping(presolved_model->constraints_size());
+  std::vector<int> interval_mapping(presolved_model->constraints_size(), -1);
   int new_num_constraints = 0;
   const int old_num_constraints = presolved_model->constraints_size();
   for (int i = 0; i < old_num_constraints; ++i) {
@@ -1481,8 +1900,9 @@ void PresolveCpModel(const CpModelProto& initial_model,
       if (context.domains[r.representative].IntersectWith(implied)) {
         LOG(WARNING) << "Domain of " << r.representative
                      << " was not fully propagated using the affine relation "
-                     << "(representative =" << r.representative << ", coeff = "
-                     << r.coeff << ", offset = " << r.offset << ")";
+                     << "(representative =" << r.representative
+                     << ", coeff = " << r.coeff << ", offset = " << r.offset
+                     << ")";
       }
       proto = context.mapping_model;
     } else {
@@ -1607,12 +2027,13 @@ void ApplyVariableMapping(const std::vector<int>& mapping,
     ApplyToAllLiteralIndices(f, &ct_ref);
   }
 
-  // Remap the objectives.
-  for (CpObjectiveProto& objective : *proto->mutable_objectives()) {
-    const int ref = objective.objective_var();
-    const int image = mapping[PositiveRef(ref)];
-    CHECK_GE(image, 0);
-    objective.set_objective_var(ref >= 0 ? image : NegatedRef(image));
+  // Remap the objective variables.
+  if (proto->has_objective()) {
+    for (int& mutable_var : *proto->mutable_objective()->mutable_vars()) {
+      const int image = mapping[PositiveRef(mutable_var)];
+      CHECK_GE(image, 0);
+      mutable_var = (mutable_var >= 0 ? image : NegatedRef(image));
+    }
   }
 
   // Remap the search decision heuristic.

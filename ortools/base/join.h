@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -32,7 +32,7 @@ char* NumToBuffer(T i, char* buffer) {
   std::stringstream ss;
   ss << i;
   const std::string s = ss.str();
-  strcpy(buffer, s.c_str());  // NOLINT
+  strncpy(buffer, s.c_str(), kFastToBufferSize);  // NOLINT
   return buffer + s.size();
 }
 
@@ -57,8 +57,10 @@ struct AlphaNum {
       : piece(digits, NumToBuffer(u64, digits) - &digits[0]) {}
   AlphaNum(float f)  // NOLINT(runtime/explicit)
       : piece(digits, strlen(NumToBuffer(f, digits))) {}
-  AlphaNum(double f)  // NOLINT(runtime/explicit)
-      : piece(digits, strlen(NumToBuffer(f, digits))) {}
+  AlphaNum(double f) {  // NOLINT(runtime/explicit)
+    snprintf(digits, kFastToBufferSize, "%lf", f);
+    piece.set(digits);
+  }
   AlphaNum(const char* c_str) : piece(c_str) {}   // NOLINT(runtime/explicit)
   AlphaNum(const operations_research::string_view& pc)
       : piece(pc) {}                              // NOLINT(runtime/explicit)
@@ -75,6 +77,11 @@ struct AlphaNum {
 };
 
 extern AlphaNum gEmptyAlphaNum;
+
+template <typename T>
+const T& LegacyPrecision(const T& t) {
+  return t;
+}
 
 std::string StrCat(const AlphaNum& a);
 std::string StrCat(const AlphaNum& a, const AlphaNum& b);
@@ -102,6 +109,15 @@ std::string StrCat(const AlphaNum& a, const AlphaNum& b, const AlphaNum& c,
               const AlphaNum& d, const AlphaNum& e, const AlphaNum& f,
               const AlphaNum& g, const AlphaNum& h, const AlphaNum& i,
               const AlphaNum& j, const AlphaNum& k);
+std::string StrCat(const AlphaNum& a, const AlphaNum& b, const AlphaNum& c,
+              const AlphaNum& d, const AlphaNum& e, const AlphaNum& f,
+              const AlphaNum& g, const AlphaNum& h, const AlphaNum& i,
+              const AlphaNum& j, const AlphaNum& k, const AlphaNum& l);
+std::string StrCat(const AlphaNum& a, const AlphaNum& b, const AlphaNum& c,
+              const AlphaNum& d, const AlphaNum& e, const AlphaNum& f,
+              const AlphaNum& g, const AlphaNum& h, const AlphaNum& i,
+              const AlphaNum& j, const AlphaNum& k, const AlphaNum& l,
+              const AlphaNum& m);
 
 void StrAppend(std::string* s, const AlphaNum& a);
 void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b);
@@ -132,6 +148,16 @@ void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b,
                const AlphaNum& c, const AlphaNum& d, const AlphaNum& e,
                const AlphaNum& f, const AlphaNum& g, const AlphaNum& h,
                const AlphaNum& i, const AlphaNum& j, const AlphaNum& k);
+void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b,
+               const AlphaNum& c, const AlphaNum& d, const AlphaNum& e,
+               const AlphaNum& f, const AlphaNum& g, const AlphaNum& h,
+               const AlphaNum& i, const AlphaNum& j, const AlphaNum& k,
+               const AlphaNum& l);
+void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b,
+               const AlphaNum& c, const AlphaNum& d, const AlphaNum& e,
+               const AlphaNum& f, const AlphaNum& g, const AlphaNum& h,
+               const AlphaNum& i, const AlphaNum& j, const AlphaNum& k,
+               const AlphaNum& l, const AlphaNum& m);
 
 namespace strings {
 template <class Iterable>

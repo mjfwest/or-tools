@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,13 +34,7 @@ Domain Domain::IntegerList(std::vector<int64> values) {
   result.values = std::move(values);
   STLSortAndRemoveDuplicates(&result.values);
   result.display_as_boolean = false;
-  return result;
-}
-
-Domain Domain::EmptyDomain() {
-  Domain result;
-  result.is_interval = false;
-  result.display_as_boolean = false;
+  result.is_a_set = false;
   return result;
 }
 
@@ -48,6 +42,7 @@ Domain Domain::AllInt64() {
   Domain result;
   result.is_interval = true;
   result.display_as_boolean = false;
+  result.is_a_set = false;
   return result;
 }
 
@@ -56,6 +51,7 @@ Domain Domain::IntegerValue(int64 value) {
   result.is_interval = false;
   result.values.push_back(value);
   result.display_as_boolean = false;
+  result.is_a_set = false;
   return result;
 }
 
@@ -65,6 +61,7 @@ Domain Domain::Interval(int64 included_min, int64 included_max) {
   result.display_as_boolean = false;
   result.values.push_back(included_min);
   result.values.push_back(included_max);
+  result.is_a_set = false;
   return result;
 }
 
@@ -74,47 +71,89 @@ Domain Domain::Boolean() {
   result.display_as_boolean = true;
   result.values.push_back(0);
   result.values.push_back(1);
+  result.is_a_set = false;
   return result;
 }
 
-void Domain::IntersectWithDomain(const Domain& other) {
-  if (other.is_interval) {
-    if (!other.values.empty()) {
-      IntersectWithInterval(other.values[0], other.values[1]);
+Domain Domain::SetOfIntegerList(std::vector<int64> values) {
+  Domain result = IntegerList(std::move(values));
+  result.is_a_set = true;
+  return result;
+}
+
+Domain Domain::SetOfAllInt64() {
+  Domain result = AllInt64();
+  result.is_a_set = true;
+  return result;
+}
+
+Domain Domain::SetOfIntegerValue(int64 value) {
+  Domain result = IntegerValue(value);
+  result.is_a_set = true;
+  return result;
+}
+
+Domain Domain::SetOfInterval(int64 included_min, int64 included_max) {
+  Domain result = Interval(included_min, included_max);
+  result.is_a_set = true;
+  return result;
+}
+
+Domain Domain::SetOfBoolean() {
+  Domain result = Boolean();
+  result.is_a_set = true;
+  return result;
+}
+
+Domain Domain::EmptyDomain() {
+  Domain result;
+  result.is_interval = false;
+  result.display_as_boolean = false;
+  result.is_a_set = false;
+  return result;
+}
+
+bool Domain::IntersectWithDomain(const Domain& domain) {
+  if (domain.is_interval) {
+    if (!domain.values.empty()) {
+      return IntersectWithInterval(domain.values[0], domain.values[1]);
     }
-    return;
+    return false;
   }
   if (is_interval) {
     is_interval = false;  // Other is not an interval.
     if (values.empty()) {
-      values = other.values;
+      values = domain.values;
     } else {
       const int64 imin = values[0];
       const int64 imax = values[1];
-      values = other.values;
+      values = domain.values;
       IntersectWithInterval(imin, imax);
     }
-    return;
+    return true;
   }
   // now deal with the intersection of two lists of values
-  IntersectWithListOfIntegers(other.values);
+  return IntersectWithListOfIntegers(domain.values);
 }
 
-void Domain::IntersectWithSingleton(int64 value) {
-  IntersectWithInterval(value, value);
+bool Domain::IntersectWithSingleton(int64 value) {
+  return IntersectWithInterval(value, value);
 }
 
-void Domain::IntersectWithInterval(int64 imin, int64 imax) {
-  if (imin > imax) {  // Empty interval -> empty domain.
+bool Domain::IntersectWithInterval(int64 interval_min, int64 interval_max) {
+  if (interval_min > interval_max) {  // Empty interval -> empty domain.
     is_interval = false;
     values.clear();
+    return true;
   } else if (is_interval) {
     if (values.empty()) {
-      values.push_back(imin);
-      values.push_back(imax);
+      values.push_back(interval_min);
+      values.push_back(interval_max);
+      return true;
     } else {
-      values[0] = std::max(values[0], imin);
-      values[1] = std::min(values[1], imax);
+      if (values[0] >= interval_min && values[1] <= interval_max) return false;
+      values[0] = std::max(values[0], interval_min);
+      values[1] = std::min(values[1], interval_max);
       if (values[0] > values[1]) {
         values.clear();
         is_interval = false;
@@ -122,29 +161,39 @@ void Domain::IntersectWithInterval(int64 imin, int64 imax) {
         is_interval = false;
         values.pop_back();
       }
+      return true;
     }
   } else {
     if (!values.empty()) {
       std::sort(values.begin(), values.end());
       std::vector<int64> new_values;
       new_values.reserve(values.size());
+      bool changed = false;
       for (const int64 val : values) {
-        if (val > imax) break;
-        if (val >= imin && (new_values.empty() || val != new_values.back())) {
+        if (val > interval_max) {
+          changed = true;
+          break;
+        }
+        if (val >= interval_min &&
+            (new_values.empty() || val != new_values.back())) {
           new_values.push_back(val);
+        } else {
+          changed = true;
         }
       }
       values.swap(new_values);
+      return changed;
     }
   }
+  return false;
 }
 
-void Domain::IntersectWithListOfIntegers(const std::vector<int64>& ovalues) {
+bool Domain::IntersectWithListOfIntegers(const std::vector<int64>& integers) {
   if (is_interval) {
     const int64 dmin = values.empty() ? kint64min : values[0];
     const int64 dmax = values.empty() ? kint64max : values[1];
     values.clear();
-    for (const int64 v : ovalues) {
+    for (const int64 v : integers) {
       if (v >= dmin && v <= dmax) values.push_back(v);
     }
     STLSortAndRemoveDuplicates(&values);
@@ -157,23 +206,30 @@ void Domain::IntersectWithListOfIntegers(const std::vector<int64>& ovalues) {
         values.resize(2);
         values[1] = last;
       }
+      return values[0] != dmin || values[1] != dmax;
     } else {
       // This also covers and invalid (empty) domain.
       is_interval = false;
+      return true;
     }
   } else {
     // TODO(user): Investigate faster code for small arrays.
     std::sort(values.begin(), values.end());
-    std::unordered_set<int64> other_values(ovalues.begin(), ovalues.end());
+    std::unordered_set<int64> other_values(integers.begin(), integers.end());
     std::vector<int64> new_values;
-    new_values.reserve(std::min(values.size(), ovalues.size()));
+    new_values.reserve(std::min(values.size(), integers.size()));
+    bool changed = false;
     for (const int64 val : values) {
-      if (ContainsKey(other_values, val) &&
-          (new_values.empty() || val != new_values.back())) {
-        new_values.push_back(val);
+      if (ContainsKey(other_values, val)) {
+        if (new_values.empty() || val != new_values.back()) {
+          new_values.push_back(val);
+        }
+      } else {
+        changed = true;
       }
     }
     values.swap(new_values);
+    return changed;
   }
 }
 
@@ -486,7 +542,7 @@ bool Argument::Contains(int64 value) const {
       return value == values.front();
     }
     default: {
-      LOG(FATAL) << "Cannot call Constains() on " << DebugString();
+      LOG(FATAL) << "Cannot call Contains() on " << DebugString();
       return 0;
     }
   }
@@ -553,6 +609,9 @@ bool IntegerVariable::Merge(const std::string& other_name,
   }
   if (defining_constraint == nullptr) {
     defining_constraint = other_constraint;
+    if (defining_constraint != nullptr) {
+      defining_constraint->target_variable = this;
+    }
   }
   domain.IntersectWithDomain(other_domain);
   return true;

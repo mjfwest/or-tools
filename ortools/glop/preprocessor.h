@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -920,6 +920,7 @@ class ScalingPreprocessor : public Preprocessor {
   DenseRow variable_lower_bounds_;
   DenseRow variable_upper_bounds_;
   Fractional cost_scaling_factor_;
+  Fractional bound_scaling_factor_;
   SparseMatrixScaler scaler_;
 
   DISALLOW_COPY_AND_ASSIGN(ScalingPreprocessor);

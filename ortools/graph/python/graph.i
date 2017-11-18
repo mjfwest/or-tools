@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -139,6 +139,7 @@
 %unignore operations_research::SimpleLinearSumAssignment::AssignmentCost;
 
 %include "ortools/graph/assignment.h"
+
 
 %unignore operations_research::DijkstraShortestPath;
 %unignore operations_research::BellmanFordShortestPath;

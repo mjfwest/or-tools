@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2017 Google
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,14 +14,26 @@
 #ifndef OR_TOOLS_SAT_BOOLEAN_PROBLEM_H_
 #define OR_TOOLS_SAT_BOOLEAN_PROBLEM_H_
 
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/algorithms/sparse_permutation.h"
 #include "ortools/sat/boolean_problem.pb.h"
+#include "ortools/sat/cp_model.pb.h"
+#include "ortools/sat/pb_constraint.h"
+#include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/sat/simplification.h"
 #include "ortools/base/status.h"
 
 namespace operations_research {
 namespace sat {
+
+// Converts a LinearBooleanProblem to a CpModelProto which should eventually
+// replace completely the LinearBooleanProblem proto.
+CpModelProto BooleanProblemToCpModelproto(const LinearBooleanProblem& problem);
 
 // Adds the offset and returns the scaled version of the given objective value.
 inline double AddOffsetAndScaleObjectiveValue(
