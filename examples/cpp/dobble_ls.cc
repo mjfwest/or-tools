@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -32,11 +32,11 @@
 #include <algorithm>
 #include <vector>
 
+#include "absl/strings/str_format.h"
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/random.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/bitset.h"
 
@@ -640,7 +640,8 @@ void SolveDobble(int num_cards, int num_symbols, int num_symbols_per_card) {
   std::vector<std::vector<IntVar*> > card_symbol_vars(num_cards);
   std::vector<IntVar*> all_card_symbol_vars;
   for (int card_index = 0; card_index < num_cards; ++card_index) {
-    solver.MakeBoolVarArray(num_symbols, StringPrintf("card_%i_", card_index),
+    solver.MakeBoolVarArray(num_symbols,
+                            absl::StrFormat("card_%i_", card_index),
                             &card_symbol_vars[card_index]);
     for (int symbol_index = 0; symbol_index < num_symbols; ++symbol_index) {
       all_card_symbol_vars.push_back(
@@ -756,5 +757,5 @@ int main(int argc, char** argv) {
   const int kCards = kSymbolsPerCard * (kSymbolsPerCard - 1) + 1;
   const int kSymbols = kCards;
   operations_research::SolveDobble(kCards, kSymbols, kSymbolsPerCard);
-  return 0;
+  return EXIT_SUCCESS;
 }

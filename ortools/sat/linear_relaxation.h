@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,12 +16,19 @@
 
 #include <vector>
 
+#include "ortools/sat/cp_model_loader.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/linear_programming_constraint.h"
 #include "ortools/sat/model.h"
 
 namespace operations_research {
 namespace sat {
+
+struct LinearRelaxation {
+  std::vector<LinearConstraint> linear_constraints;
+  std::vector<std::vector<Literal>> at_most_ones;
+  std::vector<CutGenerator> cut_generators;
+};
 
 // If the given IntegerVariable is fully encoded (li <=> var == xi), adds to the
 // constraints vector the following linear relaxation of its encoding:
@@ -33,7 +40,7 @@ namespace sat {
 // Returns false, if the relaxation couldn't be added because this variable
 // was not fully encoded or not all its associated literal had a view.
 bool AppendFullEncodingRelaxation(IntegerVariable var, const Model& model,
-                                  std::vector<LinearConstraint>* constraints);
+                                  LinearRelaxation* relaxation);
 
 // When the set of (li <=> var == xi) do not cover the full domain of xi, we
 // do something a bit more involved. Let min/max the min and max value of the
@@ -47,9 +54,8 @@ bool AppendFullEncodingRelaxation(IntegerVariable var, const Model& model,
 // do not have an IntegerView will be skipped, there is no point adding them
 // to the LP if they are not used in any other constraint, the relaxation will
 // have the same "power" without them.
-void AppendPartialEncodingRelaxation(
-    IntegerVariable var, const Model& model,
-    std::vector<LinearConstraint>* constraints);
+void AppendPartialEncodingRelaxation(IntegerVariable var, const Model& model,
+                                     LinearRelaxation* relaxation);
 
 // This is a different relaxation that use a partial set of literal li such that
 // (li <=> var >= xi). In which case we use the following encoding:
@@ -59,9 +65,22 @@ void AppendPartialEncodingRelaxation(
 //
 // Like for AppendPartialEncodingRelaxation() we skip any li that do not have
 // an integer view.
-void AppendPartialGreaterThanEncodingRelaxation(
-    IntegerVariable var, const Model& model,
-    std::vector<LinearConstraint>* constraints);
+void AppendPartialGreaterThanEncodingRelaxation(IntegerVariable var,
+                                                const Model& model,
+                                                LinearRelaxation* relaxation);
+
+// Appends linear constraints to the relaxation. This also handles the
+// relaxation of linear constraints with enforcement literals.
+// A linear constraint lb <= ax <= ub with enforcement literals {ei} is relaxed
+// as following.
+// lb <= (Sum Negated(ei) * (lb - implied_lb)) + ax <= inf
+// -inf <= (Sum Negated(ei) * (ub - implied_ub)) + ax <= ub
+// Where implied_lb and implied_ub are trivial lower and upper bounds of the
+// constraint.
+void AppendLinearConstraintRelaxation(const ConstraintProto& constraint_proto,
+                                      const int linearization_level,
+                                      const Model& model,
+                                      LinearRelaxation* relaxation);
 
 }  // namespace sat
 }  // namespace operations_research

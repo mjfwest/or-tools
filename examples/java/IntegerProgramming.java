@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,20 +16,18 @@ import com.google.ortools.linearsolver.MPObjective;
 import com.google.ortools.linearsolver.MPSolver;
 import com.google.ortools.linearsolver.MPVariable;
 
-/**
- * Integer programming example that shows how to use the API.
- *
- */
-
+/** Integer programming example that shows how to use the API. */
 public class IntegerProgramming {
-  static { System.loadLibrary("jniortools"); }
+  static {
+    System.loadLibrary("jniortools");
+  }
 
-  private static MPSolver createSolver (String solverType) {
+  private static MPSolver createSolver(String solverType) {
     try {
-      return new MPSolver("IntegerProgrammingExample",
-                          MPSolver.OptimizationProblemType.valueOf(solverType));
+      return new MPSolver(
+          "IntegerProgrammingExample", MPSolver.OptimizationProblemType.valueOf(solverType));
     } catch (java.lang.IllegalArgumentException e) {
-	    System.err.println("Bad solver type: " + e);
+      System.err.println("Bad solver type: " + e);
       return null;
     }
   }
@@ -65,9 +63,10 @@ public class IntegerProgramming {
 
     // Verify that the solution satisfies all constraints (when using solvers
     // others than GLOP_LINEAR_PROGRAMMING, this is highly recommended!).
-    if (!solver.verifySolution(/*tolerance=*/1e-7, /*logErrors=*/true)) {
-      System.err.println("The solution returned by the solver violated the"
-                         + " problem constraints by at least 1e-7");
+    if (!solver.verifySolution(/*tolerance=*/ 1e-7, /*logErrors=*/ true)) {
+      System.err.println(
+          "The solution returned by the solver violated the"
+              + " problem constraints by at least 1e-7");
       return;
     }
 
@@ -83,7 +82,6 @@ public class IntegerProgramming {
     System.out.println("Advanced usage:");
     System.out.println("Problem solved in " + solver.nodes() + " branch-and-bound nodes");
   }
-
 
   public static void main(String[] args) throws Exception {
     System.out.println("---- Integer programming example with SCIP (recommended) ----");

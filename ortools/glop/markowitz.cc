@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,7 +14,7 @@
 #include "ortools/glop/markowitz.h"
 
 #include <limits>
-#include "ortools/base/stringprintf.h"
+#include "absl/strings/str_format.h"
 #include "ortools/lp_data/lp_utils.h"
 
 namespace operations_research {
@@ -78,10 +78,10 @@ Status Markowitz::ComputeRowAndColumnPermutation(const MatrixView& basis_matrix,
     // report the singularity of the matrix.
     if (pivot_row == kInvalidRow || pivot_col == kInvalidCol ||
         std::abs(pivot_coefficient) <= singularity_threshold) {
-      GLOP_RETURN_AND_LOG_ERROR(
-          Status::ERROR_LU,
-          absl::StrFormat("The matrix is singular! pivot = %E",
-                          pivot_coefficient));
+      const std::string error_message = absl::StrFormat(
+          "The matrix is singular! pivot = %E", pivot_coefficient);
+      VLOG(1) << "ERROR_LU: " << error_message;
+      return Status(Status::ERROR_LU, error_message);
     }
     DCHECK_EQ((*row_perm)[pivot_row], kInvalidRow);
     DCHECK_EQ((*col_perm)[pivot_col], kInvalidCol);

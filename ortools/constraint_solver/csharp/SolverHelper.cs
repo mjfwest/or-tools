@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,6 +14,9 @@
 namespace Google.OrTools.ConstraintSolver {
 using System;
 using System.Collections.Generic;
+
+public delegate long TransitCallback(long FromIndex, long ToIndex);
+public delegate long UnaryTransitCallback(long FromIndex);
 
 public partial class Solver : IDisposable {
   public IntVar[] MakeIntVarArray(int count, long min, long max) {

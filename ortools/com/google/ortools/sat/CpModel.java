@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -37,7 +37,6 @@ import com.google.ortools.sat.TableConstraintProto;
  * <p>Proposes a factory to create all modeling objects understood by the SAT solver.
  */
 public class CpModel {
-
   static class CpModelException extends Exception {
     public CpModelException(String methodName, String msg) {
       // Call constructor of parent Exception
@@ -494,8 +493,7 @@ public class CpModel {
     int numVars = variables.length;
     for (int t = 0; t < tuplesList.length; ++t) {
       if (tuplesList[t].length != numVars) {
-        throw new WrongLength(
-            "addAllowedAssignments",
+        throw new WrongLength("addAllowedAssignments",
             "tuple " + t + " does not have the same length as the variables");
       }
       for (int i = 0; i < tuplesList[t].length; ++i) {
@@ -520,8 +518,7 @@ public class CpModel {
     int numVars = variables.length;
     for (int t = 0; t < tuplesList.length; ++t) {
       if (tuplesList[t].length != numVars) {
-        throw new WrongLength(
-            "addAllowedAssignments",
+        throw new WrongLength("addAllowedAssignments",
             "tuple " + t + " does not have the same length as the variables");
       }
       for (int i = 0; i < tuplesList[t].length; ++i) {
@@ -595,9 +592,8 @@ public class CpModel {
    * @return an instance of the Constraint class
    * @throws WrongLength if one transition does not have a length of 3
    */
-  public Constraint addAutomaton(
-      IntVar[] transitionVariables, long startingState, long[] finalStates, long[][] transitions)
-      throws WrongLength {
+  public Constraint addAutomaton(IntVar[] transitionVariables, long startingState,
+      long[] finalStates, long[][] transitions) throws WrongLength {
     Constraint ct = new Constraint(modelBuilder);
     AutomataConstraintProto.Builder automaton = ct.builder().getAutomataBuilder();
     for (IntVar var : transitionVariables) {
@@ -696,6 +692,67 @@ public class CpModel {
     return addReservoirConstraint(times, toLongArray(demands), minLevel, maxLevel);
   }
 
+  /**
+   * Adds {@code Reservoir(times, demands, actives, minLevel, maxLevel)}.
+   *
+   * <p>Maintains a reservoir level within bounds. The water level starts at 0, and at any non
+   * negative time , it must be between minLevel and maxLevel. Furthermore, this constraints expect
+   * all times variables to be non negative. If actives[i] is true, and if times[i] is assigned a
+   * value t, then the current level changes by demands[i] (which is constant) at the time t.
+   *
+   * <p>Note that {@code minLevel} can be greater than 0, or {@code maxLevel} can be less than 0. It
+   * just forces some demands to be executed at time 0 to make sure that we are within those bounds
+   * with the executed demands. Therefore, {@code forall t >= 0: minLevel <= sum(demands[i] *
+   * actives[i] if times[i] <= t) <= maxLevel}.
+   *
+   * @param times a list of positive integer variables which specify the time of the filling or
+   *     emptying the reservoir
+   * @param demands a list of integer values that specifies the amount of the emptying or feeling
+   * @param actives a list of integer variables that specifies if the operation actually takes
+   *     place.
+   * @param minLevel at any non negative time, the level of the reservoir must be greater of equal
+   *     than the min level
+   * @param maxLevel at any non negative time, the level of the reservoir must be less or equal than
+   *     the max level
+   * @return an instance of the Constraint class
+   * @throws MismatchedArrayLengths if times, demands, or actives have different length
+   */
+  public Constraint addReservoirConstraintWithActive(IntVar[] times, long[] demands,
+      IntVar[] actives, long minLevel, long maxLevel) throws MismatchedArrayLengths {
+    if (times.length != demands.length) {
+      throw new MismatchedArrayLengths("addReservoirConstraint", "times", "demands");
+    }
+    if (times.length != actives.length) {
+      throw new MismatchedArrayLengths("addReservoirConstraint", "times", "actives");
+    }
+
+    Constraint ct = new Constraint(modelBuilder);
+    ReservoirConstraintProto.Builder reservoir = ct.builder().getReservoirBuilder();
+    for (IntVar var : times) {
+      reservoir.addTimes(var.getIndex());
+    }
+    for (long d : demands) {
+      reservoir.addDemands(d);
+    }
+    for (IntVar var : actives) {
+      reservoir.addActives(var.getIndex());
+    }
+    reservoir.setMinLevel(minLevel);
+    reservoir.setMaxLevel(maxLevel);
+    return ct;
+  }
+
+  /**
+   * Adds {@code Reservoir(times, demands, actives, minLevel, maxLevel)}.
+   *
+   * @see #addReservoirConstraintWithActive(IntVar[], long[], actives, long, long) Reservoir
+   */
+  public Constraint addReservoirConstraintWithActive(IntVar[] times, int[] demands,
+      IntVar[] actives, long minLevel, long maxLevel) throws MismatchedArrayLengths {
+    return addReservoirConstraintWithActive(
+        times, toLongArray(demands), actives, minLevel, maxLevel);
+  }
+
   /** Adds {@code var == i + offset <=> booleans[i] == true for all i in [0, booleans.length)}. */
   public void addMapDomain(IntVar var, Literal[] booleans, long offset) {
     for (int i = 0; i < booleans.length; ++i) {
@@ -733,6 +790,16 @@ public class CpModel {
     intDiv.setTarget(target.getIndex());
     intDiv.addVars(num.getIndex());
     intDiv.addVars(denom.getIndex());
+    return ct;
+  }
+
+  /** Adds {@code target == Abs(var)}. */
+  public Constraint addAbsEquality(IntVar target, IntVar var) {
+    Constraint ct = new Constraint(modelBuilder);
+    IntegerArgumentProto.Builder intMax = ct.builder().getIntMaxBuilder();
+    intMax.setTarget(target.getIndex());
+    intMax.addVars(var.getIndex());
+    intMax.addVars(-var.getIndex() - 1);
     return ct;
   }
 
@@ -819,12 +886,8 @@ public class CpModel {
 
   /** Creates a fixed interval from its start and its size. */
   public IntervalVar newFixedInterval(long start, long size, String name) {
-    return new IntervalVar(
-        modelBuilder,
-        indexFromConstant(start),
-        indexFromConstant(size),
-        indexFromConstant(start + size),
-        name);
+    return new IntervalVar(modelBuilder, indexFromConstant(start), indexFromConstant(size),
+        indexFromConstant(start + size), name);
   }
 
   /**
@@ -846,13 +909,8 @@ public class CpModel {
    */
   public IntervalVar newOptionalIntervalVar(
       IntVar start, IntVar size, IntVar end, Literal isPresent, String name) {
-    return new IntervalVar(
-        modelBuilder,
-        start.getIndex(),
-        size.getIndex(),
-        end.getIndex(),
-        isPresent.getIndex(),
-        name);
+    return new IntervalVar(modelBuilder, start.getIndex(), size.getIndex(), end.getIndex(),
+        isPresent.getIndex(), name);
   }
 
   /**
@@ -862,13 +920,8 @@ public class CpModel {
    */
   public IntervalVar newOptionalIntervalVar(
       IntVar start, IntVar size, long end, Literal isPresent, String name) {
-    return new IntervalVar(
-        modelBuilder,
-        start.getIndex(),
-        size.getIndex(),
-        indexFromConstant(end),
-        isPresent.getIndex(),
-        name);
+    return new IntervalVar(modelBuilder, start.getIndex(), size.getIndex(), indexFromConstant(end),
+        isPresent.getIndex(), name);
   }
 
   /**
@@ -878,25 +931,15 @@ public class CpModel {
    */
   public IntervalVar newOptionalIntervalVar(
       IntVar start, long size, IntVar end, Literal isPresent, String name) {
-    return new IntervalVar(
-        modelBuilder,
-        start.getIndex(),
-        indexFromConstant(size),
-        end.getIndex(),
-        isPresent.getIndex(),
-        name);
+    return new IntervalVar(modelBuilder, start.getIndex(), indexFromConstant(size), end.getIndex(),
+        isPresent.getIndex(), name);
   }
 
   /** Creates an optional interval with a fixed start. */
   public IntervalVar newOptionalIntervalVar(
       long start, IntVar size, IntVar end, Literal isPresent, String name) {
-    return new IntervalVar(
-        modelBuilder,
-        indexFromConstant(start),
-        size.getIndex(),
-        end.getIndex(),
-        isPresent.getIndex(),
-        name);
+    return new IntervalVar(modelBuilder, indexFromConstant(start), size.getIndex(), end.getIndex(),
+        isPresent.getIndex(), name);
   }
 
   /**
@@ -906,13 +949,8 @@ public class CpModel {
    */
   public IntervalVar newOptionalFixedInterval(
       long start, long size, Literal isPresent, String name) {
-    return new IntervalVar(
-        modelBuilder,
-        indexFromConstant(start),
-        indexFromConstant(size),
-        indexFromConstant(start + size),
-        isPresent.getIndex(),
-        name);
+    return new IntervalVar(modelBuilder, indexFromConstant(start), indexFromConstant(size),
+        indexFromConstant(start + size), isPresent.getIndex(), name);
   }
 
   /**
@@ -1127,8 +1165,7 @@ public class CpModel {
   // DecisionStrategy
 
   /** Adds {@code DecisionStrategy(variables, varStr, domStr)}. */
-  public void addDecisionStrategy(
-      IntVar[] variables,
+  public void addDecisionStrategy(IntVar[] variables,
       DecisionStrategyProto.VariableSelectionStrategy varStr,
       DecisionStrategyProto.DomainReductionStrategy domStr) {
     DecisionStrategyProto.Builder ds = modelBuilder.addSearchStrategyBuilder();
@@ -1142,6 +1179,11 @@ public class CpModel {
   /** Returns some statistics on model as a string. */
   public String modelStats() {
     return SatHelper.modelStats(model());
+  }
+
+  /** Returns a non empty string explaining the issue if the model is invalid. */
+  public String validate() {
+    return SatHelper.validateModel(model());
   }
 
   // Helpers

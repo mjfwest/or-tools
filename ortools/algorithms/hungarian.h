@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -33,20 +33,23 @@
 #ifndef OR_TOOLS_ALGORITHMS_HUNGARIAN_H_
 #define OR_TOOLS_ALGORITHMS_HUNGARIAN_H_
 
-#include <unordered_map>
 #include <vector>
+#include "absl/container/flat_hash_map.h"
 
 namespace operations_research {
 
 // See IMPORTANT NOTE at the top of the file.
-void MinimizeLinearAssignment(const std::vector<std::vector<double> >& cost,
-                              std::unordered_map<int, int>* direct_assignment,
-                              std::unordered_map<int, int>* reverse_assignment);
+void MinimizeLinearAssignment(
+    const std::vector<std::vector<double> >& cost,
+    absl::flat_hash_map<int, int>* direct_assignment,
+    absl::flat_hash_map<int, int>* reverse_assignment);
 
 // See IMPORTANT NOTE at the top of the file.
-void MaximizeLinearAssignment(const std::vector<std::vector<double> >& cost,
-                              std::unordered_map<int, int>* direct_assignment,
-                              std::unordered_map<int, int>* reverse_assignment);
+void MaximizeLinearAssignment(
+    const std::vector<std::vector<double> >& cost,
+    absl::flat_hash_map<int, int>* direct_assignment,
+    absl::flat_hash_map<int, int>* reverse_assignment);
+
 }  // namespace operations_research
 
 #endif  // OR_TOOLS_ALGORITHMS_HUNGARIAN_H_

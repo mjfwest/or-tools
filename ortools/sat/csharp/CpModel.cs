@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -489,10 +489,11 @@ public class CpModel
     return ct;
   }
 
-  public Constraint AddReservoirConstraint<I>(IEnumerable<IntVar> times,
-                                              IEnumerable<I> demands,
-                                              IEnumerable<IntVar> actives,
-                                              long min_level, long max_level)
+  public Constraint AddReservoirConstraintWithActive<I>(
+    IEnumerable<IntVar> times,
+    IEnumerable<I> demands,
+    IEnumerable<IntVar> actives,
+    long min_level, long max_level)
   {
     Constraint ct = new Constraint(model_);
     ReservoirConstraintProto res = new ReservoirConstraintProto();
@@ -628,6 +629,17 @@ public class CpModel
     args.Vars.Add(GetOrCreateIndex(denom));
     args.Target = GetOrCreateIndex(target);
     ct.Proto.IntDiv = args;
+    return ct;
+  }
+
+  public Constraint AddAbsEquality(IntVar target, IntVar var)
+  {
+    Constraint ct = new Constraint(model_);
+    IntegerArgumentProto args = new IntegerArgumentProto();
+    args.Vars.Add(var.Index);
+    args.Vars.Add(-var.Index - 1);
+    args.Target = target.Index;
+    ct.Proto.IntMax = args;
     return ct;
   }
 
@@ -809,6 +821,10 @@ public class CpModel
 
   public String ModelStats() {
     return SatHelper.ModelStats(model_);
+  }
+
+ public String Validate() {
+    return SatHelper.ValidateModel(model_);
   }
 
   private int ConvertConstant(long value)

@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,7 +15,7 @@
 
 #include <algorithm>
 
-#include <unordered_map>
+#include "absl/container/flat_hash_map.h"
 #include "ortools/base/map_util.h"
 #include "ortools/sat/sat_solver.h"
 
@@ -36,7 +36,7 @@ CircuitPropagator::CircuitPropagator(const int num_nodes,
   prev_.resize(num_nodes_, -1);
   next_literal_.resize(num_nodes_);
   must_be_in_cycle_.resize(num_nodes_);
-  std::unordered_map<LiteralIndex, int> literal_to_watch_index;
+  absl::flat_hash_map<LiteralIndex, int> literal_to_watch_index;
 
   const int num_arcs = tails.size();
   graph_.reserve(num_arcs);

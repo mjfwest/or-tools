@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,8 +28,12 @@
 //
 // TODO(user): test all the APIs that are currently marked as 'untested'.
 
-%include "ortools/base/base.i"
+%include "stdint.i"
 
+%include "ortools/base/base.i"
+%import "ortools/util/python/vector.i"
+
+%include "ortools/util/python/proto.i"
 
 // We need to forward-declare the proto here, so that the PROTO_* macros
 // involving them work correctly. The order matters very much: this declaration
@@ -43,6 +47,9 @@ class MPSolutionResponse;
 %{
 #include "ortools/linear_solver/linear_solver.h"
 %}
+
+typedef int64_t int64;
+typedef uint64_t uint64;
 
 namespace operations_research {
 

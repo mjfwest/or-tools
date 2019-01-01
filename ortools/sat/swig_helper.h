@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@
 #include <atomic>
 
 #include "ortools/sat/cp_model.pb.h"
+#include "ortools/sat/cp_model_checker.h"
 #include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_parameters.pb.h"
@@ -59,7 +60,9 @@ class SolutionCallback {
 
   double DeterministicTime() const { return response_.deterministic_time(); }
 
-  int64 ObjectiveValue() const { return response_.objective_value(); }
+  double ObjectiveValue() const { return response_.objective_value(); }
+
+  double BestObjectiveBound() const { return response_.best_objective_bound(); }
 
   int64 SolutionIntegerValue(int index) {
     return index >= 0 ? response_.solution(index)
@@ -174,6 +177,13 @@ class SatHelper {
   static std::string SolverResponseStats(
       const operations_research::sat::CpSolverResponse& response) {
     return CpSolverResponseStats(response);
+  }
+
+  // Returns a non empty std::string explaining the issue if the model is not
+  // valid.
+  static std::string ValidateModel(
+      const operations_research::sat::CpModelProto& model_proto) {
+    return ValidateCpModel(model_proto);
   }
 };
 

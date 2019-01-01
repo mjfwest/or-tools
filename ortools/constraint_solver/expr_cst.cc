@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,12 +19,12 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
-#include "ortools/base/join.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/stl_util.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/saturated_arithmetic.h"
@@ -77,8 +77,7 @@ void EqualityExprCst::Post() {
 void EqualityExprCst::InitialPropagate() { expr_->SetValue(value_); }
 
 std::string EqualityExprCst::DebugString() const {
-  return StringPrintf("(%s == %" GG_LL_FORMAT "d)",
-                      expr_->DebugString().c_str(), value_);
+  return absl::StrFormat("(%s == %d)", expr_->DebugString(), value_);
 }
 }  // namespace
 
@@ -162,8 +161,7 @@ void GreaterEqExprCst::InitialPropagate() {
 }
 
 std::string GreaterEqExprCst::DebugString() const {
-  return StringPrintf("(%s >= %" GG_LL_FORMAT "d)",
-                      expr_->DebugString().c_str(), value_);
+  return absl::StrFormat("(%s >= %d)", expr_->DebugString(), value_);
 }
 }  // namespace
 
@@ -260,8 +258,7 @@ void LessEqExprCst::InitialPropagate() {
 }
 
 std::string LessEqExprCst::DebugString() const {
-  return StringPrintf("(%s <= %" GG_LL_FORMAT "d)",
-                      expr_->DebugString().c_str(), value_);
+  return absl::StrFormat("(%s <= %d)", expr_->DebugString(), value_);
 }
 }  // namespace
 
@@ -333,6 +330,8 @@ class DiffCst : public Constraint {
   }
 
  private:
+  bool HasLargeDomain(IntVar* var);
+
   IntVar* const var_;
   int64 value_;
   Demon* demon_;
@@ -342,7 +341,7 @@ DiffCst::DiffCst(Solver* const s, IntVar* const var, int64 value)
     : Constraint(s), var_(var), value_(value), demon_(nullptr) {}
 
 void DiffCst::InitialPropagate() {
-  if (var_->Size() >= 0xFFFFFF) {
+  if (HasLargeDomain(var_)) {
     demon_ = MakeConstraintDemon0(solver(), this, &DiffCst::BoundPropagate,
                                   "BoundPropagate");
     var_->WhenRange(demon_);
@@ -360,15 +359,18 @@ void DiffCst::BoundPropagate() {
     var_->SetMin(value_ + 1);
   } else if (var_max == value_) {
     var_->SetMax(value_ - 1);
-  } else if (var_->Size() <= 0xFFFFFF) {
+  } else if (!HasLargeDomain(var_)) {
     demon_->inhibit(solver());
     var_->RemoveValue(value_);
   }
 }
 
 std::string DiffCst::DebugString() const {
-  return StringPrintf("(%s != %" GG_LL_FORMAT "d)", var_->DebugString().c_str(),
-                      value_);
+  return absl::StrFormat("(%s != %d)", var_->DebugString(), value_);
+}
+
+bool DiffCst::HasLargeDomain(IntVar* var) {
+  return CapSub(var->Max(), var->Min()) > 0xFFFFFF;
 }
 }  // namespace
 
@@ -434,9 +436,8 @@ class IsEqualCstCt : public CastConstraint {
     }
   }
   std::string DebugString() const override {
-    return StringPrintf("IsEqualCstCt(%s, %" GG_LL_FORMAT "d, %s)",
-                        var_->DebugString().c_str(), cst_,
-                        target_var_->DebugString().c_str());
+    return absl::StrFormat("IsEqualCstCt(%s, %d, %s)", var_->DebugString(),
+                           cst_, target_var_->DebugString());
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -474,8 +475,8 @@ IntVar* Solver::MakeIsEqualCstVar(IntExpr* const var, int64 value) {
   if (var->IsVar()) {
     return var->Var()->IsEqual(value);
   } else {
-    IntVar* const boolvar = MakeBoolVar(StringPrintf(
-        "Is(%s == %" GG_LL_FORMAT "d)", var->DebugString().c_str(), value));
+    IntVar* const boolvar =
+        MakeBoolVar(absl::StrFormat("Is(%s == %d)", var->DebugString(), value));
     AddConstraint(MakeIsEqualCstCt(var, value, boolvar));
     return boolvar;
   }
@@ -553,9 +554,8 @@ class IsDiffCstCt : public CastConstraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("IsDiffCstCt(%s, %" GG_LL_FORMAT "d, %s)",
-                        var_->DebugString().c_str(), cst_,
-                        target_var_->DebugString().c_str());
+    return absl::StrFormat("IsDiffCstCt(%s, %d, %s)", var_->DebugString(), cst_,
+                           target_var_->DebugString());
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -595,7 +595,7 @@ Constraint* Solver::MakeIsDifferentCstCt(IntExpr* const var, int64 value,
     return MakeIsLessOrEqualCstCt(var, value - 1, boolvar);
   }
   if (var->IsVar() && !var->Var()->Contains(value)) {
-    return MakeEquality(boolvar, 1LL);
+    return MakeEquality(boolvar, GG_LONGLONG(1));
   }
   if (var->Bound() && var->Min() == value) {
     return MakeEquality(boolvar, Zero());
@@ -652,9 +652,9 @@ class IsGreaterEqualCstCt : public CastConstraint {
     }
   }
   std::string DebugString() const override {
-    return StringPrintf("IsGreaterEqualCstCt(%s, %" GG_LL_FORMAT "d, %s)",
-                        expr_->DebugString().c_str(), cst_,
-                        target_var_->DebugString().c_str());
+    return absl::StrFormat("IsGreaterEqualCstCt(%s, %d, %s)",
+                           expr_->DebugString(), cst_,
+                           target_var_->DebugString());
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -684,8 +684,8 @@ IntVar* Solver::MakeIsGreaterOrEqualCstVar(IntExpr* const var, int64 value) {
   if (var->IsVar()) {
     return var->Var()->IsGreaterOrEqual(value);
   } else {
-    IntVar* const boolvar = MakeBoolVar(StringPrintf(
-        "Is(%s >= %" GG_LL_FORMAT "d)", var->DebugString().c_str(), value));
+    IntVar* const boolvar =
+        MakeBoolVar(absl::StrFormat("Is(%s >= %d)", var->DebugString(), value));
     AddConstraint(MakeIsGreaterOrEqualCstCt(var, value, boolvar));
     return boolvar;
   }
@@ -752,9 +752,8 @@ class IsLessEqualCstCt : public CastConstraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("IsLessEqualCstCt(%s, %" GG_LL_FORMAT "d, %s)",
-                        expr_->DebugString().c_str(), cst_,
-                        target_var_->DebugString().c_str());
+    return absl::StrFormat("IsLessEqualCstCt(%s, %d, %s)", expr_->DebugString(),
+                           cst_, target_var_->DebugString());
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -784,8 +783,8 @@ IntVar* Solver::MakeIsLessOrEqualCstVar(IntExpr* const var, int64 value) {
   if (var->IsVar()) {
     return var->Var()->IsLessOrEqual(value);
   } else {
-    IntVar* const boolvar = MakeBoolVar(StringPrintf(
-        "Is(%s <= %" GG_LL_FORMAT "d)", var->DebugString().c_str(), value));
+    IntVar* const boolvar =
+        MakeBoolVar(absl::StrFormat("Is(%s <= %d)", var->DebugString(), value));
     AddConstraint(MakeIsLessOrEqualCstCt(var, value, boolvar));
     return boolvar;
   }
@@ -842,8 +841,8 @@ class BetweenCt : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("BetweenCt(%s, %" GG_LL_FORMAT "d, %" GG_LL_FORMAT "d)",
-                        expr_->DebugString().c_str(), min_, max_);
+    return absl::StrFormat("BetweenCt(%s, %d, %d)", expr_->DebugString(), min_,
+                           max_);
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -890,9 +889,8 @@ class NotBetweenCt : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("NotBetweenCt(%s, %" GG_LL_FORMAT "d, %" GG_LL_FORMAT
-                        "d)",
-                        expr_->DebugString().c_str(), min_, max_);
+    return absl::StrFormat("NotBetweenCt(%s, %d, %d)", expr_->DebugString(),
+                           min_, max_);
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -1023,10 +1021,8 @@ class IsBetweenCt : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("IsBetweenCt(%s, %" GG_LL_FORMAT "d, %" GG_LL_FORMAT
-                        "d, %s)",
-                        expr_->DebugString().c_str(), min_, max_,
-                        boolvar_->DebugString().c_str());
+    return absl::StrFormat("IsBetweenCt(%s, %d, %d, %s)", expr_->DebugString(),
+                           min_, max_, boolvar_->DebugString());
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -1112,8 +1108,8 @@ class MemberCt : public Constraint {
   void InitialPropagate() override { var_->SetValues(values_); }
 
   std::string DebugString() const override {
-    return StringPrintf("Member(%s, %s)", var_->DebugString().c_str(),
-                        absl::StrJoin(values_, ", ").c_str());
+    return absl::StrFormat("Member(%s, %s)", var_->DebugString(),
+                           absl::StrJoin(values_, ", "));
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -1143,8 +1139,8 @@ class NotMemberCt : public Constraint {
   void InitialPropagate() override { var_->RemoveValues(values_); }
 
   std::string DebugString() const override {
-    return StringPrintf("NotMember(%s, %s)", var_->DebugString().c_str(),
-                        absl::StrJoin(values_, ", ").c_str());
+    return absl::StrFormat("NotMember(%s, %s)", var_->DebugString(),
+                           absl::StrJoin(values_, ", "));
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -1345,9 +1341,9 @@ class IsMemberCt : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("IsMemberCt(%s, %s, %s)", var_->DebugString().c_str(),
-                        absl::StrJoin(values_, ", ").c_str(),
-                        boolvar_->DebugString().c_str());
+    return absl::StrFormat("IsMemberCt(%s, %s, %s)", var_->DebugString(),
+                           absl::StrJoin(values_, ", "),
+                           boolvar_->DebugString());
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -1411,7 +1407,7 @@ class IsMemberCt : public Constraint {
   }
 
   IntVar* const var_;
-  std::unordered_set<int64> values_as_set_;
+  absl::flat_hash_set<int64> values_as_set_;
   std::vector<int64> values_;
   IntVar* const boolvar_;
   int support_;
@@ -1547,9 +1543,8 @@ class SortedDisjointForbiddenIntervalsConstraint : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("ForbiddenIntervalCt(%s, %s)",
-                        var_->DebugString().c_str(),
-                        intervals_.DebugString().c_str());
+    return absl::StrFormat("ForbiddenIntervalCt(%s, %s)", var_->DebugString(),
+                           intervals_.DebugString());
   }
 
   void Accept(ModelVisitor* const visitor) const override {

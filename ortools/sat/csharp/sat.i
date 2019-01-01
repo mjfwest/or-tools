@@ -1,4 +1,4 @@
-// Copyright 2010-2014 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This .swig file exposes the sat cp_model API.
-
 %typemap(csimports) SWIGTYPE %{
 using System;
 using System.Runtime.InteropServices;
 using System.Collections;
 %}
+
+%include "stdint.i"
 
 %include "ortools/base/base.i"
 %include "ortools/util/csharp/proto.i"
@@ -27,6 +27,9 @@ using System.Collections;
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/swig_helper.h"
 %}
+
+typedef int64_t int64;
+typedef uint64_t uint64;
 
 %module(directors="1") operations_research_sat
 
@@ -48,7 +51,7 @@ PROTO2_RETURN(operations_research::sat::CpSolverResponse,
 %ignoreall
 
 // SatParameters are proto2, thus not compatible with C# Protobufs.
-// We will use API with string parameters.
+// We will use API with std::string parameters.
 
 %unignore operations_research;
 %unignore operations_research::sat;
@@ -58,12 +61,13 @@ PROTO2_RETURN(operations_research::sat::CpSolverResponse,
 %unignore operations_research::sat::SatHelper::SolveWithStringParametersAndSolutionCallback;
 %unignore operations_research::sat::SatHelper::ModelStats;
 %unignore operations_research::sat::SatHelper::SolverResponseStats;
+%unignore operations_research::sat::SatHelper::ValidateModel;
 
 %feature("director") operations_research::sat::SolutionCallback;
-
 %unignore operations_research::sat::SolutionCallback;
-%unignore operations_research::sat::SolutionCallback::SolutionCallback;
 %unignore operations_research::sat::SolutionCallback::~SolutionCallback;
+%unignore operations_research::sat::SolutionCallback::BestObjectiveBound;
+%feature("nodirector") operations_research::sat::SolutionCallback::BestObjectiveBound;
 %unignore operations_research::sat::SolutionCallback::NumBinaryPropagations;
 %feature("nodirector") operations_research::sat::SolutionCallback::NumBinaryPropagations;
 %unignore operations_research::sat::SolutionCallback::NumBooleans;

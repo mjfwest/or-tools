@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import com.google.ortools.constraintsolver.Assignment;
-import com.google.ortools.constraintsolver.AssignmentIntContainer;
+import com.google.ortools.constraintsolver.IntContainer;
 import com.google.ortools.constraintsolver.BaseLns;
 import com.google.ortools.constraintsolver.DecisionBuilder;
 import com.google.ortools.constraintsolver.IntVar;
@@ -24,17 +24,11 @@ import com.google.ortools.constraintsolver.SearchMonitor;
 import com.google.ortools.constraintsolver.SolutionCollector;
 import com.google.ortools.constraintsolver.Solver;
 
-/**
- * Sample showing how to model using the constraint programming solver.
- *
- */
+/** Sample showing how to model using the constraint programming solver. */
 public class LsApi {
-
   static {
     System.loadLibrary("jniortools");
   }
-
-
 
   static class OneVarLns extends BaseLns {
     public OneVarLns(IntVar[] vars) {
@@ -106,7 +100,7 @@ public class LsApi {
 
     @Override
     public boolean accept(Assignment delta, Assignment unusedDeltadelta) {
-      AssignmentIntContainer solutionDelta = delta.intVarContainer();
+      IntContainer solutionDelta = delta.intVarContainer();
       int solutionDeltaSize = solutionDelta.size();
 
       for (int i = 0; i < solutionDeltaSize; ++i) {

@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,15 +13,13 @@
 
 #include "ortools/data/set_covering_parser.h"
 
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
 #include "ortools/base/filelineiter.h"
-#include "ortools/base/numbers.h"
-#include "ortools/base/split.h"
 #include "ortools/base/strtoint.h"
 
 namespace operations_research {
 namespace scp {
-
-using ::absl::delimiter::AnyOf;
 
 ScpParser::ScpParser() : section_(INIT), line_(0), remaining_(0), current_(0) {}
 
@@ -43,7 +41,7 @@ void ScpParser::ProcessLine(const std::string& line, Format format,
                             ScpData* data) {
   line_++;
   const std::vector<std::string> words =
-      absl::StrSplit(line, AnyOf(" :\t\r"), absl::SkipEmpty());
+      absl::StrSplit(line, absl::ByAnyChar(" :\t\r"), absl::SkipEmpty());
   switch (section_) {
     case INIT: {
       if (words.size() != 2) {

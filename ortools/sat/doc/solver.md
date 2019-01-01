@@ -2,187 +2,6 @@
 
 
 
-## Searching for one (optimal) solution
-
-By default, searching for one solution will return the first solution found if
-the model has no objective, or the optimal solution if the model has an
-objective.
-
-### Python solver code
-
-The CpSolver class encapsulates searching for a solution of a model.
-
-```python
-"""Simple solve."""
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-from ortools.sat.python import cp_model
-
-
-def SimpleSolve():
-  """Minimal CP-SAT example to showcase calling the solver."""
-  # Creates the model.
-  model = cp_model.CpModel()
-  # Creates the variables.
-  num_vals = 3
-  x = model.NewIntVar(0, num_vals - 1, 'x')
-  y = model.NewIntVar(0, num_vals - 1, 'y')
-  z = model.NewIntVar(0, num_vals - 1, 'z')
-  # Creates the constraints.
-  model.Add(x != y)
-
-  # Creates a solver and solves the model.
-  solver = cp_model.CpSolver()
-  status = solver.Solve(model)
-
-  if status == cp_model.FEASIBLE:
-    print('x = %i' % solver.Value(x))
-    print('y = %i' % solver.Value(y))
-    print('z = %i' % solver.Value(z))
-
-
-SimpleSolve()
-```
-
-### C++ solver code
-
-Calling SolveCpModel() will return a CpSolverResponse protobuf that contains the
-solve status, the values for each variable in the model if solve was successful,
-and some metrics.
-
-```cpp
-#include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_solver.h"
-#include "ortools/sat/cp_model_utils.h"
-#include "ortools/sat/model.h"
-
-namespace operations_research {
-namespace sat {
-
-void SimpleSolve() {
-  CpModelProto cp_model;
-
-  // Trivial model with just one variable and no constraint.
-  auto new_variable = [&cp_model](int64 lb, int64 ub) {
-    CHECK_LE(lb, ub);
-    const int index = cp_model.variables_size();
-    IntegerVariableProto* const var = cp_model.add_variables();
-    var->add_domain(lb);
-    var->add_domain(ub);
-    return index;
-  };
-
-  const int x = new_variable(0, 3);
-
-  // Solving part.
-  Model model;
-  LOG(INFO) << CpModelStats(cp_model);
-  const CpSolverResponse response = SolveCpModel(cp_model, &model);
-  LOG(INFO) << CpSolverResponseStats(response);
-
-  if (response.status() == CpSolverStatus::FEASIBLE) {
-    // Get the value of x in the solution.
-    const int64 value_x = response.solution(x);
-    LOG(INFO) << "x = " << value_x;
-  }
-}
-
-}  // namespace sat
-}  // namespace operations_research
-
-int main() {
-  operations_research::sat::SimpleSolve();
-
-  return EXIT_SUCCESS;
-}
-```
-
-### Java code
-
-As in Python, the CpSolver class encapsulates searching for a solution.
-
-```java
-import com.google.ortools.sat.CpSolverStatus;
-import com.google.ortools.sat.CpModel;
-import com.google.ortools.sat.CpSolver;
-import com.google.ortools.sat.IntVar;
-
-/** Solve a simple problem with three variables and one different constraint. */
-public class SimpleSolve {
-
-  static { System.loadLibrary("jniortools"); }
-
-  public static void main(String[] args) throws Exception {
-    // Create the model.
-    CpModel model = new CpModel();
-    // Create the variables.
-    int numVals = 3;
-
-    IntVar x = model.newIntVar(0, numVals - 1, "x");
-    IntVar y = model.newIntVar(0, numVals - 1, "y");
-    IntVar z = model.newIntVar(0, numVals - 1, "z");
-    // Create the constraints.
-    model.addDifferent(x, y);
-
-    // Create a solver and solve the model.
-    CpSolver solver = new CpSolver();
-    CpSolverStatus status = solver.solve(model);
-
-    if (status == CpSolverStatus.FEASIBLE) {
-      System.out.println("x = " + solver.value(x));
-      System.out.println("y = " + solver.value(y));
-      System.out.println("z = " + solver.value(z));
-    }
-  }
-}
-```
-
-### C\# code
-
-As in Python, the CpSolver class encapsulates searching for a solution of a
-model.
-
-```cs
-using System;
-using Google.OrTools.Sat;
-
-public class CodeSamplesSat
-{
-  static void SimpleSolve()
-  {
-    // Creates the model.
-    CpModel model = new CpModel();
-    // Creates the variables.
-    int num_vals = 3;
-
-    IntVar x = model.NewIntVar(0, num_vals - 1, "x");
-    IntVar y = model.NewIntVar(0, num_vals - 1, "y");
-    IntVar z = model.NewIntVar(0, num_vals - 1, "z");
-    // Creates the constraints.
-    model.Add(x != y);
-
-    // Creates a solver and solves the model.
-    CpSolver solver = new CpSolver();
-    CpSolverStatus status = solver.Solve(model);
-
-    if (status == CpSolverStatus.Feasible)
-    {
-      Console.WriteLine("x = " + solver.Value(x));
-      Console.WriteLine("y = " + solver.Value(y));
-      Console.WriteLine("z = " + solver.Value(z));
-    }
-  }
-
-  static void Main()
-  {
-    SimpleSolve();
-  }
-}
-```
-
 ## Changing the parameters of the solver
 
 The SatParameters protobuf encapsulates the set of parameters of a CP-SAT
@@ -200,7 +19,7 @@ from __future__ import print_function
 from ortools.sat.python import cp_model
 
 
-def MinimalCpSatWithTimeLimit():
+def SolveWithTimeLimitSampleSat():
   """Minimal CP-SAT example to showcase calling the solver."""
   # Creates the model.
   model = cp_model.CpModel()
@@ -226,35 +45,28 @@ def MinimalCpSatWithTimeLimit():
     print('z = %i' % solver.Value(z))
 
 
-MinimalCpSatWithTimeLimit()
+SolveWithTimeLimitSampleSat()
 ```
 
 ### Specifying the time limit in C++
 
 ```cpp
-#include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_solver.h"
-#include "ortools/sat/cp_model_utils.h"
+#include "ortools/sat/cp_model.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_parameters.pb.h"
 
 namespace operations_research {
 namespace sat {
 
-void SolveWithTimeLimit() {
-  CpModelProto cp_model;
+void SolveWithTimeLimitSampleSat() {
+  CpModelBuilder cp_model;
 
-  // Trivial model with just one variable and no constraint.
-  auto new_variable = [&cp_model](int64 lb, int64 ub) {
-    CHECK_LE(lb, ub);
-    const int index = cp_model.variables_size();
-    IntegerVariableProto* const var = cp_model.add_variables();
-    var->add_domain(lb);
-    var->add_domain(ub);
-    return index;
-  };
+  const Domain domain(0, 2);
+  const IntVar x = cp_model.NewIntVar(domain).WithName("x");
+  const IntVar y = cp_model.NewIntVar(domain).WithName("y");
+  const IntVar z = cp_model.NewIntVar(domain).WithName("z");
 
-  const int x = new_variable(0, 3);
+  cp_model.AddNotEqual(x, y);
 
   // Solving part.
   Model model;
@@ -265,14 +77,13 @@ void SolveWithTimeLimit() {
   model.Add(NewSatParameters(parameters));
 
   // Solve.
-  LOG(INFO) << CpModelStats(cp_model);
-  const CpSolverResponse response = SolveCpModel(cp_model, &model);
+  const CpSolverResponse response = SolveWithModel(cp_model, &model);
   LOG(INFO) << CpSolverResponseStats(response);
 
   if (response.status() == CpSolverStatus::FEASIBLE) {
-    // Get the value of x in the solution.
-    const int64 value_x = response.solution(x);
-    LOG(INFO) << "value_x = " << value_x;
+    LOG(INFO) << "  x = " << SolutionIntegerValue(response, x);
+    LOG(INFO) << "  y = " << SolutionIntegerValue(response, y);
+    LOG(INFO) << "  z = " << SolutionIntegerValue(response, z);
   }
 }
 
@@ -280,7 +91,7 @@ void SolveWithTimeLimit() {
 }  // namespace operations_research
 
 int main() {
-  operations_research::sat::SolveWithTimeLimit();
+  operations_research::sat::SolveWithTimeLimitSampleSat();
 
   return EXIT_SUCCESS;
 }
@@ -294,7 +105,8 @@ import com.google.ortools.sat.CpModel;
 import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.IntVar;
 
-public class SolveWithTimeLimit {
+/** Solves a problem with a time limit. */
+public class SolveWithTimeLimitSampleSat {
 
   static { System.loadLibrary("jniortools"); }
 
@@ -332,9 +144,9 @@ Parameters must be passed as string to the solver.
 using System;
 using Google.OrTools.Sat;
 
-public class CodeSamplesSat
+public class SolveWithTimeLimitSampleSat
 {
-  static void MinimalCpSatWithTimeLimit()
+  static void Main()
   {
     // Creates the model.
     CpModel model = new CpModel();
@@ -351,7 +163,7 @@ public class CodeSamplesSat
     CpSolver solver = new CpSolver();
 
     // Adds a time limit. Parameters are stored as strings in the solver.
-    solver.StringParameters = "max_time_in_seconds:10.0" ;
+    solver.StringParameters = "max_time_in_seconds:10.0";
 
     CpSolverStatus status = solver.Solve(model);
 
@@ -361,11 +173,6 @@ public class CodeSamplesSat
       Console.WriteLine("y = " + solver.Value(y));
       Console.WriteLine("z = " + solver.Value(z));
     }
-  }
-
-  static void Main()
-  {
-    MinimalCpSatWithTimeLimit();
   }
 }
 ```
@@ -398,7 +205,7 @@ class VarArrayAndObjectiveSolutionPrinter(cp_model.CpSolverSolutionCallback):
     self.__variables = variables
     self.__solution_count = 0
 
-  def OnSolutionCallback(self):
+  def on_solution_callback(self):
     print('Solution %i' % self.__solution_count)
     print('  objective value = %i' % self.ObjectiveValue())
     for v in self.__variables:
@@ -406,21 +213,24 @@ class VarArrayAndObjectiveSolutionPrinter(cp_model.CpSolverSolutionCallback):
     print()
     self.__solution_count += 1
 
-  def SolutionCount(self):
+  def solution_count(self):
     return self.__solution_count
 
 
-def MinimalCpSatPrintIntermediateSolutions():
+def SolveAndPrintIntermediateSolutionsSampleSat():
   """Showcases printing intermediate solutions found during search."""
   # Creates the model.
   model = cp_model.CpModel()
+
   # Creates the variables.
   num_vals = 3
   x = model.NewIntVar(0, num_vals - 1, 'x')
   y = model.NewIntVar(0, num_vals - 1, 'y')
   z = model.NewIntVar(0, num_vals - 1, 'z')
+
   # Creates the constraints.
   model.Add(x != y)
+
   model.Maximize(x + 2 * y + 3 * z)
 
   # Creates a solver and solves.
@@ -429,80 +239,46 @@ def MinimalCpSatPrintIntermediateSolutions():
   status = solver.SolveWithSolutionCallback(model, solution_printer)
 
   print('Status = %s' % solver.StatusName(status))
-  print('Number of solutions found: %i' % solution_printer.SolutionCount())
+  print('Number of solutions found: %i' % solution_printer.solution_count())
 
 
-MinimalCpSatPrintIntermediateSolutions()
+SolveAndPrintIntermediateSolutionsSampleSat()
 ```
 
 ### C++ code
 
 ```cpp
-#include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_solver.h"
-#include "ortools/sat/cp_model_utils.h"
+#include "ortools/sat/cp_model.h"
 #include "ortools/sat/model.h"
 
 namespace operations_research {
 namespace sat {
 
-void MinimalSatPrintIntermediateSolutions() {
-  CpModelProto cp_model;
+void SolveAndPrintIntermediateSolutionsSampleSat() {
+  CpModelBuilder cp_model;
 
-  auto new_variable = [&cp_model](int64 lb, int64 ub) {
-    CHECK_LE(lb, ub);
-    const int index = cp_model.variables_size();
-    IntegerVariableProto* const var = cp_model.add_variables();
-    var->add_domain(lb);
-    var->add_domain(ub);
-    return index;
-  };
+  const Domain domain(0, 2);
+  const IntVar x = cp_model.NewIntVar(domain).WithName("x");
+  const IntVar y = cp_model.NewIntVar(domain).WithName("y");
+  const IntVar z = cp_model.NewIntVar(domain).WithName("z");
 
-  auto add_different = [&cp_model](const int left_var, const int right_var) {
-    LinearConstraintProto* const lin =
-        cp_model.add_constraints()->mutable_linear();
-    lin->add_vars(left_var);
-    lin->add_coeffs(1);
-    lin->add_vars(right_var);
-    lin->add_coeffs(-1);
-    lin->add_domain(kint64min);
-    lin->add_domain(-1);
-    lin->add_domain(1);
-    lin->add_domain(kint64max);
-  };
+  cp_model.AddNotEqual(x, y);
 
-  auto maximize = [&cp_model](const std::vector<int>& vars,
-                              const std::vector<int64>& coeffs) {
-    CpObjectiveProto* const obj = cp_model.mutable_objective();
-    for (const int v : vars) {
-      obj->add_vars(v);
-    }
-    for (const int64 c : coeffs) {
-      obj->add_coeffs(-c);  // Maximize.
-    }
-    obj->set_scaling_factor(-1.0);  // Maximize.
-  };
-
-  const int kNumVals = 3;
-  const int x = new_variable(0, kNumVals - 1);
-  const int y = new_variable(0, kNumVals - 1);
-  const int z = new_variable(0, kNumVals - 1);
-
-  add_different(x, y);
-
-  maximize({x, y, z}, {1, 2, 3});
+  cp_model.Maximize(LinearExpr::ScalProd({x, y, z}, {1, 2, 3}));
 
   Model model;
   int num_solutions = 0;
   model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
     LOG(INFO) << "Solution " << num_solutions;
     LOG(INFO) << "  objective value = " << r.objective_value();
-    LOG(INFO) << "  x = " << r.solution(x);
-    LOG(INFO) << "  y = " << r.solution(y);
-    LOG(INFO) << "  z = " << r.solution(z);
+    LOG(INFO) << "  x = " << SolutionIntegerValue(r, x);
+    LOG(INFO) << "  y = " << SolutionIntegerValue(r, y);
+    LOG(INFO) << "  z = " << SolutionIntegerValue(r, z);
     num_solutions++;
   }));
-  const CpSolverResponse response = SolveCpModel(cp_model, &model);
+
+  const CpSolverResponse response = SolveWithModel(cp_model, &model);
+
   LOG(INFO) << "Number of solutions found: " << num_solutions;
 }
 
@@ -510,7 +286,7 @@ void MinimalSatPrintIntermediateSolutions() {
 }  // namespace operations_research
 
 int main() {
-  operations_research::sat::MinimalSatPrintIntermediateSolutions();
+  operations_research::sat::SolveAndPrintIntermediateSolutionsSampleSat();
 
   return EXIT_SUCCESS;
 }
@@ -524,7 +300,8 @@ import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverSolutionCallback;
 import com.google.ortools.sat.IntVar;
 
-public class SolveWithIntermediateSolutions {
+/** Solves an optimization problem and displays all intermediate solutions. */
+public class SolveAndPrintIntermediateSolutionsSampleSat {
 
   static { System.loadLibrary("jniortools"); }
 
@@ -536,7 +313,7 @@ public class SolveWithIntermediateSolutions {
     @Override
     public void onSolutionCallback() {
       System.out.printf("Solution #%d: time = %.02f s%n", solutionCount, wallTime());
-      System.out.printf("  objective value = %d%n", objectiveValue());
+      System.out.printf("  objective value = %f%n", objectiveValue());
       for (IntVar v : variableArray) {
         System.out.printf("  %s = %d%n", v.getName(), value(v));
       }
@@ -554,12 +331,14 @@ public class SolveWithIntermediateSolutions {
   public static void main(String[] args) throws Exception {
     // Create the model.
     CpModel model = new CpModel();
+
     // Create the variables.
     int numVals = 3;
 
     IntVar x = model.newIntVar(0, numVals - 1, "x");
     IntVar y = model.newIntVar(0, numVals - 1, "y");
     IntVar z = model.newIntVar(0, numVals - 1, "z");
+
     // Create the constraint.
     model.addDifferent(x, y);
 
@@ -592,18 +371,16 @@ public class VarArraySolutionPrinterWithObjective : CpSolverSolutionCallback
 
   public override void OnSolutionCallback()
   {
+    Console.WriteLine(String.Format("Solution #{0}: time = {1:F2} s",
+          solution_count_, WallTime()));
+    Console.WriteLine(
+        String.Format("  objective value = {0}", ObjectiveValue()));
+    foreach (IntVar v in variables_)
     {
-      Console.WriteLine(String.Format("Solution #{0}: time = {1:F2} s",
-                                      solution_count_, WallTime()));
       Console.WriteLine(
-          String.Format("  objective value = {0}", ObjectiveValue()));
-      foreach (IntVar v in variables_)
-      {
-        Console.WriteLine(
-            String.Format("  {0} = {1}", v.ShortString(), Value(v)));
-      }
-      solution_count_++;
+          String.Format("  {0} = {1}", v.ShortString(), Value(v)));
     }
+    solution_count_++;
   }
 
   public int SolutionCount()
@@ -615,18 +392,19 @@ public class VarArraySolutionPrinterWithObjective : CpSolverSolutionCallback
   private IntVar[] variables_;
 }
 
-public class CodeSamplesSat
+public class SolveAndPrintIntermediateSolutionsSampleSat
 {
-  static void MinimalCpSatPrintIntermediateSolutions()
+  static void Main()
   {
     // Creates the model.
     CpModel model = new CpModel();
+
     // Creates the variables.
     int num_vals = 3;
 
-    IntVar x = model.NewIntVar(0, num_vals - 1, 'x');
-    IntVar y = model.NewIntVar(0, num_vals - 1, 'y');
-    IntVar z = model.NewIntVar(0, num_vals - 1, 'z');
+    IntVar x = model.NewIntVar(0, num_vals - 1, "x");
+    IntVar y = model.NewIntVar(0, num_vals - 1, "y");
+    IntVar z = model.NewIntVar(0, num_vals - 1, "z");
 
     // Adds a different constraint.
     model.Add(x != y);
@@ -637,15 +415,11 @@ public class CodeSamplesSat
     // Creates a solver and solves the model.
     CpSolver solver = new CpSolver();
     VarArraySolutionPrinterWithObjective cb =
-        new VarArraySolutionPrinterWithObjective(new IntVar[] {x, y, z});
+      new VarArraySolutionPrinterWithObjective(new IntVar[] { x, y, z });
     solver.SolveWithSolutionCallback(model, cb);
-    Console.WriteLine(String.Format('Number of solutions found: {0}',
-                                    cb.SolutionCount()));
-  }
 
-  static void Main()
-  {
-    MinimalCpSatPrintIntermediateSolutions();
+    Console.WriteLine(String.Format("Number of solutions found: {0}",
+          cb.SolutionCount()));
   }
 }
 ```
@@ -679,25 +453,27 @@ class VarArraySolutionPrinter(cp_model.CpSolverSolutionCallback):
     self.__variables = variables
     self.__solution_count = 0
 
-  def OnSolutionCallback(self):
+  def on_solution_callback(self):
     self.__solution_count += 1
     for v in self.__variables:
       print('%s=%i' % (v, self.Value(v)), end=' ')
     print()
 
-  def SolutionCount(self):
+  def solution_count(self):
     return self.__solution_count
 
 
-def MinimalSatSearchForAllSolutions():
+def SearchForAllSolutionsSampleSat():
   """Showcases calling the solver to search for all solutions."""
   # Creates the model.
   model = cp_model.CpModel()
+
   # Creates the variables.
   num_vals = 3
   x = model.NewIntVar(0, num_vals - 1, 'x')
   y = model.NewIntVar(0, num_vals - 1, 'y')
   z = model.NewIntVar(0, num_vals - 1, 'z')
+
   # Create the constraints.
   model.Add(x != y)
 
@@ -705,11 +481,12 @@ def MinimalSatSearchForAllSolutions():
   solver = cp_model.CpSolver()
   solution_printer = VarArraySolutionPrinter([x, y, z])
   status = solver.SearchForAllSolutions(model, solution_printer)
+
   print('Status = %s' % solver.StatusName(status))
-  print('Number of solutions found: %i' % solution_printer.SolutionCount())
+  print('Number of solutions found: %i' % solution_printer.solution_count())
 
 
-MinimalSatSearchForAllSolutions()
+SearchForAllSolutionsSampleSat()
 ```
 
 ### C++ code
@@ -717,63 +494,40 @@ MinimalSatSearchForAllSolutions()
 To search for all solutions, a parameter of the SAT solver must be changed.
 
 ```cpp
-#include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_solver.h"
-#include "ortools/sat/cp_model_utils.h"
+#include "ortools/sat/cp_model.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_parameters.pb.h"
 
 namespace operations_research {
 namespace sat {
 
-void MinimalSatSearchForAllSolutions() {
-  CpModelProto cp_model;
+void SearchAllSolutionsSampleSat() {
+  CpModelBuilder cp_model;
 
-  auto new_variable = [&cp_model](int64 lb, int64 ub) {
-    CHECK_LE(lb, ub);
-    const int index = cp_model.variables_size();
-    IntegerVariableProto* const var = cp_model.add_variables();
-    var->add_domain(lb);
-    var->add_domain(ub);
-    return index;
-  };
+  const Domain domain(0, 2);
+  const IntVar x = cp_model.NewIntVar(domain).WithName("x");
+  const IntVar y = cp_model.NewIntVar(domain).WithName("y");
+  const IntVar z = cp_model.NewIntVar(domain).WithName("z");
 
-  auto add_different = [&cp_model](const int left_var, const int right_var) {
-    LinearConstraintProto* const lin =
-        cp_model.add_constraints()->mutable_linear();
-    lin->add_vars(left_var);
-    lin->add_coeffs(1);
-    lin->add_vars(right_var);
-    lin->add_coeffs(-1);
-    lin->add_domain(kint64min);
-    lin->add_domain(-1);
-    lin->add_domain(1);
-    lin->add_domain(kint64max);
-  };
-
-  const int kNumVals = 3;
-  const int x = new_variable(0, kNumVals - 1);
-  const int y = new_variable(0, kNumVals - 1);
-  const int z = new_variable(0, kNumVals - 1);
-
-  add_different(x, y);
+  cp_model.AddNotEqual(x, y);
 
   Model model;
+
+  int num_solutions = 0;
+  model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
+    LOG(INFO) << "Solution " << num_solutions;
+    LOG(INFO) << "  x = " << SolutionIntegerValue(r, x);
+    LOG(INFO) << "  y = " << SolutionIntegerValue(r, y);
+    LOG(INFO) << "  z = " << SolutionIntegerValue(r, z);
+    num_solutions++;
+  }));
 
   // Tell the solver to enumerate all solutions.
   SatParameters parameters;
   parameters.set_enumerate_all_solutions(true);
   model.Add(NewSatParameters(parameters));
+  const CpSolverResponse response = SolveWithModel(cp_model, &model);
 
-  int num_solutions = 0;
-  model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
-    LOG(INFO) << "Solution " << num_solutions;
-    LOG(INFO) << "  x = " << r.solution(x);
-    LOG(INFO) << "  y = " << r.solution(y);
-    LOG(INFO) << "  z = " << r.solution(z);
-    num_solutions++;
-  }));
-  const CpSolverResponse response = SolveCpModel(cp_model, &model);
   LOG(INFO) << "Number of solutions found: " << num_solutions;
 }
 
@@ -781,7 +535,7 @@ void MinimalSatSearchForAllSolutions() {
 }  // namespace operations_research
 
 int main() {
-  operations_research::sat::MinimalSatSearchForAllSolutions();
+  operations_research::sat::SearchAllSolutionsSampleSat();
 
   return EXIT_SUCCESS;
 }
@@ -795,7 +549,8 @@ import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverSolutionCallback;
 import com.google.ortools.sat.IntVar;
 
-public class SolveAllSolutions {
+/** Code sample that solves a model and displays all solutions. */
+public class SearchForAllSolutionsSampleSat {
 
   static { System.loadLibrary("jniortools"); }
 
@@ -824,12 +579,14 @@ public class SolveAllSolutions {
   public static void main(String[] args) throws Exception {
     // Create the model.
     CpModel model = new CpModel();
+
     // Create the variables.
     int numVals = 3;
 
     IntVar x = model.newIntVar(0, numVals - 1, "x");
     IntVar y = model.newIntVar(0, numVals - 1, "y");
     IntVar z = model.newIntVar(0, numVals - 1, "z");
+
     // Create the constraints.
     model.addDifferent(x, y);
 
@@ -881,13 +638,13 @@ public class VarArraySolutionPrinter : CpSolverSolutionCallback
   private IntVar[] variables_;
 }
 
-
-public class CodeSamplesSat
+public class SearchForAllSolutionsSampleSat
 {
-  static void MinimalCpSatAllSolutions()
+  static void Main()
   {
     // Creates the model.
     CpModel model = new CpModel();
+
     // Creates the variables.
     int num_vals = 3;
 
@@ -901,15 +658,11 @@ public class CodeSamplesSat
     // Creates a solver and solves the model.
     CpSolver solver = new CpSolver();
     VarArraySolutionPrinter cb =
-        new VarArraySolutionPrinter(new IntVar[] {x, y, z});
+        new VarArraySolutionPrinter(new IntVar[] { x, y, z });
     solver.SearchAllSolutions(model, cb);
+
     Console.WriteLine(String.Format("Number of solutions found: {0}",
                                     cb.SolutionCount()));
-  }
-
-  static void Main()
-  {
-    MinimalCpSatAllSolutions();
   }
 }
 ```
@@ -944,7 +697,7 @@ class VarArraySolutionPrinterWithLimit(cp_model.CpSolverSolutionCallback):
     self.__solution_count = 0
     self.__solution_limit = limit
 
-  def OnSolutionCallback(self):
+  def on_solution_callback(self):
     self.__solution_count += 1
     for v in self.__variables:
       print('%s=%i' % (v, self.Value(v)), end=' ')
@@ -953,11 +706,11 @@ class VarArraySolutionPrinterWithLimit(cp_model.CpSolverSolutionCallback):
       print('Stop search after %i solutions' % self.__solution_limit)
       self.StopSearch()
 
-  def SolutionCount(self):
+  def solution_count(self):
     return self.__solution_count
 
 
-def StopAfterNSolutions():
+def StopAfterNSolutionsSampleSat():
   """Showcases calling the solver to search for small number of solutions."""
   # Creates the model.
   model = cp_model.CpModel()
@@ -972,11 +725,11 @@ def StopAfterNSolutions():
   solution_printer = VarArraySolutionPrinterWithLimit([x, y, z], 5)
   status = solver.SearchForAllSolutions(model, solution_printer)
   print('Status = %s' % solver.StatusName(status))
-  print('Number of solutions found: %i' % solution_printer.SolutionCount())
-  assert solution_printer.SolutionCount() == 5
+  print('Number of solutions found: %i' % solution_printer.solution_count())
+  assert solution_printer.solution_count() == 5
 
 
-StopAfterNSolutions()
+StopAfterNSolutionsSampleSat()
 ```
 
 ### C++ code
@@ -987,9 +740,7 @@ limit, and setting that bool to true.
 ```cpp
 
 #include <atomic>
-#include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_solver.h"
-#include "ortools/sat/cp_model_utils.h"
+#include "ortools/sat/cp_model.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/util/time_limit.h"
@@ -997,22 +748,13 @@ limit, and setting that bool to true.
 namespace operations_research {
 namespace sat {
 
-void StopAfterNSolutions() {
-  CpModelProto cp_model;
+void StopAfterNSolutionsSampleSat() {
+  CpModelBuilder cp_model;
 
-  auto new_variable = [&cp_model](int64 lb, int64 ub) {
-    CHECK_LE(lb, ub);
-    const int index = cp_model.variables_size();
-    IntegerVariableProto* const var = cp_model.add_variables();
-    var->add_domain(lb);
-    var->add_domain(ub);
-    return index;
-  };
-
-  const int kNumVals = 3;
-  const int x = new_variable(0, kNumVals - 1);
-  const int y = new_variable(0, kNumVals - 1);
-  const int z = new_variable(0, kNumVals - 1);
+  const Domain domain(0, 2);
+  const IntVar x = cp_model.NewIntVar(domain).WithName("x");
+  const IntVar y = cp_model.NewIntVar(domain).WithName("y");
+  const IntVar z = cp_model.NewIntVar(domain).WithName("z");
 
   Model model;
 
@@ -1029,16 +771,16 @@ void StopAfterNSolutions() {
   int num_solutions = 0;
   model.Add(NewFeasibleSolutionObserver([&](const CpSolverResponse& r) {
     LOG(INFO) << "Solution " << num_solutions;
-    LOG(INFO) << "  x = " << r.solution(x);
-    LOG(INFO) << "  y = " << r.solution(y);
-    LOG(INFO) << "  z = " << r.solution(z);
+    LOG(INFO) << "  x = " << SolutionIntegerValue(r, x);
+    LOG(INFO) << "  y = " << SolutionIntegerValue(r, y);
+    LOG(INFO) << "  z = " << SolutionIntegerValue(r, z);
     num_solutions++;
     if (num_solutions >= kSolutionLimit) {
       stopped = true;
       LOG(INFO) << "Stop search after " << kSolutionLimit << " solutions.";
     }
   }));
-  const CpSolverResponse response = SolveCpModel(cp_model, &model);
+  const CpSolverResponse response = SolveWithModel(cp_model, &model);
   LOG(INFO) << "Number of solutions found: " << num_solutions;
   CHECK_EQ(num_solutions, kSolutionLimit);
 }
@@ -1047,7 +789,7 @@ void StopAfterNSolutions() {
 }  // namespace operations_research
 
 int main() {
-  operations_research::sat::StopAfterNSolutions();
+  operations_research::sat::StopAfterNSolutionsSampleSat();
 
   return EXIT_SUCCESS;
 }
@@ -1064,7 +806,8 @@ import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverSolutionCallback;
 import com.google.ortools.sat.IntVar;
 
-public class StopAfterNSolutions {
+/** Code sample that solves a model and displays a small number of solutions. */
+public class StopAfterNSolutionsSampleSat {
 
   static { System.loadLibrary("jniortools"); }
 
@@ -1130,22 +873,27 @@ CpSolverSolutionCallback.OnSolutionCallback().
 using System;
 using Google.OrTools.Sat;
 
-public class VarArraySolutionPrinterWithLimit : CpSolverSolutionCallback {
+public class VarArraySolutionPrinterWithLimit : CpSolverSolutionCallback
+{
   public VarArraySolutionPrinterWithLimit(IntVar[] variables,
-                                          int solution_limit) {
+                                          int solution_limit)
+  {
     variables_ = variables;
     solution_limit_ = solution_limit;
   }
 
-  public override void OnSolutionCallback() {
+  public override void OnSolutionCallback()
+  {
     Console.WriteLine(String.Format("Solution #{0}: time = {1:F2} s",
           solution_count_, WallTime()));
-    foreach (IntVar v in variables_) {
+    foreach (IntVar v in variables_)
+    {
       Console.WriteLine(
           String.Format("  {0} = {1}", v.ShortString(), Value(v)));
     }
     solution_count_++;
-    if (solution_count_ >= solution_limit_) {
+    if (solution_count_ >= solution_limit_)
+    {
       Console.WriteLine(
           String.Format("Stopping search after {0} solutions",
             solution_limit_));
@@ -1153,7 +901,8 @@ public class VarArraySolutionPrinterWithLimit : CpSolverSolutionCallback {
     }
   }
 
-  public int SolutionCount() {
+  public int SolutionCount()
+  {
     return solution_count_;
   }
 
@@ -1162,8 +911,10 @@ public class VarArraySolutionPrinterWithLimit : CpSolverSolutionCallback {
   private int solution_limit_;
 }
 
-public class CodeSamplesSat {
-  static void StopAfterNSolutions() {
+public class StopAfterNSolutionsSampleSat
+{
+  static void Main()
+  {
     // Creates the model.
     CpModel model = new CpModel();
     // Creates the variables.
@@ -1176,14 +927,10 @@ public class CodeSamplesSat {
     // Creates a solver and solves the model.
     CpSolver solver = new CpSolver();
     VarArraySolutionPrinterWithLimit cb =
-      new VarArraySolutionPrinterWithLimit(new IntVar[] {x, y, z}, 5);
+      new VarArraySolutionPrinterWithLimit(new IntVar[] { x, y, z }, 5);
     solver.SearchAllSolutions(model, cb);
     Console.WriteLine(String.Format("Number of solutions found: {0}",
           cb.SolutionCount()));
-  }
-
-  static void Main() {
-    StopAfterNSolutions();
   }
 }
 ```

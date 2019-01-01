@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,8 +15,8 @@
 
 #include <vector>
 
+#include "absl/synchronization/mutex.h"
 #include "ortools/algorithms/dynamic_partition.h"
-#include "ortools/base/mutex.h"
 #include "ortools/lp_data/lp_data.h"
 #include "ortools/lp_data/lp_utils.h"
 

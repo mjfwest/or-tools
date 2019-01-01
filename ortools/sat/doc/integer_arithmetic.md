@@ -21,19 +21,15 @@ a flattened list of disjoint intervals.
 
 ## Linear constraints
 
-In **C++**, the model supports linear constraints as in:
+In **C++** and **Java**, the model supports linear constraints as in:
 
-    sum (a_i * x_i) in domain
+    x <= y + 3 (also ==, !=, <, >=, >).
+
+as well as domain constraints as in:
+
+sum(ai * xi) in domain
 
 Where domain uses the same encoding as integer variables.
-
-From this, the usual modeling tricks can express general arithmetic constraints:
-
-    x > y
-
-can be rewritten as
-
-    1 * x + (-1) * y in [1, int64max]
 
 **Python** and **C\#** CP-SAT APIs support general linear arithmetic (+, *, -,
 ==, >=, >, <, <=, !=).
@@ -57,7 +53,7 @@ from __future__ import print_function
 from ortools.sat.python import cp_model
 
 
-def RabbitsAndPheasants():
+def RabbitsAndPheasantsSat():
   """Solves the rabbits + pheasants problem."""
   model = cp_model.CpModel()
 
@@ -77,67 +73,34 @@ def RabbitsAndPheasants():
     print('%i rabbits and %i pheasants' % (solver.Value(r), solver.Value(p)))
 
 
-RabbitsAndPheasants()
+RabbitsAndPheasantsSat()
 ```
 
 ### C++ code
 
 ```cpp
-#include "ortools/sat/cp_model.pb.h"
-#include "ortools/sat/cp_model_solver.h"
-#include "ortools/sat/cp_model_utils.h"
-#include "ortools/sat/model.h"
+#include "ortools/sat/cp_model.h"
 
 namespace operations_research {
 namespace sat {
 
-void RabbitsAndPheasants() {
-  CpModelProto cp_model;
+void RabbitsAndPheasantsSat() {
+  CpModelBuilder cp_model;
 
-  // Trivial model with just one variable and no constraint.
-  auto new_variable = [&cp_model](int64 lb, int64 ub) {
-    CHECK_LE(lb, ub);
-    const int index = cp_model.variables_size();
-    IntegerVariableProto* const var = cp_model.add_variables();
-    var->add_domain(lb);
-    var->add_domain(ub);
-    return index;
-  };
+  const Domain all_animals(0, 20);
+  const IntVar rabbits = cp_model.NewIntVar(all_animals).WithName("rabbits");
+  const IntVar pheasants =
+      cp_model.NewIntVar(all_animals).WithName("pheasants");
 
-  auto add_linear_constraint = [&cp_model](const std::vector<int>& vars,
-                                           const std::vector<int64>& coeffs,
-                                           int64 lb, int64 ub) {
-    LinearConstraintProto* const lin =
-        cp_model.add_constraints()->mutable_linear();
-    for (const int v : vars) {
-      lin->add_vars(v);
-    }
-    for (const int64 c : coeffs) {
-      lin->add_coeffs(c);
-    }
-    lin->add_domain(lb);
-    lin->add_domain(ub);
-  };
+  cp_model.AddEquality(LinearExpr::Sum({rabbits, pheasants}), 20);
+  cp_model.AddEquality(LinearExpr::ScalProd({rabbits, pheasants}, {4, 2}), 56);
 
-  // Creates variables.
-  const int r = new_variable(0, 100);
-  const int p = new_variable(0, 100);
-
-  // 20 heads.
-  add_linear_constraint({r, p}, {1, 1}, 20, 20);
-  // 56 legs.
-  add_linear_constraint({r, p}, {4, 2}, 56, 56);
-
-  // Solving part.
-  Model model;
-  LOG(INFO) << CpModelStats(cp_model);
-  const CpSolverResponse response = SolveCpModel(cp_model, &model);
-  LOG(INFO) << CpSolverResponseStats(response);
+  const CpSolverResponse response = Solve(cp_model);
 
   if (response.status() == CpSolverStatus::FEASIBLE) {
     // Get the value of x in the solution.
-    LOG(INFO) << response.solution(r) << " rabbits, and "
-              << response.solution(p) << " pheasants";
+    LOG(INFO) << SolutionIntegerValue(response, rabbits) << " rabbits, and "
+              << SolutionIntegerValue(response, pheasants) << " pheasants";
   }
 }
 
@@ -145,7 +108,7 @@ void RabbitsAndPheasants() {
 }  // namespace operations_research
 
 int main() {
-  operations_research::sat::RabbitsAndPheasants();
+  operations_research::sat::RabbitsAndPheasantsSat();
 
   return EXIT_SUCCESS;
 }
@@ -163,7 +126,7 @@ import com.google.ortools.sat.IntVar;
  * In a field of rabbits and pheasants, there are 20 heads and 56 legs. How many rabbits and
  * pheasants are there?
  */
-public class RabbitsAndPheasants {
+public class RabbitsAndPheasantsSat {
 
   static { System.loadLibrary("jniortools"); }
 
@@ -195,9 +158,9 @@ public class RabbitsAndPheasants {
 using System;
 using Google.OrTools.Sat;
 
-public class CodeSamplesSat
+public class RabbitsAndPheasantsSat
 {
-  static void RabbitsAndPheasants()
+  static void Main()
   {
     // Creates the model.
     CpModel model = new CpModel();
@@ -218,11 +181,6 @@ public class CodeSamplesSat
       Console.WriteLine(solver.Value(r) + " rabbits, and " +
                         solver.Value(p) + " pheasants");
     }
-  }
-
-  static void Main()
-  {
-    RabbitsAndPheasants();
   }
 }
 ```

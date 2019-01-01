@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,8 +14,7 @@
 #ifndef OR_TOOLS_FLATZINC_SOLVER_UTIL_H_
 #define OR_TOOLS_FLATZINC_SOLVER_UTIL_H_
 
-#include <unordered_set>
-
+#include "absl/container/flat_hash_set.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/flatzinc/model.h"
@@ -28,7 +27,7 @@ namespace fz {
 class Log : public SearchLog {
  public:
   Log(operations_research::Solver* s, OptimizeVar* obj, int period)
-      : SearchLog(s, obj, nullptr, nullptr, period) {}
+      : SearchLog(s, obj, nullptr, 1.0, nullptr, period) {}
   ~Log() override {}
 
  protected:
@@ -80,7 +79,7 @@ void FlattenAnnotations(const Annotation& ann, std::vector<Annotation>* out);
 // for instances will mark x as computed).
 // If this create cycles, they will be broken later during extraction.
 void MarkComputedVariables(Constraint* ct,
-                           std::unordered_set<IntegerVariable*>* marked);
+                           absl::flat_hash_set<IntegerVariable*>* marked);
 
 }  // namespace fz
 }  // namespace operations_research

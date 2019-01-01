@@ -3,33 +3,11 @@ FROM ubuntu:14.04
 #############
 ##  SETUP  ##
 #############
-RUN apt-get update \
-&& apt-get install -qq \
+RUN apt-get update -qq \
+&& apt-get install -yq \
  git pkg-config wget make cmake3 autoconf libtool zlib1g-dev gawk g++ curl subversion lsb-release libpcre3-dev \
- python-dev python-wheel python-setuptools python-six \
- python3-dev python3-wheel python3-setuptools \
- default-jdk \
 && apt-get clean \
 && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Dotnet Install
-# note: package "apt-transport-https" is needed by deb command see below
-RUN apt-get update \
-&& wget -q https://packages.microsoft.com/config/ubuntu/14.04/packages-microsoft-prod.deb \
-&& dpkg -i packages-microsoft-prod.deb \
-&& apt-get install -qq apt-transport-https \
-&& apt-get update \
-&& apt-get install -qq dotnet-sdk-2.1 \
-&& apt-get clean \
-&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-## Mono Install
-#RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF \
-#&& echo "deb https://download.mono-project.com/repo/ubuntu stable-trusty main" | sudo tee /etc/apt/sources.list.d/mono-official-stable.list \
-#&& apt-get update \
-#&& apt-get install -qq mono-complete \
-#&& apt-get clean \
-#&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Swig install
 RUN wget "https://downloads.sourceforge.net/project/swig/swig/swig-3.0.12/swig-3.0.12.tar.gz" \
@@ -37,8 +15,28 @@ RUN wget "https://downloads.sourceforge.net/project/swig/swig/swig-3.0.12/swig-3
 && cd swig-3.0.12 && ./configure --prefix=/usr && make -j 4 && make install \
 && cd .. && rm -rf swig-3.0.12
 
+# Java install
+RUN apt-get update -qq \
+&& apt-get install -yq openjdk-7-jdk \
+&& apt-get clean \
+&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Dotnet Install
+RUN apt-get update -qq \
+&& apt-get install -yq apt-transport-https \
+&& wget -q https://packages.microsoft.com/config/ubuntu/14.04/packages-microsoft-prod.deb \
+&& dpkg -i packages-microsoft-prod.deb \
+&& apt-get update -qq \
+&& apt-get install -yq dotnet-sdk-2.1 \
+&& apt-get clean \
+&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 ENV TZ=America/Los_Angeles
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Copy the snk key
+COPY or-tools.snk /root/or-tools.snk
+ENV DOTNET_SNK=/root/or-tools.snk
 
 ################
 ##  OR-TOOLS  ##
@@ -60,6 +58,5 @@ RUN git clone -b "${SRC_GIT_BRANCH}" --single-branch https://github.com/google/o
 WORKDIR /root/or-tools
 RUN make detect && make third_party
 RUN make detect_cc && make cc
-RUN make detect_python && make python
 RUN make detect_java && make java
 RUN make detect_dotnet && make dotnet

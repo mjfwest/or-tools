@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -39,10 +39,10 @@ public class CsIntegerProgramming
     ct.SetCoefficient(x1, 3);
     ct.SetCoefficient(x2, 2);
 
-    int resultStatus = solver.Solve();
+    Solver.ResultStatus resultStatus = solver.Solve();
 
     // Check that the problem has an optimal solution.
-    if (resultStatus != Solver.OPTIMAL)
+    if (resultStatus != Solver.ResultStatus.OPTIMAL)
     {
       Console.WriteLine("The problem does not have an optimal solution!");
       return;
@@ -78,10 +78,10 @@ public class CsIntegerProgramming
     solver.Minimize(x1 + 2 * x2);
     solver.Add(2 * x2 + 3 * x1 >= 17);
 
-    int resultStatus = solver.Solve();
+    Solver.ResultStatus resultStatus = solver.Solve();
 
     // Check that the problem has an optimal solution.
-    if (resultStatus != Solver.OPTIMAL)
+    if (resultStatus != Solver.ResultStatus.OPTIMAL)
     {
       Console.WriteLine("The problem does not have an optimal solution!");
       return;

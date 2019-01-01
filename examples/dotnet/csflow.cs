@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -36,8 +36,8 @@ public class CsFlow
     int sink = numNodes - 1;
     Console.WriteLine("Solving max flow with " + numNodes + " nodes, and " +
                       numArcs + " arcs, source=" + source + ", sink=" + sink);
-    int solveStatus = maxFlow.Solve(source, sink);
-    if (solveStatus == MaxFlow.OPTIMAL)
+    MaxFlow.Status solveStatus = maxFlow.Solve(source, sink);
+    if (solveStatus == MaxFlow.Status.OPTIMAL)
     {
       long totalFlow = maxFlow.OptimalFlow();
       Console.WriteLine("total computed flow " + totalFlow +
@@ -86,8 +86,8 @@ public class CsFlow
     }
     Console.WriteLine("Solving min cost flow with " + numSources +
                       " sources, and " + numTargets + " targets.");
-    int solveStatus = minCostFlow.Solve();
-    if (solveStatus == MinCostFlow.OPTIMAL)
+    MinCostFlow.Status solveStatus = minCostFlow.Solve();
+    if (solveStatus == MinCostFlow.Status.OPTIMAL)
     {
       Console.WriteLine("total computed flow cost = " +
                         minCostFlow.OptimalCost() +

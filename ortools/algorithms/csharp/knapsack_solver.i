@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,6 +13,10 @@
 
 // TODO(user): Refactor this file to adhere to the SWIG style guide.
 
+%include "enums.swg"
+%include "stdint.i"
+%include "std_vector.i"
+
 %include "ortools/base/base.i"
 
 /* allow partial c# classes */
@@ -23,7 +27,8 @@
 #include "ortools/algorithms/knapsack_solver.h"
 %}
 
-%include "std_vector.i"
+typedef int64_t int64;
+typedef uint64_t uint64;
 
 // See the comment in
 // ../../constraint_solver/csharp/constraint_solver.i about naming

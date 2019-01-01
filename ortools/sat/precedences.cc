@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -236,10 +236,9 @@ void PrecedencesPropagator::AdjustSizeFor(IntegerVariable i) {
   }
 }
 
-void PrecedencesPropagator::AddArc(IntegerVariable tail, IntegerVariable head,
-                                   IntegerValue offset,
-                                   IntegerVariable offset_var,
-                                   absl::Span<Literal> presence_literals) {
+void PrecedencesPropagator::AddArc(
+    IntegerVariable tail, IntegerVariable head, IntegerValue offset,
+    IntegerVariable offset_var, absl::Span<const Literal> presence_literals) {
   DCHECK_EQ(trail_->CurrentDecisionLevel(), 0);
   AdjustSizeFor(tail);
   AdjustSizeFor(head);
@@ -451,6 +450,37 @@ bool PrecedencesPropagator::EnqueueAndCheck(const ArcInfo& arc,
   integer_reason_.push_back(integer_trail_->LowerBoundAsLiteral(arc.tail_var));
   AppendLowerBoundReasonIfValid(arc.offset_var, *integer_trail_,
                                 &integer_reason_);
+
+  // The code works without this block since Enqueue() below can already take
+  // care of conflicts. However, it is better to deal with the conflict
+  // ourselves because we can be smarter about the reason this way.
+  //
+  // The reason for a "precedence" conflict is always a linear reason
+  // involving the tail lower_bound, the head upper bound and eventually the
+  // size lower bound. Because of that, we can use the RelaxLinearReason()
+  // code.
+  if (new_head_lb > integer_trail_->UpperBound(arc.head_var)) {
+    const IntegerValue slack =
+        new_head_lb - integer_trail_->UpperBound(arc.head_var) - 1;
+    integer_reason_.push_back(
+        integer_trail_->UpperBoundAsLiteral(arc.head_var));
+    std::vector<IntegerValue> coeffs(integer_reason_.size(), IntegerValue(1));
+    integer_trail_->RelaxLinearReason(slack, coeffs, &integer_reason_);
+
+    if (!integer_trail_->IsOptional(arc.head_var)) {
+      return integer_trail_->ReportConflict(literal_reason_, integer_reason_);
+    } else {
+      CHECK(!integer_trail_->IsCurrentlyIgnored(arc.head_var));
+      const Literal l = integer_trail_->IsIgnoredLiteral(arc.head_var);
+      if (trail->Assignment().LiteralIsFalse(l)) {
+        literal_reason_.push_back(l);
+        return integer_trail_->ReportConflict(literal_reason_, integer_reason_);
+      } else {
+        integer_trail_->EnqueueLiteral(l, literal_reason_, integer_reason_);
+        return true;
+      }
+    }
+  }
 
   return integer_trail_->Enqueue(
       IntegerLiteral::GreaterOrEqual(arc.head_var, new_head_lb),
@@ -698,7 +728,8 @@ bool PrecedencesPropagator::BellmanFordTarjan(Trail* trail) {
 void PrecedencesPropagator::AddGreaterThanAtLeastOneOfConstraints(
     Model* model) {
   VLOG(1) << "Detecting GreaterThanAtLeastOneOf() constraints...";
-  SatSolver* solver = model->GetOrCreate<SatSolver>();
+  auto* solver = model->GetOrCreate<SatSolver>();
+  auto* time_limit = model->GetOrCreate<TimeLimit>();
 
   // Fill the set of incoming conditional arcs for each variables.
   gtl::ITIVector<IntegerVariable, std::vector<ArcIndex>> incoming_arcs_;
@@ -719,6 +750,7 @@ void PrecedencesPropagator::AddGreaterThanAtLeastOneOfConstraints(
   int num_added_constraints = 0;
   for (IntegerVariable target(0); target < incoming_arcs_.size(); ++target) {
     if (incoming_arcs_[target].size() <= 1) continue;
+    if (time_limit->LimitReached()) return;
 
     // Detect set of incoming arcs for which at least one must be present.
     // TODO(user): Find more than one disjoint set of incoming arcs.

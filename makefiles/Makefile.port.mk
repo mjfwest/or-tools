@@ -185,14 +185,24 @@ endif # ($(SYSTEM),win)
 
 # Get github revision level
 ifneq ($(wildcard .git),)
-GIT_REVISION:= $(shell git rev-list --count HEAD)
-GIT_HASH:= $(shell git rev-parse --short HEAD)
+ ifneq ($(wildcard .git/shallow),)
+ $(warning you are using a shallow copy)
+ GIT_REVISION:= 9999
+ else
+ GIT_REVISION:= $(shell git rev-list --count HEAD)
+ endif
+ GIT_HASH:= $(shell git rev-parse --short HEAD)
 else
-GIT_REVISION:= 999
+GIT_REVISION:= 9999
 GIT_HASH:= "not_on_git"
 endif
+
 OR_TOOLS_VERSION := $(OR_TOOLS_MAJOR).$(OR_TOOLS_MINOR).$(GIT_REVISION)
 OR_TOOLS_SHORT_VERSION := $(OR_TOOLS_MAJOR).$(OR_TOOLS_MINOR)
+ifdef PRE_RELEASE
+OR_TOOLS_VERSION := $(OR_TOOLS_VERSION)-beta
+OR_TOOLS_SHORT_VERSION := $(OR_TOOLS_SHORT_VERSION)-beta
+endif
 INSTALL_DIR = or-tools_$(PORT)_v$(OR_TOOLS_VERSION)
 FZ_INSTALL_DIR = or-tools_flatzinc_$(PORT)_v$(OR_TOOLS_VERSION)
 DATA_INSTALL_DIR = or-tools_data_v$(OR_TOOLS_VERSION)

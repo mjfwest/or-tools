@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -191,10 +191,10 @@ public partial class Solver {
   }
 
   public static Solver CreateSolver(String name, String type) {
-    System.Reflection.FieldInfo fieldInfo =
-        typeof(Solver).GetField(type);
-    if (fieldInfo != null) {
-      return new Solver(name, (int)fieldInfo.GetValue(null));
+    Solver.OptimizationProblemType solver_type =
+        Solver.OptimizationProblemType.GLOP_LINEAR_PROGRAMMING;
+    if (Enum.TryParse(type, true, out solver_type)) {
+      return new Solver(name, solver_type);
     } else {
       return null;
     }

@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,14 +25,16 @@
 //
 // TODO(user): unit test all the APIs that are currently marked with 'no test'.
 
-%include "ortools/base/base.i"
-
 %include "enums.swg"  // For native Java enum support.
+%include "stdint.i"
+
+%include "ortools/base/base.i"
 
 // We prefer our in-house vector wrapper to std_vector.i, because it
 // converts to and from native java arrays.
-%include "ortools/util/java/vector.i"
+%import "ortools/util/java/vector.i"
 
+%include "ortools/util/java/proto.i"
 
 // We need to forward-declare the proto here, so that the PROTO_* macros
 // involving them work correctly. The order matters very much: this declaration
@@ -43,6 +45,9 @@ class MPModelRequest;
 class MPSolutionResponse;
 }  // namespace operations_research
 
+typedef int64_t int64;
+typedef uint64_t uint64;
+
 %{
 #include "ortools/linear_solver/linear_solver.h"
 %}
@@ -50,6 +55,7 @@ class MPSolutionResponse;
 %typemap(javaimports) SWIGTYPE %{
 import java.lang.reflect.*;
 %}
+
 
 %extend operations_research::MPSolver {
   std::string exportModelAsLpFormat(bool obfuscated) {
@@ -176,7 +182,7 @@ import java.lang.reflect.*;
 %rename (supportsProblemType) operations_research::MPSolver::SupportsProblemType;  // no test
 %rename (setSolverSpecificParametersAsString)
     operations_research::MPSolver::SetSolverSpecificParametersAsString;  // no test
-%rename (interruptSolve) operations_research::MPSolver::InterruptSolve;
+%rename (interruptSolve) operations_research::MPSolver::InterruptSolve;  // no test
 %rename (wallTime) operations_research::MPSolver::wall_time;
 %rename (clear) operations_research::MPSolver::Clear;  // no test
 %rename (numVariables) operations_research::MPSolver::NumVariables;

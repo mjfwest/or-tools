@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,10 +27,10 @@
 #include <memory>
 #include <vector>
 
+#include "absl/time/time.h"
 #include "ortools/algorithms/dynamic_partition.h"
 #include "ortools/algorithms/dynamic_permutation.h"
 #include "ortools/base/status.h"
-#include "ortools/base/time_support.h"
 #include "ortools/graph/graph.h"
 #include "ortools/graph/iterators.h"
 #include "ortools/util/stats.h"

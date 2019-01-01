@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,10 +16,10 @@
 #include <iostream>  // NOLINT
 
 #include <string>
+#include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/mutex.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/flatzinc/logging.h"
@@ -133,8 +133,7 @@ class MtOptimizeVar : public OptimizeVar {
       if (verbose_) {
         report_->Log(
             thread_id_,
-            absl::StrFormat("Polling improved objective %" GG_LL_FORMAT "d",
-                            polled_best));
+            absl::StrFormat("Polling improved objective %d", polled_best));
       }
       best_ = polled_best;
     }
@@ -236,10 +235,8 @@ void MultiThreadReporting::OnOptimizeSolution(
           best_objective_ = value;
           IncrementSolutions();
           if (verbose_) {
-            LogNoLock(
-                thread_id,
-                absl::StrFormat("solution found with value %" GG_LL_FORMAT "d",
-                                value));
+            LogNoLock(thread_id,
+                      absl::StrFormat("solution found with value %d", value));
           }
           if (ShouldPrintAllSolutions() || MaxNumSolutions() > 1) {
             Print(thread_id, solution_string);
@@ -255,10 +252,8 @@ void MultiThreadReporting::OnOptimizeSolution(
           best_objective_ = value;
           IncrementSolutions();
           if (verbose_) {
-            LogNoLock(
-                thread_id,
-                absl::StrFormat("solution found with value %" GG_LL_FORMAT "d",
-                                value));
+            LogNoLock(thread_id,
+                      absl::StrFormat("solution found with value %d", value));
           }
           if (ShouldPrintAllSolutions() || MaxNumSolutions() > 1) {
             Print(thread_id, solution_string);
@@ -297,9 +292,8 @@ void MultiThreadReporting::OnSearchEnd(int thread_id, bool interrupted) {
   }
   if (!last_solution_.empty()) {
     if (verbose_) {
-      LogNoLock(last_thread_,
-                absl::StrFormat("solution found with value %" GG_LL_FORMAT "d",
-                                best_objective_));
+      LogNoLock(last_thread_, absl::StrFormat("solution found with value %d",
+                                              best_objective_));
     }
     Print(thread_id, last_solution_);
     last_solution_.clear();

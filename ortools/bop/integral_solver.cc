@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -289,9 +289,9 @@ std::string IntegralVariable::DebugString() const {
   std::string str;
   CHECK_EQ(bits_.size(), weights_.size());
   for (int i = 0; i < bits_.size(); ++i) {
-    str += absl::StrFormat("%lld [%lld] ", weights_[i], bits_[i].value());
+    str += absl::StrFormat("%d [%d] ", weights_[i], bits_[i].value());
   }
-  str += absl::StrFormat(" Offset: %lld", offset_);
+  str += absl::StrFormat(" Offset: %d", offset_);
   return str;
 }
 

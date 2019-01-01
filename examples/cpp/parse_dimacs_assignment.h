@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -32,8 +32,10 @@
 #include "ortools/graph/ebert_graph.h"
 #include "ortools/graph/linear_assignment.h"
 
-DECLARE_bool(assignment_maximize_cost);
-DECLARE_bool(assignment_optimize_layout);
+DEFINE_bool(assignment_maximize_cost, false,
+            "Negate costs so a max-cost assignment is found.");
+DEFINE_bool(assignment_optimize_layout, true,
+            "Optimize graph layout for speed.");
 
 namespace operations_research {
 

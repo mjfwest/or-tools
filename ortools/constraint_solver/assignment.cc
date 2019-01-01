@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,17 +13,17 @@
 
 #include <stddef.h>
 #include <string>
-#include <unordered_map>
 #include <vector>
+#include "absl/container/flat_hash_map.h"
 
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "ortools/base/file.h"
 #include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
-#include "ortools/base/join.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/recordio.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/assignment.pb.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 
@@ -96,10 +96,9 @@ void IntVarElement::WriteToProto(
 std::string IntVarElement::DebugString() const {
   if (Activated()) {
     if (min_ == max_) {
-      return StringPrintf("(%" GG_LL_FORMAT "d)", min_);
+      return absl::StrFormat("(%d)", min_);
     } else {
-      return StringPrintf("(%" GG_LL_FORMAT "d..%" GG_LL_FORMAT "d)", min_,
-                          max_);
+      return absl::StrFormat("(%d..%d)", min_, max_);
     }
   } else {
     return "(...)";
@@ -201,17 +200,17 @@ void IntervalVarElement::WriteToProto(
 std::string IntervalVarElement::DebugString() const {
   if (Activated()) {
     std::string out;
-    SStringPrintf(&out, "(start = %" GG_LL_FORMAT "d", start_min_);
+    absl::StrAppendFormat(&out, "(start = %d", start_min_);
     if (start_max_ != start_min_) {
-      StringAppendF(&out, "..%" GG_LL_FORMAT "d", start_max_);
+      absl::StrAppendFormat(&out, "..%d", start_max_);
     }
-    StringAppendF(&out, ", duration = %" GG_LL_FORMAT "d", duration_min_);
+    absl::StrAppendFormat(&out, ", duration = %d", duration_min_);
     if (duration_max_ != duration_min_) {
-      StringAppendF(&out, "..%" GG_LL_FORMAT "d", duration_max_);
+      absl::StrAppendFormat(&out, "..%d", duration_max_);
     }
-    StringAppendF(&out, ", status = %" GG_LL_FORMAT "d", performed_min_);
+    absl::StrAppendFormat(&out, ", status = %d", performed_min_);
     if (performed_max_ != performed_min_) {
-      StringAppendF(&out, "..%" GG_LL_FORMAT "d", performed_max_);
+      absl::StrAppendFormat(&out, "..%d", performed_max_);
     }
     out.append(")");
     return out;
@@ -317,10 +316,10 @@ void SequenceVarElement::WriteToProto(
 
 std::string SequenceVarElement::DebugString() const {
   if (Activated()) {
-    return StringPrintf("[forward %s, backward %s, unperformed [%s]]",
-                        absl::StrJoin(forward_sequence_, " -> ").c_str(),
-                        absl::StrJoin(backward_sequence_, " -> ").c_str(),
-                        absl::StrJoin(unperformed_, ", ").c_str());
+    return absl::StrFormat("[forward %s, backward %s, unperformed [%s]]",
+                           absl::StrJoin(forward_sequence_, " -> "),
+                           absl::StrJoin(backward_sequence_, " -> "),
+                           absl::StrJoin(unperformed_, ", "));
   } else {
     return "(...)";
   }
@@ -379,7 +378,7 @@ void SequenceVarElement::SetUnperformed(const std::vector<int>& unperformed) {
 }
 
 bool SequenceVarElement::CheckClassInvariants() {
-  std::unordered_set<int> visited;
+  absl::flat_hash_set<int> visited;
   for (const int forward_sequence : forward_sequence_) {
     if (gtl::ContainsKey(visited, forward_sequence)) {
       return false;
@@ -443,7 +442,7 @@ namespace {
 
 template <class V, class E>
 void IdToElementMap(AssignmentContainer<V, E>* container,
-                    std::unordered_map<std::string, E*>* id_to_element_map) {
+                    absl::flat_hash_map<std::string, E*>* id_to_element_map) {
   CHECK(id_to_element_map != nullptr);
   id_to_element_map->clear();
   for (int i = 0; i < container->Size(); ++i) {
@@ -463,7 +462,7 @@ void IdToElementMap(AssignmentContainer<V, E>* container,
 }
 
 template <class E, class P>
-void LoadElement(const std::unordered_map<std::string, E*>& id_to_element_map,
+void LoadElement(const absl::flat_hash_map<std::string, E*>& id_to_element_map,
                  const P& proto) {
   const std::string& var_id = proto.var_id();
   CHECK(!var_id.empty());
@@ -515,7 +514,7 @@ void RealLoad(const AssignmentProto& assignment_proto,
     }
   }
   if (!fast_load) {
-    std::unordered_map<std::string, Element*> id_to_element_map;
+    absl::flat_hash_map<std::string, Element*> id_to_element_map;
     IdToElementMap<Var, Element>(container, &id_to_element_map);
     for (int i = 0; i < (assignment_proto.*GetSize)(); ++i) {
       LoadElement<Element, Proto>(id_to_element_map,
@@ -614,8 +613,8 @@ template <class Container, class Element>
 void RealDebugString(const Container& container, std::string* const out) {
   for (const Element& element : container.elements()) {
     if (element.Var() != nullptr) {
-      StringAppendF(out, "%s %s | ", element.Var()->name().c_str(),
-                    element.DebugString().c_str());
+      absl::StrAppendFormat(out, "%s %s | ", element.Var()->name(),
+                            element.DebugString());
     }
   }
 }
@@ -1000,7 +999,9 @@ void Assignment::CopyIntersection(const Assignment* assignment) {
   int_var_container_.CopyIntersection(assignment->int_var_container_);
   interval_var_container_.CopyIntersection(assignment->interval_var_container_);
   sequence_var_container_.CopyIntersection(assignment->sequence_var_container_);
-  objective_element_ = assignment->objective_element_;
+  if (objective_element_.Var() == assignment->objective_element_.Var()) {
+    objective_element_ = assignment->objective_element_;
+  }
 }
 
 void Assignment::Copy(const Assignment* assignment) {

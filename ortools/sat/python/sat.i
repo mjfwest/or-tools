@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,6 +13,8 @@
 
 // This .i file exposes the sat cp_model API.
 
+%include "stdint.i"
+
 %include "ortools/base/base.i"
 %include "ortools/util/python/proto.i"
 
@@ -25,8 +27,10 @@
 #include "ortools/sat/swig_helper.h"
 %}
 
-%module(directors="1") operations_research_sat
+typedef int64_t int64;
+typedef uint64_t uint64;
 
+%module(directors="1") operations_research_sat
 
 PY_PROTO_TYPEMAP(ortools.sat.cp_model_pb2,
                  CpModelProto,
@@ -51,11 +55,13 @@ PY_PROTO_TYPEMAP(ortools.sat.sat_parameters_pb2,
 %unignore operations_research::sat::SatHelper::SolveWithParametersAndSolutionCallback;
 %unignore operations_research::sat::SatHelper::ModelStats;
 %unignore operations_research::sat::SatHelper::SolverResponseStats;
+%unignore operations_research::sat::SatHelper::ValidateModel;
 
 %feature("director") operations_research::sat::SolutionCallback;
 %unignore operations_research::sat::SolutionCallback;
-%unignore operations_research::sat::SolutionCallback::SolutionCallback;
 %unignore operations_research::sat::SolutionCallback::~SolutionCallback;
+%unignore operations_research::sat::SolutionCallback::BestObjectiveBound;
+%feature("nodirector") operations_research::sat::SolutionCallback::BestObjectiveBound;
 %unignore operations_research::sat::SolutionCallback::NumBinaryPropagations;
 %feature("nodirector") operations_research::sat::SolutionCallback::NumBinaryPropagations;
 %unignore operations_research::sat::SolutionCallback::NumBooleans;

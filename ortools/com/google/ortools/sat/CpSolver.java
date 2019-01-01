@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -37,9 +37,8 @@ public class CpSolver {
 
   /** Solves a problem and passes each solution found to the callback. */
   public CpSolverStatus solveWithSolutionCallback(CpModel model, CpSolverSolutionCallback cb) {
-    solveResponse =
-        SatHelper.solveWithParametersAndSolutionCallback(
-            model.model(), solveParameters.build(), cb);
+    solveResponse = SatHelper.solveWithParametersAndSolutionCallback(
+        model.model(), solveParameters.build(), cb);
     return solveResponse.getStatus();
   }
 
@@ -55,9 +54,8 @@ public class CpSolver {
    */
   public CpSolverStatus searchAllSolutions(CpModel model, CpSolverSolutionCallback cb) {
     solveParameters.setEnumerateAllSolutions(true);
-    solveResponse =
-        SatHelper.solveWithParametersAndSolutionCallback(
-            model.model(), solveParameters.build(), cb);
+    solveResponse = SatHelper.solveWithParametersAndSolutionCallback(
+        model.model(), solveParameters.build(), cb);
     solveParameters.setEnumerateAllSolutions(true);
     return solveResponse.getStatus();
   }
@@ -65,6 +63,14 @@ public class CpSolver {
   /** Returns the best objective value found during search. */
   public double objectiveValue() {
     return solveResponse.getObjectiveValue();
+  }
+
+  /**
+   * Returns the best lower bound found when minimizing, of the best upper bound found when
+   * maximizing.
+   */
+  public double bestObjectiveBound() {
+    return solveResponse.getBestObjectiveBound();
   }
 
   /** Returns the value of a variable in the last solution found. */

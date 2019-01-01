@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,11 +20,11 @@
 #include <cstdio>
 #include <map>
 
+#include "absl/strings/str_format.h"
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/map_util.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 
 DEFINE_bool(print, false, "If true, print one of the solution.");
@@ -197,7 +197,8 @@ void NQueens(int size) {
   // model
   std::vector<IntVar*> queens;
   for (int i = 0; i < size; ++i) {
-    queens.push_back(s.MakeIntVar(0, size - 1, StringPrintf("queen%04d", i)));
+    queens.push_back(
+        s.MakeIntVar(0, size - 1, absl::StrFormat("queen%04d", i)));
   }
   s.AddConstraint(s.MakeAllDifferent(queens));
 
@@ -260,7 +261,7 @@ void NQueens(int size) {
     }
   }
   printf("========= number of solutions:%d\n", num_solutions);
-  printf("          number of failures: %lld\n", s.failures());
+  absl::PrintF("          number of failures: %d\n", s.failures());
 }
 }  // namespace operations_research
 
@@ -273,5 +274,5 @@ int main(int argc, char** argv) {
       operations_research::NQueens(n);
     }
   }
-  return 0;
+  return EXIT_SUCCESS;
 }

@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -88,7 +88,7 @@
     proto.MergeFrom(input);
     return proto;
   } catch (Google.Protobuf.InvalidProtocolBufferException /*e*/) {
-    throw new SystemException(
+    throw new System.Exception(
         "Unable to parse CSharpProtoType protocol message.");
   }
 }

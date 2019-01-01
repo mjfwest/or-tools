@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,10 +14,11 @@
 #ifndef OR_TOOLS_BASE_TIMER_H_
 #define OR_TOOLS_BASE_TIMER_H_
 
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "ortools/base/basictypes.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/time_support.h"
 
 class WallTimer {
  public:
@@ -44,6 +45,9 @@ class WallTimer {
   double Get() const { return GetNanos() * 1e-9; }
   int64 GetInMs() const { return GetNanos() / 1000000; }
   int64 GetInUsec() const { return GetNanos() / 1000; }
+  inline absl::Duration GetDuration() const {
+    return absl::Nanoseconds(GetNanos());
+  }
 
  protected:
   int64 GetNanos() const {
@@ -71,6 +75,8 @@ class CycleTimer : public WallTimer {
   // of CPU cycles.
   int64 GetCycles() const { return GetNanos(); }
 };
+
+typedef CycleTimer SimpleCycleTimer;
 
 // Conversion routines between CycleTimer::GetCycles and actual times.
 class CycleTimerBase {

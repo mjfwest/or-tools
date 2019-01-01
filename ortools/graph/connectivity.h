@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -56,7 +56,7 @@ namespace operations_research {
 // }
 // // Group the nodes in the same connected component together.
 // // group[class_number][i] contains the i-th node in group class_number.
-// std::unordered_map<int, std::vector<int> > group(num_connected_components);
+// hash_map<int, std::vector<int> > group(num_connected_components);
 // for (int node = 0; node < num_nodes; ++node) {
 //   group[components.GetClassRepresentative(node)].push_back(node);
 // }

@@ -7,8 +7,6 @@ RUN apt-get update -qq \
 && apt-get install -qq \
  git pkg-config wget make cmake autoconf libtool zlib1g-dev gawk g++ curl subversion \
  swig lsb-release \
- python-dev python-wheel python-setuptools python-six \
- python3-dev python3-wheel python3-setuptools \
  default-jdk \
 && apt-get clean \
 && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
@@ -37,6 +35,10 @@ RUN apt-get update -qq \
 ENV TZ=America/Los_Angeles
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Copy the snk key
+COPY or-tools.snk /root/or-tools.snk
+ENV DOTNET_SNK=/root/or-tools.snk
+
 ################
 ##  OR-TOOLS  ##
 ################
@@ -57,6 +59,5 @@ RUN git clone -b "${SRC_GIT_BRANCH}" --single-branch https://github.com/google/o
 WORKDIR /root/or-tools
 RUN make detect && make third_party
 RUN make detect_cc && make cc
-RUN make detect_python && make python
 RUN make detect_java && make java
 RUN make detect_dotnet && make dotnet

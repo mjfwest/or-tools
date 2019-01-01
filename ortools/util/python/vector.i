@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,7 +16,6 @@
 
 %import "ortools/base/integral_types.h"
 
-namespace operations_research {
 // --------- std::vector<data> wrapping ----------
 
 // We can't just reuse the google.i code (see LIST_OUTPUT_TYPEMAP in that
@@ -30,6 +29,8 @@ namespace operations_research {
 // Note(user): for an unknown reason, using the (handy) method PyObjAs()
 // defined in base/swig/python-swig.cc seems to cause issues, so we can't
 // use a generic, templated type checker.
+// Get const std::vector<std::string>& "in" typemap.
+
 %define PY_LIST_OUTPUT_TYPEMAP(type, checker, py_converter)
 %typecheck(SWIG_TYPECHECK_POINTER) const std::vector<type>&,
                                    std::vector<type>,
@@ -66,11 +67,12 @@ namespace operations_research {
 }
 %typemap(in,numinputs=0)
  std::vector<type>* OUTPUT (std::vector<type> temp),
- std::unordered_set<type>* OUTPUT (std::unordered_set<type> temp),
  std::set<type>* OUTPUT (std::set<type> temp) {
   $1 = &temp;
 }
-%typemap(argout) std::vector<type>* OUTPUT, std::set<type>* OUTPUT, std::unordered_set<type>* OUTPUT {
+%typemap(argout)
+     std::vector<type>* OUTPUT,
+     std::set<type>* OUTPUT {
   %append_output(list_output_helper($1, &py_converter));
 }
 %typemap(out) std::vector<type> {
@@ -80,19 +82,10 @@ namespace operations_research {
   $result = vector_output_helper($1, &py_converter);
 }
 
-
-%apply const std::vector<type>& { const std::vector<type>& }
-%apply const std::vector<type>* { const std::vector<type>* }
-%apply std::vector<type>* { std::vector<type>* }
-%apply std::vector<type> { std::vector<type> }
-
-%apply std::vector<type>* OUTPUT { std::vector<type>* OUTPUT }
-%apply std::set<type>* OUTPUT { std::set<type>* OUTPUT }
-
 %enddef  // PY_LIST_OUTPUT_TYPEMAP
 
 PY_LIST_OUTPUT_TYPEMAP(int, PyInt_Check, PyInt_FromLong);
-PY_LIST_OUTPUT_TYPEMAP(long long, SwigPyIntOrLong_Check, PyInt_FromLong);
+PY_LIST_OUTPUT_TYPEMAP(int64, SwigPyIntOrLong_Check, PyInt_FromLong);
 PY_LIST_OUTPUT_TYPEMAP(double, PyFloat_Check, PyFloat_FromDouble);
 
 // Add conversion list(tuple(int)) -> std::vector<std::vector>.
@@ -162,10 +155,6 @@ PY_LIST_OUTPUT_TYPEMAP(double, PyFloat_Check, PyFloat_FromDouble);
   }
 }
 
-%apply const std::vector<std::vector<type> >& {
-  const std::vector<std::vector<type> >&
-}
 %enddef  // PY_LIST_LIST_INPUT_TYPEMAP
 
-PY_LIST_LIST_INPUT_TYPEMAP(long long, SwigPyIntOrLong_Check);
-}  // namespace operations_research
+PY_LIST_LIST_INPUT_TYPEMAP(int64, SwigPyIntOrLong_Check);

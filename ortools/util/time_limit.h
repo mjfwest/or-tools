@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,16 +20,13 @@
 #include <limits>
 #include <memory>
 #include <string>
-#ifndef NDEBUG
-#include <unordered_map>
-#endif
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/memory/memory.h"
+#include "absl/time/clock.h"
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/memory.h"
-#include "ortools/base/port.h"
-#include "ortools/base/time_support.h"
 #include "ortools/base/timer.h"
 #include "ortools/util/running_stat.h"
 #ifdef HAS_PERF_SUBSYSTEM
@@ -256,6 +253,7 @@ class TimeLimit {
   // any registered external boolean or calls to RegisterSigintHandler().
   template <typename Parameters>
   void ResetLimitFromParameters(const Parameters& parameters);
+  void MergeWithGlobalTimeLimit(TimeLimit* other);
 
   // Returns information about the time limit object in a human-readable form.
   std::string DebugString() const;
@@ -293,7 +291,7 @@ class TimeLimit {
 
 #ifndef NDEBUG
   // Contains the values of the deterministic time counters.
-  std::unordered_map<std::string, double> deterministic_counters_;
+  absl::flat_hash_map<std::string, double> deterministic_counters_;
 #endif
 
   friend class NestedTimeLimit;
@@ -404,6 +402,17 @@ inline void TimeLimit::ResetLimitFromParameters(const Parameters& parameters) {
   ResetTimers(parameters.max_time_in_seconds(),
               parameters.max_deterministic_time(),
               std::numeric_limits<double>::infinity());
+}
+
+inline void TimeLimit::MergeWithGlobalTimeLimit(TimeLimit* other) {
+  if (other == nullptr) return;
+  ResetTimers(
+      std::min(GetTimeLeft(), other->GetTimeLeft()),
+      std::min(GetDeterministicTimeLeft(), other->GetDeterministicTimeLeft()),
+      std::numeric_limits<double>::infinity());
+  if (other->ExternalBooleanAsLimit() != nullptr) {
+    RegisterExternalBooleanAsLimit(other->ExternalBooleanAsLimit());
+  }
 }
 
 inline double TimeLimit::ReadInstructionCounter() {

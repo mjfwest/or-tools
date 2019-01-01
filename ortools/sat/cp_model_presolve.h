@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,9 +17,17 @@
 #include <vector>
 
 #include "ortools/sat/cp_model.pb.h"
+#include "ortools/sat/sat_parameters.pb.h"
+#include "ortools/util/time_limit.h"
 
 namespace operations_research {
 namespace sat {
+
+struct PresolveOptions {
+  bool log_info = true;
+  SatParameters parameters;
+  TimeLimit* time_limit = nullptr;
+};
 
 // Presolves the initial content of presolved_model.
 //
@@ -42,10 +50,13 @@ namespace sat {
 // TODO(user): Identify disconnected components and returns a vector of
 // presolved model? If we go this route, it may be nicer to store the indices
 // inside the model. We can add a IntegerVariableProto::initial_index;
-void PresolveCpModel(CpModelProto* presolved_model, CpModelProto* mapping_model,
-                     std::vector<int>* postsolve_mapping);
-void PresolveCpModel(bool log_info, CpModelProto* presolved_model,
-                     CpModelProto* mapping_model,
+//
+// Returns false if a non-recoverable error was encountered.
+//
+// TODO(user): Make sure this can never run into this case provided that the
+// initial model is valid!
+bool PresolveCpModel(const PresolveOptions& options,
+                     CpModelProto* presolved_model, CpModelProto* mapping_model,
                      std::vector<int>* postsolve_mapping);
 
 // Replaces all the instance of a variable i (and the literals referring to it)

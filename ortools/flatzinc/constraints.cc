@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,8 +14,8 @@
 #include "ortools/flatzinc/constraints.h"
 
 #include <string>
-#include <unordered_set>
 
+#include "absl/container/flat_hash_set.h"
 #include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
@@ -216,7 +216,7 @@ void ExtractAtMostInt(fz::SolverData* data, fz::Constraint* ct) {
 void ExtractArrayBoolAnd(fz::SolverData* data, fz::Constraint* ct) {
   Solver* const solver = data->solver();
   std::vector<IntVar*> variables;
-  std::unordered_set<IntExpr*> added;
+  absl::flat_hash_set<IntExpr*> added;
   const std::vector<IntVar*> tmp_vars =
       data->GetOrCreateVariableArray(ct->arguments[0]);
   for (IntVar* const to_add : tmp_vars) {
@@ -269,7 +269,7 @@ void ExtractArrayBoolAnd(fz::SolverData* data, fz::Constraint* ct) {
 void ExtractArrayBoolOr(fz::SolverData* data, fz::Constraint* ct) {
   Solver* const solver = data->solver();
   std::vector<IntVar*> variables;
-  std::unordered_set<IntExpr*> added;
+  absl::flat_hash_set<IntExpr*> added;
   const std::vector<IntVar*> tmp_vars =
       data->GetOrCreateVariableArray(ct->arguments[0]);
   for (IntVar* const to_add : tmp_vars) {
@@ -2152,7 +2152,7 @@ void ExtractIntLinLeReif(fz::SolverData* data, fz::Constraint* ct) {
         // Special case. this is or(vars) = not(boolvar).
         PostIsBooleanSumInRange(data->Sat(), solver, vars, 0, 0, boolvar);
       } else if (rhs < 0 && AreAllPositive(coeffs) &&
-                 IsArrayInRange(vars, 0LL, kint64max)) {
+                 IsArrayInRange<int64>(vars, 0, kint64max)) {
         // Trivial failure.
         boolvar->SetValue(0);
         FZVLOG << "  - set target to 0" << FZENDL;

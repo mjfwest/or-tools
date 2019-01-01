@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,15 +16,14 @@
 #include <atomic>
 #include <cmath>
 #include <limits>
-#include <unordered_map>
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_split.h"
+#include "absl/synchronization/mutex.h"
 #include "google/protobuf/text_format.h"
-#include "ortools/base/join.h"
 #include "ortools/base/map_util.h"
-#include "ortools/base/mutex.h"
-#include "ortools/base/split.h"
-#include "ortools/base/stringpiece_utils.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/base/threadpool.h"
 #include "ortools/base/timer.h"
 #include "ortools/flatzinc/checker.h"
@@ -93,8 +92,8 @@ struct CpModelProtoWithMapping {
   SatParameters parameters;
 
   // Mapping from flatzinc variables to CpModelProto variables.
-  std::unordered_map<fz::IntegerVariable*, int> fz_var_to_index;
-  std::unordered_map<int64, int> constant_value_to_index;
+  absl::flat_hash_map<fz::IntegerVariable*, int> fz_var_to_index;
+  absl::flat_hash_map<int64, int> constant_value_to_index;
 };
 
 int CpModelProtoWithMapping::LookupConstant(int64 value) {
@@ -224,10 +223,18 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     FillAMinusBInDomain({kint64min, -1}, fz_ct, ct);
   } else if (fz_ct.type == "bool_gt" || fz_ct.type == "int_gt") {
     FillAMinusBInDomain({1, kint64max}, fz_ct, ct);
-  } else if (fz_ct.type == "bool_eq" || fz_ct.type == "int_eq") {
+  } else if (fz_ct.type == "bool_eq" || fz_ct.type == "int_eq" ||
+             fz_ct.type == "bool2int") {
     FillAMinusBInDomain({0, 0}, fz_ct, ct);
-  } else if (fz_ct.type == "bool_ne" || fz_ct.type == "bool_not" ||
-             fz_ct.type == "int_ne") {
+  } else if (fz_ct.type == "bool_ne" || fz_ct.type == "bool_not") {
+    auto* arg = ct->mutable_linear();
+    arg->add_vars(LookupVar(fz_ct.arguments[0]));
+    arg->add_coeffs(1);
+    arg->add_vars(LookupVar(fz_ct.arguments[1]));
+    arg->add_coeffs(1);
+    arg->add_domain(1);
+    arg->add_domain(1);
+  } else if (fz_ct.type == "int_ne") {
     FillAMinusBInDomain({kint64min, -1, 1, kint64max}, fz_ct, ct);
   } else if (fz_ct.type == "int_lin_eq") {
     const int64 rhs = fz_ct.arguments[2].values[0];
@@ -270,13 +277,14 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     arg->add_vars(LookupVar(fz_ct.arguments[0]));
     arg->add_coeffs(1);
     if (fz_ct.arguments[1].type == fz::Argument::INT_LIST) {
-      FillDomain(
-          SortedDisjointIntervalsFromValues({fz_ct.arguments[1].values.begin(),
-                                             fz_ct.arguments[1].values.end()}),
-          arg);
+      FillDomainInProto(Domain::FromValues(std::vector<int64>{
+                            fz_ct.arguments[1].values.begin(),
+                            fz_ct.arguments[1].values.end()}),
+                        arg);
     } else if (fz_ct.arguments[1].type == fz::Argument::INT_INTERVAL) {
-      FillDomain({{fz_ct.arguments[1].values[0], fz_ct.arguments[1].values[1]}},
-                 arg);
+      FillDomainInProto(
+          Domain(fz_ct.arguments[1].values[0], fz_ct.arguments[1].values[1]),
+          arg);
     } else {
       LOG(FATAL) << "Wrong format";
     }
@@ -285,15 +293,16 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     arg->add_vars(LookupVar(fz_ct.arguments[0]));
     arg->add_coeffs(1);
     if (fz_ct.arguments[1].type == fz::Argument::INT_LIST) {
-      FillDomain(
-          ComplementOfSortedDisjointIntervals(SortedDisjointIntervalsFromValues(
-              {fz_ct.arguments[1].values.begin(),
-               fz_ct.arguments[1].values.end()})),
+      FillDomainInProto(
+          Domain::FromValues(
+              std::vector<int64>{fz_ct.arguments[1].values.begin(),
+                                 fz_ct.arguments[1].values.end()})
+              .Complement(),
           arg);
     } else if (fz_ct.arguments[1].type == fz::Argument::INT_INTERVAL) {
-      FillDomain(
-          ComplementOfSortedDisjointIntervals(
-              {{fz_ct.arguments[1].values[0], fz_ct.arguments[1].values[1]}}),
+      FillDomainInProto(
+          Domain(fz_ct.arguments[1].values[0], fz_ct.arguments[1].values[1])
+              .Complement(),
           arg);
     } else {
       LOG(FATAL) << "Wrong format";
@@ -328,7 +337,7 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     arg->add_vars(-LookupVar(fz_ct.arguments[0]) - 1);
   } else if (fz_ct.type == "int_plus") {
     auto* arg = ct->mutable_linear();
-    FillDomain({{0, 0}}, arg);
+    FillDomainInProto(Domain(0, 0), arg);
     arg->add_vars(LookupVar(fz_ct.arguments[0]));
     arg->add_coeffs(1);
     arg->add_vars(LookupVar(fz_ct.arguments[1]));
@@ -355,7 +364,7 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
       arg->set_index(LookupVar(fz_ct.arguments[0]));
       arg->set_target(LookupVar(fz_ct.arguments[2]));
 
-      if (!strings::EndsWith(fz_ct.type, "no_offset")) {
+      if (!absl::EndsWith(fz_ct.type, "no_offset")) {
         // Add a dummy variable at position zero because flatzinc index start at
         // 1.
         // TODO(user): Make sure that zero is not in the index domain...
@@ -365,7 +374,7 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     } else {
       // Special case added by the presolve (not in flatzinc). We encode this
       // as a table constraint.
-      CHECK(!strings::EndsWith(fz_ct.type, "no_offset"));
+      CHECK(!absl::EndsWith(fz_ct.type, "no_offset"));
       auto* arg = ct->mutable_table();
 
       // the constraint is:
@@ -456,21 +465,18 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     int index = min_index;
     const bool is_circuit = (fz_ct.type == "circuit");
     for (const int var : LookupVars(fz_ct.arguments[0])) {
+      Domain domain = ReadDomainFromProto(proto.variables(var));
+
       // Restrict the domain of var to [min_index, max_index]
-      FillDomain(
-          IntersectionOfSortedDisjointIntervals(
-              ReadDomain(proto.variables(var)), {{min_index, max_index}}),
-          proto.mutable_variables(var));
+      domain = domain.IntersectionWith(Domain(min_index, max_index));
       if (is_circuit) {
         // We simply make sure that the variable cannot take the value index.
-        FillDomain(IntersectionOfSortedDisjointIntervals(
-                       ReadDomain(proto.variables(var)),
-                       {{kint64min, index - 1}, {index + 1, kint64max}}),
-                   proto.mutable_variables(var));
+        domain = domain.IntersectionWith(Domain::FromIntervals(
+            {{kint64min, index - 1}, {index + 1, kint64max}}));
       }
+      FillDomainInProto(domain, proto.mutable_variables(var));
 
-      const auto domain = ReadDomain(proto.variables(var));
-      for (const auto interval : domain) {
+      for (const ClosedInterval interval : domain.intervals()) {
         for (int64 value = interval.start; value <= interval.end; ++value) {
           // Create one Boolean variable for this arc.
           const int literal = proto.variables_size();
@@ -540,20 +546,20 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     for (const int var : direct_variables) {
       arg->add_f_direct(var);
       // Intersect domains with offset + [0, num_variables).
-      FillDomain(IntersectionOfSortedDisjointIntervals(
-                     ReadDomain(proto.variables(var)),
-                     {{offset, num_variables - 1 + offset}}),
-                 proto.mutable_variables(var));
+      FillDomainInProto(
+          ReadDomainFromProto(proto.variables(var))
+              .IntersectionWith(Domain(offset, num_variables - 1 + offset)),
+          proto.mutable_variables(var));
     }
 
     if (is_one_based) arg->add_f_inverse(LookupConstant(0));
     for (const int var : inverse_variables) {
       arg->add_f_inverse(var);
       // Intersect domains with offset + [0, num_variables).
-      FillDomain(IntersectionOfSortedDisjointIntervals(
-                     ReadDomain(proto.variables(var)),
-                     {{offset, num_variables - 1 + offset}}),
-                 proto.mutable_variables(var));
+      FillDomainInProto(
+          ReadDomainFromProto(proto.variables(var))
+              .IntersectionWith(Domain(offset, num_variables - 1 + offset)),
+          proto.mutable_variables(var));
     }
   } else if (fz_ct.type == "cumulative") {
     const std::vector<int> starts = LookupVars(fz_ct.arguments[0]);
@@ -649,7 +655,7 @@ void CpModelProtoWithMapping::FillReifConstraint(const fz::Constraint& fz_ct,
                                                  ConstraintProto* ct) {
   // Start by adding a non-reified version of the same constraint.
   fz::Constraint copy = fz_ct;
-  if (strings::EndsWith(fz_ct.type, "_reif")) {
+  if (absl::EndsWith(fz_ct.type, "_reif")) {
     copy.type = fz_ct.type.substr(0, fz_ct.type.size() - 5);  // Remove _reif.
   } else {
     copy.type = fz_ct.type;
@@ -863,12 +869,7 @@ void SolveFzWithCpModelProto(const fz::Model& fz_model,
         var->add_domain(fz_var->domain.values[1]);
       }
     } else {
-      const std::vector<ClosedInterval> domain =
-          SortedDisjointIntervalsFromValues(fz_var->domain.values);
-      for (const ClosedInterval& interval : domain) {
-        var->add_domain(interval.start);
-        var->add_domain(interval.end);
-      }
+      FillDomainInProto(Domain::FromValues(fz_var->domain.values), var);
     }
 
     // Some variables in flatzinc have large domain and we don't really support
@@ -877,9 +878,9 @@ void SolveFzWithCpModelProto(const fz::Model& fz_model,
     // variable domains with [kint32min, kint32max].
     //
     // TODO(user): Warn when we reduce the domain.
-    FillDomain(IntersectionOfSortedDisjointIntervals(ReadDomain(*var),
-                                                     {{kint32min, kint32max}}),
-               var);
+    FillDomainInProto(ReadDomainFromProto(*var).IntersectionWith(
+                          Domain(kint32min, kint32max)),
+                      var);
   }
 
   // Translate the constraints.
@@ -887,7 +888,7 @@ void SolveFzWithCpModelProto(const fz::Model& fz_model,
     if (fz_ct == nullptr || !fz_ct->active) continue;
     ConstraintProto* ct = m.proto.add_constraints();
     ct->set_name(fz_ct->type);
-    if (strings::EndsWith(fz_ct->type, "_reif") ||
+    if (absl::EndsWith(fz_ct->type, "_reif") ||
         fz_ct->type == "array_bool_or" || fz_ct->type == "array_bool_and") {
       m.FillReifConstraint(*fz_ct, ct);
     } else {

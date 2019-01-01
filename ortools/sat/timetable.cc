@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -84,9 +84,6 @@ void TimeTablingPerTask::RegisterWith(GenericLiteralWatcher* watcher) {
 }
 
 bool TimeTablingPerTask::Propagate() {
-  // TODO(user): understand why the following line creates a bug.
-  // if (num_tasks_to_sweep_ == 0) return true;
-
   // Save the current state of the set of tasks.
   rev_repository_int_.SaveState(&forward_num_tasks_to_sweep_);
   rev_repository_int_.SaveState(&backward_num_tasks_to_sweep_);
@@ -286,8 +283,8 @@ void TimeTablingPerTask::ReverseProfile() {
 
 bool TimeTablingPerTask::SweepAllTasks(bool is_forward) {
   // Tasks with a lower or equal demand will not be pushed.
-  const IntegerValue demand_threshold =
-      CapSub(CapacityMax(), profile_max_height_);
+  const IntegerValue demand_threshold(
+      CapSub(CapacityMax().value(), profile_max_height_.value()));
 
   // Select the correct members depending on the direction.
   int& num_tasks =
@@ -449,11 +446,12 @@ void TimeTablingPerTask::AddProfileReason(IntegerValue left,
                                           IntegerValue right) {
   for (int i = 0; i < num_profile_tasks_; ++i) {
     const int t = profile_tasks_[i];
-    const IntegerValue start_max = helper_->StartMax(t);
-    const IntegerValue end_min = helper_->EndMin(t);
 
-    // Do not consider the task if it does not overlap [left, right).
-    if (end_min <= left || right <= start_max) continue;
+    // Do not consider the task if it does not overlap for sure (left, right).
+    const IntegerValue start_max = helper_->StartMax(t);
+    if (right <= start_max) continue;
+    const IntegerValue end_min = helper_->EndMin(t);
+    if (end_min <= left) continue;
 
     helper_->AddPresenceReason(t);
     helper_->AddStartMaxReason(t, std::max(left, start_max));

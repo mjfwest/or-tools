@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -40,6 +40,7 @@
 %feature("director") operations_research::swig_util::LongToLong;
 %feature("director") operations_research::swig_util::LongLongToLong;
 %feature("director") operations_research::swig_util::IntIntToLong;
+%feature("director") operations_research::swig_util::IntToLong;
 %feature("director") operations_research::swig_util::LongLongLongToLong;
 %feature("director") operations_research::swig_util::LongToBoolean;
 %feature("director") operations_research::swig_util::VoidToString;

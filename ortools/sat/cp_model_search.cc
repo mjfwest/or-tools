@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,9 +14,10 @@
 #include "ortools/sat/cp_model_search.h"
 
 #include <random>
-#include <unordered_map>
 
-#include "ortools/base/stringprintf.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/strings/str_format.h"
+#include "ortools/base/cleanup.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/sat/util.h"
 
@@ -40,7 +41,7 @@ struct VarValue {
 };
 
 const std::function<LiteralIndex()> ConstructSearchStrategyInternal(
-    const std::unordered_map<int, std::pair<int64, int64>>&
+    const absl::flat_hash_map<int, std::pair<int64, int64>>&
         var_to_coeff_offset_pair,
     const std::vector<Strategy>& strategies, Model* model) {
   IntegerEncoder* const integer_encoder = model->GetOrCreate<IntegerEncoder>();
@@ -189,7 +190,7 @@ std::function<LiteralIndex()> ConstructSearchStrategy(
   }
 
   std::vector<Strategy> strategies;
-  std::unordered_map<int, std::pair<int64, int64>> var_to_coeff_offset_pair;
+  absl::flat_hash_map<int, std::pair<int64, int64>> var_to_coeff_offset_pair;
   for (const DecisionStrategyProto& proto : cp_model_proto.search_strategy()) {
     strategies.push_back(Strategy());
     Strategy& strategy = strategies.back();
@@ -241,6 +242,10 @@ std::function<LiteralIndex()> InstrumentSearchStrategy(
     const LiteralIndex decision = instrumented_strategy();
     if (decision == kNoLiteralIndex) return decision;
 
+    for (const IntegerLiteral i_lit :
+         model->Get<IntegerEncoder>()->GetIntegerLiterals(Literal(decision))) {
+      LOG(INFO) << "decision " << i_lit;
+    }
     const int level = model->Get<Trail>()->CurrentDecisionLevel();
     std::string to_display =
         absl::StrCat("Diff since last call, level=", level, "\n");
@@ -251,9 +256,11 @@ std::function<LiteralIndex()> InstrumentSearchStrategy(
           integer_trail->LowerBound(var).value(),
           integer_trail->UpperBound(var).value());
       if (new_domain != old_domains[ref]) {
-        old_domains[ref] = new_domain;
         absl::StrAppend(&to_display, cp_model_proto.variables(ref).name(), " [",
-                        new_domain.first, ",", new_domain.second, "]\n");
+                        old_domains[ref].first, ",", old_domains[ref].second,
+                        "] -> [", new_domain.first, ",", new_domain.second,
+                        "]\n");
+        old_domains[ref] = new_domain;
       }
     }
     LOG(INFO) << to_display;
@@ -276,15 +283,20 @@ SatParameters DiversifySearchParameters(const SatParameters& params,
   new_params.set_random_seed(params.random_seed() + worker_id);
   if (cp_model.has_objective()) {
     switch (worker_id) {
-      case 0: {  // Use default parameters and fixed search.
-        new_params.set_search_branching(SatParameters::FIXED_SEARCH);
-        *name = "fixed";
-        break;
-      }
-      case 1: {  // Use default parameters and automatic search.
+      case 0: {  // Use default parameters and automatic search.
         new_params.set_search_branching(SatParameters::AUTOMATIC_SEARCH);
         new_params.set_linearization_level(1);
         *name = "auto";
+        break;
+      }
+      case 1: {  // Use default parameters and fixed search if there is one.
+        if (cp_model.search_strategy_size() > 0) {
+          new_params.set_search_branching(SatParameters::FIXED_SEARCH);
+          *name = "fixed";
+        } else {  // Use LP_SEARCH if not.
+          new_params.set_search_branching(SatParameters::LP_SEARCH);
+          *name = "lp_br";
+        }
         break;
       }
       case 2: {  // Remove LP relaxation.
@@ -350,27 +362,35 @@ SatParameters DiversifySearchParameters(const SatParameters& params,
 //                Should we cumul conflicts, branches... ?
 bool MergeOptimizationSolution(const CpSolverResponse& response, bool maximize,
                                CpSolverResponse* best) {
+  // In all cases, we always update the best objective bound similarly.
+  const double current_best_bound = response.best_objective_bound();
+  const double previous_best_bound = best->best_objective_bound();
+  const double new_best_objective_bound =
+      maximize ? std::min(previous_best_bound, current_best_bound)
+               : std::max(previous_best_bound, current_best_bound);
+  const auto cleanup = ::operations_research::util::MakeCleanup(
+      [&best, new_best_objective_bound]() {
+        if (best->status() != OPTIMAL) {
+          best->set_best_objective_bound(new_best_objective_bound);
+        } else {
+          best->set_best_objective_bound(best->objective_value());
+        }
+      });
+
   switch (response.status()) {
     case CpSolverStatus::FEASIBLE: {
       const bool is_improving =
           maximize ? response.objective_value() > best->objective_value()
                    : response.objective_value() < best->objective_value();
-      const double current_best_bound = response.best_objective_bound();
-      const double previous_best_bound = best->best_objective_bound();
-      const double new_best_objective_bound =
-          maximize ? std::min(previous_best_bound, current_best_bound)
-                   : std::max(previous_best_bound, current_best_bound);
       // TODO(user): return OPTIMAL if objective is tight.
       if (is_improving) {
         // Overwrite solution and fix best_objective_bound.
         *best = response;
-        best->set_best_objective_bound(new_best_objective_bound);
         return true;
       }
       if (new_best_objective_bound != previous_best_bound) {
         // The new solution has a worse objective value, but a better
         // best_objective_bound.
-        best->set_best_objective_bound(new_best_objective_bound);
         return true;
       }
       return false;
@@ -390,7 +410,6 @@ bool MergeOptimizationSolution(const CpSolverResponse& response, bool maximize,
         // found has a FEASIBLE status, it is indeed optimal, and
         // should be marked as thus.
         best->set_status(CpSolverStatus::OPTIMAL);
-        best->set_best_objective_bound(best->objective_value());
         return false;
       }
       break;
@@ -409,7 +428,6 @@ bool MergeOptimizationSolution(const CpSolverResponse& response, bool maximize,
         // synchronization has forced the solver to exit with a sub-optimal
         // solution, believing it was optimal.
         best->set_status(CpSolverStatus::OPTIMAL);
-        best->set_best_objective_bound(best->objective_value());
         return false;
       }
       break;
@@ -423,13 +441,9 @@ bool MergeOptimizationSolution(const CpSolverResponse& response, bool maximize,
           // Update objective_value and best_objective_bound.
           best->set_objective_value(
               std::max(best->objective_value(), response.objective_value()));
-          best->set_best_objective_bound(std::min(
-              best->best_objective_bound(), response.best_objective_bound()));
         } else {
           best->set_objective_value(
               std::min(best->objective_value(), response.objective_value()));
-          best->set_best_objective_bound(std::max(
-              best->best_objective_bound(), response.best_objective_bound()));
         }
       }
       return false;

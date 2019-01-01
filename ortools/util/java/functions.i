@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -238,6 +238,8 @@ WRAP_STD_FUNCTION_JAVA_AUX(Package, "CppClass", CppClass, ReturnType,
 %rename (run) operations_research::swig_util::LongToLong::Run;
 %feature("director") operations_research::swig_util::LongLongToLong;
 %rename (run) operations_research::swig_util::LongLongToLong::Run;
+%feature("director") operations_research::swig_util::IntToLong;
+%rename (run) operations_research::swig_util::IntToLong::Run;
 %feature("director") operations_research::swig_util::IntIntToLong;
 %rename (run) operations_research::swig_util::IntIntToLong::Run;
 %feature("director") operations_research::swig_util::LongLongLongToLong;

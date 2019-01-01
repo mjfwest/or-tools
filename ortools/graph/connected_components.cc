@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,7 +27,6 @@
 // The following uses disjoint-sets algorithms, see:
 // https://en.wikipedia.org/wiki/Disjoint-set_data_structure#Disjoint-set_forests
 
-#include <algorithm>
 #include <numeric>
 
 #include "ortools/graph/connected_components.h"

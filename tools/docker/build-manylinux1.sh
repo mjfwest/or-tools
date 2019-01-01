@@ -15,6 +15,7 @@
 #                  destination path for the wheels export.
 #   BUILD_ROOT     if not specified at command line, this value is used as the
 #                  root path for the build process.
+set -x
 set -e
 
 DEFAULT_BUILD_ROOT="$HOME"
@@ -55,15 +56,15 @@ function export_manylinux_wheel {
     # We need to force this target, otherwise the protobuf stub will be missing
     # (for the makefile, it exists even if previously generated for another
     # platform)
-    make -B install_python_modules  # regenerates Makefile.local
+    rm -f Makefile.local  # regenerates Makefile.local
+    # We need to clean first to avoid to use previous python swig object file
+    make clean_python
     make python
-    make test_python
+    #make test_python
     make pypi_archive
     # Build and repair wheels
-    cd temp-python*/ortools
-    python setup.py bdist_wheel
-    cd dist
-    auditwheel repair ./*.whl -w "$export_root"
+    cd temp_python*/ortools/dist
+    auditwheel repair --plat manylinux2010_x86_64 ./*.whl -w "$export_root"
 }
 
 function test_installed {
@@ -112,14 +113,14 @@ read -r -a SKIP <<< "$SKIP_PLATFORMS"
 # Python scripts to be used as tests for the installed wheel. This list of files
 # has been taken from the 'test_python' make target.
 TESTS=(
-    "${SRC_ROOT}/examples/python/hidato_table.py"
+    "${SRC_ROOT}/ortools/algorithms/samples/simple_knapsack_program.py"
+    "${SRC_ROOT}/ortools/graph/samples/simple_max_flow_program.py"
+    "${SRC_ROOT}/ortools/graph/samples/simple_min_cost_flow_program.py"
+    "${SRC_ROOT}/ortools/linear_solver/samples/simple_lp_program.py"
+    "${SRC_ROOT}/ortools/linear_solver/samples/simple_mip_program.py"
+    "${SRC_ROOT}/ortools/sat/samples/simple_sat_program.py"
     "${SRC_ROOT}/examples/python/tsp.py"
-    "${SRC_ROOT}/examples/python/pyflow_example.py"
-    "${SRC_ROOT}/examples/python/knapsack.py"
-    "${SRC_ROOT}/examples/python/linear_programming.py"
-    "${SRC_ROOT}/examples/python/integer_programming.py"
-    "${SRC_ROOT}/examples/tests/test_cp_api.py"
-    "${SRC_ROOT}/examples/tests/test_lp_api.py"
+    "${SRC_ROOT}/examples/python/vrp.py"
 )
 
 (
@@ -132,6 +133,9 @@ TESTS=(
 
 ###############################################################################
 # Main
+# Force the use of wheel 0.31.1 since 0.32 is broken
+# cf pypa/auditwheel#102
+#/opt/_internal/cpython-3.6.6/bin/python -m pip install wheel==0.31.1
 
 mkdir -p "${BUILD_ROOT}"
 mkdir -p "${EXPORT_ROOT}"
@@ -178,15 +182,28 @@ do
     ###
     ### Wheel test
     ###
-    WHEEL_FILE=$(echo "${EXPORT_ROOT}"/*-"${PYTAG}"-*.whl)
+
+    # Hack wheel file to rename it manylinux1 since manylinux2010 is still not
+    # supported by pip
+    FILE=(${EXPORT_ROOT}/*-${PYTAG}-*.whl)
+    unzip "$FILE" -d /tmp
+    sed -i 's/manylinux2010/manylinux1/' /tmp/ortools-*.dist-info/WHEEL
+    rm -f $FILE
+
+    WHEEL_FILE=${FILE//manylinux2010/manylinux1}
+    (cd /tmp; zip -r ${WHEEL_FILE} ortools ortools-*; rm -r ortools*)
+    echo "Wheel file: ${WHEEL_FILE}"
+
     # Create and activate a new virtualenv
     "${PYBIN}/virtualenv" -p "${PYBIN}/python" "${BUILD_ROOT}/${PYTAG}-test"
     # shellcheck source=/dev/null
     source "${BUILD_ROOT}/${PYTAG}-test/bin/activate"
     pip install -U pip setuptools wheel six
+
     # Install wheel and run tests
     pip install --no-cache-dir "$WHEEL_FILE"
     pip show ortools
+
     test_installed "${TESTS[@]}"
     # Restore environment
     deactivate

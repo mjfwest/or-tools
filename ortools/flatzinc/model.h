@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,11 +16,10 @@
 
 #include <map>
 #include <string>
-#include <unordered_map>
 
+#include "absl/container/flat_hash_map.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/graph/iterators.h"
 #include "ortools/util/string_array.h"
 
@@ -414,7 +413,7 @@ class ModelStatistics {
  private:
   const Model& model_;
   std::map<std::string, std::vector<Constraint*>> constraints_per_type_;
-  std::unordered_map<const IntegerVariable*, std::vector<Constraint*>>
+  absl::flat_hash_map<const IntegerVariable*, std::vector<Constraint*>>
       constraints_per_variables_;
 };
 }  // namespace fz

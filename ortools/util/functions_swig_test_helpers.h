@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -40,6 +40,10 @@ class FunctionSwigTestHelpers {
   static int64 NoOpInt64PairToInt64(std::function<int64(int64, int64)> fun,
                                     int64 x, int64 y) {
     return fun(x, y);
+  }
+
+  static int64 NoOpIntToInt64(std::function<int64(int)> fun, int x) {
+    return fun(x);
   }
 
   static int64 NoOpIntPairToInt64(std::function<int64(int, int)> fun, int x,

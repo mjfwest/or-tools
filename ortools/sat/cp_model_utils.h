@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include <unordered_set>
+#include "absl/container/flat_hash_set.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/sat/cp_model.pb.h"
@@ -47,9 +47,9 @@ inline int EnforcementLiteral(const ConstraintProto& ct) {
 //
 // TODO(user): replace this by constant version of the Apply...() functions?
 struct IndexReferences {
-  std::unordered_set<int> variables;
-  std::unordered_set<int> literals;
-  std::unordered_set<int> intervals;
+  absl::flat_hash_set<int> variables;
+  absl::flat_hash_set<int> literals;
+  absl::flat_hash_set<int> intervals;
 };
 void AddReferencesUsedByConstraint(const ConstraintProto& ct,
                                    IndexReferences* output);
@@ -81,31 +81,30 @@ bool DomainInProtoContains(const ProtoWithDomain& proto, int64 value) {
   return false;
 }
 
-// Sets the domain field of a proto from a sorted interval list.
+// Serializes a Domain into the domain field of a proto.
 template <typename ProtoWithDomain>
-void FillDomain(const std::vector<ClosedInterval>& domain,
-                ProtoWithDomain* proto) {
+void FillDomainInProto(const Domain& domain, ProtoWithDomain* proto) {
   proto->clear_domain();
-  CHECK(IntervalsAreSortedAndDisjoint(domain));
   for (const ClosedInterval& interval : domain) {
     proto->add_domain(interval.start);
     proto->add_domain(interval.end);
   }
 }
 
-// Extract a sorted interval list from the domain field of a proto.
+// Reads a Domain from the domain field of a proto.
 template <typename ProtoWithDomain>
-std::vector<ClosedInterval> ReadDomain(const ProtoWithDomain& proto) {
-  std::vector<ClosedInterval> result;
+Domain ReadDomainFromProto(const ProtoWithDomain& proto) {
+  std::vector<ClosedInterval> intervals;
   for (int i = 0; i < proto.domain_size(); i += 2) {
-    result.push_back({proto.domain(i), proto.domain(i + 1)});
+    intervals.push_back({proto.domain(i), proto.domain(i + 1)});
   }
-  CHECK(IntervalsAreSortedAndDisjoint(result));
-  return result;
+  return Domain::FromIntervals(intervals);
 }
 
 // Returns the list of values in a given domain.
 // This will fail if the domain contains more than one millions values.
+//
+// TODO(user): work directly on the Domain class instead.
 template <typename ProtoWithDomain>
 std::vector<int64> AllValuesInDomain(const ProtoWithDomain& proto) {
   std::vector<int64> result;
@@ -116,6 +115,13 @@ std::vector<int64> AllValuesInDomain(const ProtoWithDomain& proto) {
     }
   }
   return result;
+}
+
+// Scale back a objective value to a double value from the original model.
+inline double ScaleObjectiveValue(const CpObjectiveProto& proto, int64 value) {
+  double result = value + proto.offset();
+  if (proto.scaling_factor() == 0) return result;
+  return proto.scaling_factor() * result;
 }
 
 }  // namespace sat

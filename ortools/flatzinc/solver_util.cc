@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,15 +13,15 @@
 
 #include "ortools/flatzinc/solver_util.h"
 
-#include "ortools/base/join.h"
-#include "ortools/base/stringprintf.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "ortools/flatzinc/logging.h"
 
 namespace operations_research {
 namespace fz {
 
 void MarkComputedVariables(Constraint* ct,
-                           std::unordered_set<IntegerVariable*>* marked) {
+                           absl::flat_hash_set<IntegerVariable*>* marked) {
   const std::string& id = ct->type;
   if (id == "global_cardinality") {
     FZVLOG << "  - marking " << ct->DebugString() << FZENDL;

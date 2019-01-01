@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -12,10 +12,9 @@
 // limitations under the License.
 
 #include "ortools/sat/restart.h"
-#include "ortools/base/stringprintf.h"
 
-#include "ortools/base/split.h"
-#include "ortools/base/stringprintf.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_split.h"
 
 namespace operations_research {
 namespace sat {

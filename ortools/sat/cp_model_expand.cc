@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,7 +15,7 @@
 
 #include <map>
 
-#include <unordered_map>
+#include "absl/container/flat_hash_map.h"
 #include "ortools/base/hash.h"
 #include "ortools/base/map_util.h"
 #include "ortools/sat/cp_model.pb.h"
@@ -28,7 +28,7 @@ namespace {
 
 struct ExpansionHelper {
   CpModelProto expanded_proto;
-  std::unordered_map<std::pair<int, int>, int> precedence_cache;
+  absl::flat_hash_map<std::pair<int, int>, int> precedence_cache;
   std::map<std::string, int> statistics;
   static const int kAlwaysTrue = kint32min;
 

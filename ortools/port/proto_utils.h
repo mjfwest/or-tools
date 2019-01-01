@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -21,8 +21,7 @@
 #include "google/protobuf/text_format.h"
 #endif
 
-#include "ortools/base/join.h"
-#include "ortools/base/port.h"
+#include "absl/strings/str_cat.h"
 
 namespace operations_research {
 #if defined(__PORTABLE_PLATFORM__)
@@ -43,8 +42,8 @@ std::string ProtoEnumToString(ProtoEnumType enum_value) {
 
 template <typename ProtoType>
 bool ProtobufTextFormatMergeFromString(const std::string& proto_text_string
-                                           ATTRIBUTE_UNUSED,
-                                       ProtoType* proto ATTRIBUTE_UNUSED) {
+                                           ABSL_ATTRIBUTE_UNUSED,
+                                       ProtoType* proto ABSL_ATTRIBUTE_UNUSED) {
   return false;
 }
 

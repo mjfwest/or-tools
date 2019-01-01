@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -113,12 +113,25 @@ struct ObjectiveSynchronizationHelper {
   double scaling_factor = 1.0;
   double offset = 0.0;
   IntegerVariable objective_var = kNoIntegerVariable;
-  std::function<double()> get_external_bound = nullptr;
+  std::function<double()> get_external_best_objective = nullptr;
+  std::function<double()> get_external_best_bound = nullptr;
+  bool broadcast_lower_bound = false;
 
   int64 UnscaledObjective(double value) const {
     return static_cast<int64>(std::round(value / scaling_factor - offset));
   }
 };
+
+// Callbacks that be called when the search goes back to level 0.
+// Callbacks should return false if the propagation fails.
+struct LevelZeroCallbackHelper {
+  std::vector<std::function<bool()>> callbacks;
+};
+
+// Prints out a new solution in a fixed format.
+void LogNewSolution(const std::string& event_or_solution_count,
+                    double time_in_seconds, double obj_lb, double obj_ub,
+                    const std::string& solution_info);
 
 }  // namespace sat
 }  // namespace operations_research

@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,12 +15,12 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/str_format.h"
 #include "ortools/base/hash.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/string_array.h"
@@ -62,8 +62,8 @@ class Diffn : public Constraint {
     delayed_demon_ = MakeDelayedConstraintDemon0(s, this, &Diffn::PropagateAll,
                                                  "PropagateAll");
     if (solver()->parameters().diffn_use_cumulative() &&
-        IsArrayInRange(x_, 0LL, kint64max) &&
-        IsArrayInRange(y_, 0LL, kint64max)) {
+        IsArrayInRange<int64>(x_, 0, kint64max) &&
+        IsArrayInRange<int64>(y_, 0, kint64max)) {
       Constraint* ct1 = nullptr;
       Constraint* ct2 = nullptr;
       {
@@ -116,11 +116,10 @@ class Diffn : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("Diffn(x = [%s], y = [%s], dx = [%s], dy = [%s]))",
-                        JoinDebugStringPtr(x_, ", ").c_str(),
-                        JoinDebugStringPtr(y_, ", ").c_str(),
-                        JoinDebugStringPtr(dx_, ", ").c_str(),
-                        JoinDebugStringPtr(dy_, ", ").c_str());
+    return absl::StrFormat(
+        "Diffn(x = [%s], y = [%s], dx = [%s], dy = [%s]))",
+        JoinDebugStringPtr(x_, ", "), JoinDebugStringPtr(y_, ", "),
+        JoinDebugStringPtr(dx_, ", "), JoinDebugStringPtr(dy_, ", "));
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -267,7 +266,9 @@ class Diffn : public Constraint {
         dy_[other]->SetMax(y_[box]->Max() - y_[other]->Min());
         break;
       }
-      default: { break; }
+      default: {
+        break;
+      }
     }
   }
 
@@ -288,7 +289,7 @@ class Diffn : public Constraint {
   const bool strict_;
   const int64 size_;
   Demon* delayed_demon_;
-  std::unordered_set<int> to_propagate_;
+  absl::flat_hash_set<int> to_propagate_;
   std::vector<int> neighbors_;
   uint64 fail_stamp_;
 };

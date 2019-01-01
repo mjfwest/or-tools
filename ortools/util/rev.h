@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,9 +15,9 @@
 #ifndef OR_TOOLS_UTIL_REV_H_
 #define OR_TOOLS_UTIL_REV_H_
 
-#include <unordered_map>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/map_util.h"
 
@@ -220,7 +220,7 @@ class RevGrowingMultiMap : ReversibleInterface {
   // TODO(user): use inlined vectors. Another datastructure that may be more
   // efficient is to use a linked list inside added_keys_ for the values sharing
   // the same key.
-  std::unordered_map<Key, std::vector<Value>> map_;
+  absl::flat_hash_map<Key, std::vector<Value>> map_;
 
   // Backtracking data.
   std::vector<Key> added_keys_;

@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -231,6 +231,9 @@ std::function<void(Model*)> CumulativeTimeDecomposition(
       sat_solver->AddLinearConstraint(false, Coefficient(0), true,
                                       Coefficient(capacity.value()),
                                       &literals_with_coeff);
+
+      // Abort if UNSAT.
+      if (sat_solver->IsModelUnsat()) return;
     }
   };
 }

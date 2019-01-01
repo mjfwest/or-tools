@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -77,6 +77,7 @@ class IntegerSumLE : public PropagatorInterface {
   RevIntegerValueRepository* rev_integer_value_repository_;
 
   // Reversible sum of the lower bound of the fixed variables.
+  bool is_registered_ = false;
   IntegerValue rev_lb_fixed_vars_;
 
   // Reversible number of fixed variables.
@@ -89,8 +90,10 @@ class IntegerSumLE : public PropagatorInterface {
   std::vector<IntegerValue> coeffs_;
 
   std::vector<Literal> literal_reason_;
+
+  // Parallel vectors.
   std::vector<IntegerLiteral> integer_reason_;
-  std::vector<int> index_in_integer_reason_;
+  std::vector<IntegerValue> reason_coeffs_;
 
   DISALLOW_COPY_AND_ASSIGN(IntegerSumLE);
 };

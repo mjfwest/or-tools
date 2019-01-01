@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Google
+// Copyright 2010-2018 Google LLC
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,12 +15,12 @@
 
 %include "enumsimple.swg"
 %include "exception.i"
+%include "stdint.i"
 
 %include "ortools/base/base.i"
 %include "ortools/util/java/tuple_set.i"
 %include "ortools/util/java/vector.i"
 %include "ortools/util/java/functions.i"
-
 %include "ortools/util/java/proto.i"
 
 // Remove swig warnings
@@ -51,6 +51,9 @@ struct FailureProtect {
   void JumpBack() { longjmp(exception_buffer, 1); }
 };
 %}
+
+typedef int64_t int64;
+typedef uint64_t uint64;
 
 // ############ BEGIN DUPLICATED CODE BLOCK ############
 // IMPORTANT: keep this code block in sync with the .i
@@ -222,7 +225,7 @@ class SolverToVoid {
 %rename (empty) operations_research::AssignmentContainer::Empty;
 %rename (copy) operations_research::AssignmentContainer::Copy;
 %rename (contains) operations_research::AssignmentContainer::Contains;
-%rename (MutableElement) operations_research::AssignmentContainer::MutableElement;
+%rename (mutableElement) operations_research::AssignmentContainer::MutableElement;
 // No MutableElementOrNull
 %rename (element) operations_research::AssignmentContainer::Element;
 // No ElementPtrOrNull
@@ -350,7 +353,7 @@ class SolverToVoid {
 %rename (makeLess) operations_research::Solver::MakeLess;
 %rename (makeLessOrEqual) operations_research::Solver::MakeLessOrEqual;
 %rename (makeLimit) operations_research::Solver::MakeLimit;
-%rename (makeLocalSearchObjectiveFilter) operations_research::Solver::MakeLocalSearchObjectiveFilter;
+%rename (makeSumObjectiveFilter) operations_research::Solver::MakeSumObjectiveFilter;
 %rename (makeLocalSearchPhase) operations_research::Solver::MakeLocalSearchPhase;
 %rename (makeLocalSearchPhaseParameters) operations_research::Solver::MakeLocalSearchPhaseParameters;
 %rename (makeLubyRestart) operations_research::Solver::MakeLubyRestart;
@@ -570,73 +573,19 @@ class SolverToVoid {
 
 namespace operations_research {
 
-// Typemaps to represent const std::vector<CType*>& arguments as arrays of
-// JavaType, where CType is not a primitive type.
-// TODO(user): See if it makes sense to move this
-// ortools/util/vector.i.
-
-// CastOp defines how to cast the output of CallStaticLongMethod to CType*;
-// its first argument is CType, its second is the output of
-// CallStaticLongMethod.
-%define CONVERT_VECTOR_WITH_CAST(CType, JavaType, CastOp)
-%typemap(jni) const std::vector<CType*>& "jobjectArray"
-%typemap(jtype) const std::vector<CType*>& "JavaType[]"
-%typemap(jstype) const std::vector<CType*>& "JavaType[]"
-%typemap(javain) const std::vector<CType*>& "$javainput"
-%typemap(in) const std::vector<CType*>& (std::vector<CType*> result) {
-  jclass object_class =
-    jenv->FindClass("com/google/ortools/"
-                    "constraintsolver/JavaType");
-  if (nullptr == object_class)
-    return $null;
-  jmethodID method_id =
-      jenv->GetStaticMethodID(object_class,
-                              "getCPtr",
-                              "(Lcom/google/ortools/"
-                              "constraintsolver/JavaType;)J");
-  assert(method_id != nullptr);
-  for (int i = 0; i < jenv->GetArrayLength($input); i++) {
-    jobject elem = jenv->GetObjectArrayElement($input, i);
-    jlong ptr_value = jenv->CallStaticLongMethod(object_class, method_id, elem);
-    result.push_back(CastOp(CType, ptr_value));
-  }
-  $1 = &result;
-}
-%typemap(out) const std::vector<CType*>& {
-  jclass object_class =
-      jenv->FindClass("com/google/ortools/constraintsolver/JavaType");
-  $result = jenv->NewObjectArray($1->size(), object_class, 0);
-  if (nullptr != object_class) {
-    jmethodID ctor = jenv->GetMethodID(object_class,"<init>", "(JZ)V");
-    for (int i = 0; i < $1->size(); ++i) {
-      jlong obj_ptr = 0;
-      *((operations_research::CType **)&obj_ptr) = (*$1)[i];
-      jobject elem = jenv->NewObject(object_class, ctor, obj_ptr, false);
-      jenv->SetObjectArrayElement($result, i, elem);
-    }
-  }
-}
-%typemap(javaout) const std::vector<CType*> & {
-  return $jnicall;
-}
-%enddef
-
-%define REINTERPRET_CAST(CType, ptr)
-reinterpret_cast<operations_research::CType*>(ptr)
-%enddef
-
 %define CONVERT_VECTOR(CType, JavaType)
-CONVERT_VECTOR_WITH_CAST(CType, JavaType, REINTERPRET_CAST);
+CONVERT_VECTOR_WITH_CAST(CType, JavaType, REINTERPRET_CAST,
+    com/google/ortools/constraintsolver);
 %enddef
 
-CONVERT_VECTOR(IntVar, IntVar);
-CONVERT_VECTOR(SearchMonitor, SearchMonitor);
-CONVERT_VECTOR(DecisionBuilder, DecisionBuilder);
-CONVERT_VECTOR(IntervalVar, IntervalVar);
-CONVERT_VECTOR(SequenceVar, SequenceVar);
-CONVERT_VECTOR(LocalSearchOperator, LocalSearchOperator);
-CONVERT_VECTOR(LocalSearchFilter, LocalSearchFilter);
-CONVERT_VECTOR(SymmetryBreaker, SymmetryBreaker);
+CONVERT_VECTOR(operations_research::IntVar, IntVar);
+CONVERT_VECTOR(operations_research::SearchMonitor, SearchMonitor);
+CONVERT_VECTOR(operations_research::DecisionBuilder, DecisionBuilder);
+CONVERT_VECTOR(operations_research::IntervalVar, IntervalVar);
+CONVERT_VECTOR(operations_research::SequenceVar, SequenceVar);
+CONVERT_VECTOR(operations_research::LocalSearchOperator, LocalSearchOperator);
+CONVERT_VECTOR(operations_research::LocalSearchFilter, LocalSearchFilter);
+CONVERT_VECTOR(operations_research::SymmetryBreaker, SymmetryBreaker);
 
 %typemap(javacode) Solver %{
   /**
@@ -742,6 +691,10 @@ WRAP_STD_FUNCTION_JAVA(
     "com/google/ortools/constraintsolver/",
     int64, Long, int64, int64)
 WRAP_STD_FUNCTION_JAVA(
+    IntToLong,
+    "com/google/ortools/constraintsolver/",
+    int64, Long, int)
+WRAP_STD_FUNCTION_JAVA(
     IntIntToLong,
     "com/google/ortools/constraintsolver/",
     int64, Long, int, int)
@@ -801,5 +754,7 @@ namespace operations_research {
 %template(RevInteger) Rev<int>;
 %template(RevLong) Rev<int64>;
 %template(RevBool) Rev<bool>;
-%template(AssignmentIntContainer) AssignmentContainer<IntVar, IntVarElement>;
+%template(IntContainer) AssignmentContainer<IntVar, IntVarElement>;
+%template(IntervalContainer) AssignmentContainer<IntervalVar, IntervalVarElement>;
+%template(SequenceContainer) AssignmentContainer<SequenceVar,SequenceVarElement>;
 }  // namespace operations_research
