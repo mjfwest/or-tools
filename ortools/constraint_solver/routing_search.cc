@@ -99,18 +99,18 @@ class NodeDisjunctionFilter : public RoutingLocalSearchFilter {
               !IsVarSynced(index) || (Value(index) == index) != is_inactive;
           if (active_state_changed) {
             if (!is_inactive) {
-              ++LookupOrInsert(&disjunction_active_deltas, disjunction_index,
-                               0);
+              ++gtl::LookupOrInsert(&disjunction_active_deltas,
+                                    disjunction_index, 0);
               if (IsVarSynced(index)) {
-                --LookupOrInsert(&disjunction_inactive_deltas,
-                                 disjunction_index, 0);
+                --gtl::LookupOrInsert(&disjunction_inactive_deltas,
+                                      disjunction_index, 0);
               }
             } else {
-              ++LookupOrInsert(&disjunction_inactive_deltas, disjunction_index,
-                               0);
+              ++gtl::LookupOrInsert(&disjunction_inactive_deltas,
+                                    disjunction_index, 0);
               if (IsVarSynced(index)) {
-                --LookupOrInsert(&disjunction_active_deltas, disjunction_index,
-                                 0);
+                --gtl::LookupOrInsert(&disjunction_active_deltas,
+                                      disjunction_index, 0);
               }
             }
           }
@@ -218,8 +218,8 @@ class NodeDisjunctionFilter : public RoutingLocalSearchFilter {
 
   const RoutingModel& routing_model_;
 
-  ITIVector<RoutingModel::DisjunctionIndex, int> active_per_disjunction_;
-  ITIVector<RoutingModel::DisjunctionIndex, int> inactive_per_disjunction_;
+  gtl::ITIVector<RoutingModel::DisjunctionIndex, int> active_per_disjunction_;
+  gtl::ITIVector<RoutingModel::DisjunctionIndex, int> inactive_per_disjunction_;
   int64 penalty_value_;
 };
 }  // namespace
@@ -1058,12 +1058,13 @@ bool PathCumulFilter::FinalizeAcceptPath() {
       // Delta max end is lower than the current solution one.
       // If the path supporting the current max end has been modified, we need
       // to check all paths to find the largest max end.
-      if (!ContainsKey(delta_paths_, current_max_end_.cumul_value_support)) {
+      if (!gtl::ContainsKey(delta_paths_,
+                            current_max_end_.cumul_value_support)) {
         new_max_end = current_max_end_.cumul_value;
       } else {
         for (int i = 0; i < current_max_end_.path_values.size(); ++i) {
           if (current_max_end_.path_values[i] > new_max_end &&
-              !ContainsKey(delta_paths_, i)) {
+              !gtl::ContainsKey(delta_paths_, i)) {
             new_max_end = current_max_end_.path_values[i];
           }
         }
@@ -1079,7 +1080,7 @@ bool PathCumulFilter::FinalizeAcceptPath() {
     }
     if (new_max_end != current_max_end_.cumul_value) {
       for (int r = 0; r < NumPaths(); ++r) {
-        if (ContainsKey(delta_paths_, r)) {
+        if (gtl::ContainsKey(delta_paths_, r)) {
           continue;
         }
         new_min_start = std::min(new_min_start,
@@ -1090,12 +1091,13 @@ bool PathCumulFilter::FinalizeAcceptPath() {
       // Delta min start is greater than the current solution one.
       // If the path supporting the current min start has been modified, we need
       // to check all paths to find the smallest min start.
-      if (!ContainsKey(delta_paths_, current_min_start_.cumul_value_support)) {
+      if (!gtl::ContainsKey(delta_paths_,
+                            current_min_start_.cumul_value_support)) {
         new_min_start = current_min_start_.cumul_value;
       } else {
         for (int i = 0; i < current_min_start_.path_values.size(); ++i) {
           if (current_min_start_.path_values[i] < new_min_start &&
-              !ContainsKey(delta_paths_, i)) {
+              !gtl::ContainsKey(delta_paths_, i)) {
             new_min_start = current_min_start_.path_values[i];
           }
         }
@@ -1909,7 +1911,7 @@ void GlobalCheapestInsertionFilteredDecisionBuilder::UpdatePickupPositions(
       while (!model()->IsEnd(delivery_insert_after)) {
         const std::pair<Pair, int64> insertion = {{pickup, delivery},
                                                   delivery_insert_after};
-        if (!ContainsKey(existing_insertions, insertion)) {
+        if (!gtl::ContainsKey(existing_insertions, insertion)) {
           PairEntry* const entry =
               new PairEntry(pickup, pickup_insert_after, delivery,
                             delivery_insert_after, vehicle);
@@ -2009,7 +2011,7 @@ void GlobalCheapestInsertionFilteredDecisionBuilder::UpdateDeliveryPositions(
       while (pickup_insert_after != delivery_insert_after) {
         std::pair<Pair, int64> insertion = {{pickup, delivery},
                                             pickup_insert_after};
-        if (!ContainsKey(existing_insertions, insertion)) {
+        if (!gtl::ContainsKey(existing_insertions, insertion)) {
           PairEntry* const entry =
               new PairEntry(pickup, pickup_insert_after, delivery,
                             delivery_insert_after, vehicle);

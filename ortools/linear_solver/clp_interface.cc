@@ -14,19 +14,20 @@
 //
 
 #include <algorithm>
-#include <unordered_map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/timer.h"
-#include "ortools/base/strutil.h"
+#include "ortools/base/memory.h"
 #include "ortools/base/port.h"
-#include "ortools/base/hash.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/base/strutil.h"
+#include "ortools/base/timer.h"
 #include "ortools/linear_solver/linear_solver.h"
 
 #if defined(USE_CLP) || defined(USE_CBC)
@@ -77,7 +78,7 @@ class CLPInterface : public MPSolverInterface {
   void SetObjectiveCoefficient(const MPVariable* const variable,
                                double coefficient) override;
   // Change the constant term in the linear objective.
-  void SetObjectiveOffset(double value) override;
+  void SetObjectiveOffset(double offset) override;
   // Clear the objective from all its terms.
   void ClearObjective() override;
 
@@ -148,7 +149,7 @@ CLPInterface::CLPInterface(MPSolver* const solver)
 CLPInterface::~CLPInterface() {}
 
 void CLPInterface::Reset() {
-  clp_.reset(new ClpSimplex);
+  clp_ = absl::make_unique<ClpSimplex>();
   clp_->setOptimizationDirection(maximize_ ? -1 : 1);
   ResetExtractionInformation();
 }
@@ -217,7 +218,7 @@ void CLPInterface::ClearConstraint(MPConstraint* const constraint) {
   InvalidateSolutionSynchronization();
   // Constraint may not have been extracted yet.
   if (!constraint_is_extracted(constraint->index())) return;
-  for (CoeffEntry entry : constraint->coefficients_) {
+  for (const auto& entry : constraint->coefficients_) {
     DCHECK(variable_is_extracted(entry.first->index()));
     clp_->modifyCoefficient(constraint->index(),
                             MPSolverVarIndexToClpVarIndex(entry.first->index()),
@@ -249,7 +250,7 @@ void CLPInterface::SetObjectiveOffset(double offset) {
 void CLPInterface::ClearObjective() {
   InvalidateSolutionSynchronization();
   // Clear linear terms
-  for (CoeffEntry entry : solver_->objective_->coefficients_) {
+  for (const auto& entry : solver_->objective_->coefficients_) {
     const int mpsolver_var_index = entry.first->index();
     // Variable may have not been extracted yet.
     if (!variable_is_extracted(mpsolver_var_index)) {
@@ -275,8 +276,8 @@ void CLPInterface::CreateDummyVariableForEmptyConstraints() {
   clp_->setColumnBounds(kDummyVariableIndex, 0.0, 0.0);
   clp_->setObjectiveCoefficient(kDummyVariableIndex, 0.0);
   // Workaround for peculiar signature of setColumnName. Note that we do need
-  // std::string here, and not 'std::string', which aren't the same as of 2013-12
-  // (this will change later).
+  // std::string here, and not 'std::string', which aren't the same as of
+  // 2013-12 (this will change later).
   std::string dummy = "dummy";  // We do need to create this temporary variable.
   clp_->setColumnName(kDummyVariableIndex, dummy);
 }
@@ -323,7 +324,7 @@ void CLPInterface::ExtractNewVariables() {
       for (int i = 0; i < last_constraint_index_; i++) {
         MPConstraint* const ct = solver_->constraints_[i];
         const int ct_index = ct->index();
-        for (CoeffEntry entry : ct->coefficients_) {
+        for (const auto& entry : ct->coefficients_) {
           const int mpsolver_var_index = entry.first->index();
           DCHECK(variable_is_extracted(mpsolver_var_index));
           if (mpsolver_var_index >= last_variable_index_) {
@@ -368,7 +369,7 @@ void CLPInterface::ExtractNewConstraints() {
         size = 1;
       }
       int j = 0;
-      for (CoeffEntry entry : ct->coefficients_) {
+      for (const auto& entry : ct->coefficients_) {
         const int mpsolver_var_index = entry.first->index();
         DCHECK(variable_is_extracted(mpsolver_var_index));
         indices[j] = MPSolverVarIndexToClpVarIndex(mpsolver_var_index);
@@ -392,7 +393,7 @@ void CLPInterface::ExtractNewConstraints() {
 void CLPInterface::ExtractObjective() {
   // Linear objective: set objective coefficients for all variables
   // (some might have been modified)
-  for (CoeffEntry entry : solver_->objective_->coefficients_) {
+  for (const auto& entry : solver_->objective_->coefficients_) {
     clp_->setObjectiveCoefficient(
         MPSolverVarIndexToClpVarIndex(entry.first->index()), entry.second);
   }
@@ -434,7 +435,7 @@ MPSolver::ResultStatus CLPInterface::Solve(const MPSolverParameters& param) {
     }
 
     ExtractModel();
-    VLOG(1) << StringPrintf("Model built in %.3f seconds.", timer.Get());
+    VLOG(1) << absl::StrFormat("Model built in %.3f seconds.", timer.Get());
 
     // Time limit.
     if (solver_->time_limit() != 0) {
@@ -446,13 +447,13 @@ MPSolver::ResultStatus CLPInterface::Solve(const MPSolverParameters& param) {
 
     // Start from a fresh set of default parameters and set them to
     // specified values.
-    options_.reset(new ClpSolve);
+    options_ = absl::make_unique<ClpSolve>();
     SetParameters(param);
 
     // Solve
     timer.Restart();
     clp_->initialSolve(*options_);
-    VLOG(1) << StringPrintf("Solved in %.3f seconds.", timer.Get());
+    VLOG(1) << absl::StrFormat("Solved in %.3f seconds.", timer.Get());
 
     // Check the status: optimal, infeasible, etc.
     int tmp_status = clp_->status();
@@ -634,7 +635,6 @@ void CLPInterface::SetLpAlgorithm(int value) {
 MPSolverInterface* BuildCLPInterface(MPSolver* const solver) {
   return new CLPInterface(solver);
 }
-
 
 }  // namespace operations_research
 #endif  // #if defined(USE_CBC) || defined(USE_CLP)

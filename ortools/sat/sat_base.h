@@ -22,14 +22,14 @@
 #include <string>
 #include <vector>
 
+#include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/base/port.h"
 #include "ortools/base/span.h"
-#include "ortools/base/int_type.h"
-#include "ortools/base/int_type_indexed_vector.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/sat/model.h"
 #include "ortools/util/bitset.h"
 
@@ -91,7 +91,9 @@ class Literal {
 
   Literal Negated() const { return Literal(NegatedIndex()); }
 
-  std::string DebugString() const { return StringPrintf("%+d", SignedValue()); }
+  std::string DebugString() const {
+    return absl::StrFormat("%+d", SignedValue());
+  }
   bool operator==(Literal other) const { return index_ == other.index_; }
   bool operator!=(Literal other) const { return index_ != other.index_; }
 
@@ -105,6 +107,14 @@ class Literal {
 
 inline std::ostream& operator<<(std::ostream& os, Literal literal) {
   os << literal.DebugString();
+  return os;
+}
+
+inline std::ostream& operator<<(std::ostream& os,
+                                absl::Span<Literal> literals) {
+  for (const Literal literal : literals) {
+    os << literal.DebugString() << ",";
+  }
   return os;
 }
 
@@ -200,8 +210,8 @@ struct AssignmentInfo {
   int32 trail_index;
 
   std::string DebugString() const {
-    return StringPrintf("level:%d type:%d trail_index:%d", level, type,
-                        trail_index);
+    return absl::StrFormat("level:%d type:%d trail_index:%d", level, type,
+                           trail_index);
   }
 };
 COMPILE_ASSERT(sizeof(AssignmentInfo) == 8,
@@ -389,11 +399,11 @@ class Trail {
   VariablesAssignment assignment_;
   std::vector<Literal> trail_;
   std::vector<Literal> conflict_;
-  ITIVector<BooleanVariable, AssignmentInfo> info_;
+  gtl::ITIVector<BooleanVariable, AssignmentInfo> info_;
   SatClause* failing_sat_clause_;
 
   // Data used by EnqueueWithSameReasonAs().
-  ITIVector<BooleanVariable, BooleanVariable>
+  gtl::ITIVector<BooleanVariable, BooleanVariable>
       reference_var_with_same_reason_as_;
 
   // Reason cache. Mutable since we want the API to be the same whether the
@@ -420,8 +430,8 @@ class Trail {
   // variables, the memory address of the vectors (kept in reasons_) are still
   // valid.
   mutable std::deque<std::vector<Literal>> reasons_repository_;
-  mutable ITIVector<BooleanVariable, absl::Span<Literal>> reasons_;
-  mutable ITIVector<BooleanVariable, int> old_type_;
+  mutable gtl::ITIVector<BooleanVariable, absl::Span<Literal>> reasons_;
+  mutable gtl::ITIVector<BooleanVariable, int> old_type_;
 
   // This is used by RegisterPropagator() and Reason().
   std::vector<SatPropagator*> propagators_;
@@ -475,7 +485,7 @@ class SatPropagator {
   // can use trail_.GetEmptyVectorToStoreReason() if it doesn't have a memory
   // location that already contains the reason.
   virtual absl::Span<Literal> Reason(const Trail& trail,
-                                           int trail_index) const {
+                                     int trail_index) const {
     LOG(FATAL) << "Not implemented.";
     return {};
   }

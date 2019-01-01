@@ -15,10 +15,9 @@
 
 #include <algorithm>
 
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
 #include "ortools/base/join.h"
 #include "ortools/base/murmur.h"
+#include "ortools/base/stringprintf.h"
 
 namespace operations_research {
 
@@ -114,8 +113,8 @@ void DynamicPartition::Refine(const std::vector<int>& distinguished_subset) {
     const int old_index = index_of_[element];
     const int new_index =
         part_[part].end_index - num_distinguished_elements_in_part;
-    DCHECK_GE(new_index, old_index) << "Duplicate element given to Refine(): "
-                                    << element;
+    DCHECK_GE(new_index, old_index)
+        << "Duplicate element given to Refine(): " << element;
     // Perform the swap, keeping index_of_ up to date.
     index_of_[element] = new_index;
     index_of_[element_[new_index]] = old_index;
@@ -184,7 +183,7 @@ void DynamicPartition::UndoRefineUntilNumPartsEqual(int original_num_parts) {
 
 std::string DynamicPartition::DebugString(DebugStringSorting sorting) const {
   if (sorting != SORT_LEXICOGRAPHICALLY && sorting != SORT_BY_PART) {
-    return StringPrintf("Unsupported sorting: %d", sorting);
+    return absl::StrFormat("Unsupported sorting: %d", sorting);
   }
   std::vector<std::vector<int>> parts;
   for (int i = 0; i < NumParts(); ++i) {

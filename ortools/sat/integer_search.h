@@ -38,6 +38,19 @@ std::function<LiteralIndex()> FirstUnassignedVarAtItsMinHeuristic(
 std::function<LiteralIndex()> UnassignedVarWithLowestMinAtItsMinHeuristic(
     const std::vector<IntegerVariable>& vars, Model* model);
 
+// Set the first unassigned Literal/Variable to its value.
+//
+// TODO(user): This is currently quadratic as we scan all variables to find the
+// first unassigned one. Fix. Note that this is also the case in many other
+// heuristics and should be fixed.
+struct BooleanOrIntegerVariable {
+  BooleanVariable bool_var = kNoBooleanVariable;
+  IntegerVariable int_var = kNoIntegerVariable;
+};
+std::function<LiteralIndex()> FollowHint(
+    const std::vector<BooleanOrIntegerVariable>& vars,
+    const std::vector<IntegerValue>& values, Model* model);
+
 // Combines search heuristics in order: if the i-th one returns kNoLiteralIndex,
 // ask the (i+1)-th. If every heuristic returned kNoLiteralIndex,
 // returns kNoLiteralIndex.
@@ -52,9 +65,6 @@ std::function<LiteralIndex()> SatSolverHeuristic(Model* model);
 // solver will check if this integer LP solution satisfy all the constraints.
 std::function<LiteralIndex()> ExploitIntegerLpSolution(
     std::function<LiteralIndex()> heuristic, Model* model);
-
-// Always returns kNoLiteralIndex. Useful for compositions.
-std::function<LiteralIndex()> NullSearch();
 
 // A restart policy that restarts every k failures.
 std::function<bool()> RestartEveryKFailures(int k, SatSolver* solver);
@@ -86,16 +96,29 @@ SatSolver::Status SolveIntegerProblemWithLazyEncoding(
     const std::vector<Literal>& assumptions,
     const std::function<LiteralIndex()>& next_decision, Model* model);
 
-// Shortcut for SolveIntegerProblemWithLazyEncoding() when there is no
-// assumption and we consider all variables in their index order for the next
-// search decision.
-SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model);
-
 // Solves a problem with the given heuristics.
 // heuristics[i] will be used with restart_policies[i] only.
 SatSolver::Status SolveProblemWithPortfolioSearch(
     std::vector<std::function<LiteralIndex()>> decision_policies,
     std::vector<std::function<bool()>> restart_policies, Model* model);
+
+// Shortcut for SolveIntegerProblemWithLazyEncoding() when there is no
+// assumption and we consider all variables in their index order for the next
+// search decision.
+SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model);
+
+// Store relationship between the CpSolverResponse objective and the internal
+// IntegerVariable the solver tries to minimize.
+struct ObjectiveSynchronizationHelper {
+  double scaling_factor = 1.0;
+  double offset = 0.0;
+  IntegerVariable objective_var = kNoIntegerVariable;
+  std::function<double()> get_external_bound = nullptr;
+
+  int64 UnscaledObjective(double value) const {
+    return static_cast<int64>(std::round(value / scaling_factor - offset));
+  }
+};
 
 }  // namespace sat
 }  // namespace operations_research

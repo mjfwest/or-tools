@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // Solves a Linear Programing problem using the Revised Simplex algorithm
 // as described by G.B. Dantzig.
 // The general form is:
@@ -165,8 +164,7 @@ class RevisedSimplex {
   // and try to use the previously computed solution as a warm-start. To disable
   // this behavior or give explicit warm-start data, use one of the State*()
   // functions below.
-  Status Solve(const LinearProgram& linear_program,
-               TimeLimit* time_limit) MUST_USE_RESULT;
+  Status Solve(const LinearProgram& lp, TimeLimit* time_limit) MUST_USE_RESULT;
 
   // Do not use the current solution as a warm-start for the next Solve(). The
   // next Solve() will behave as if the class just got created.
@@ -234,6 +232,11 @@ class RevisedSimplex {
   // TODO(user): Use row scales as well.
   RowMajorSparseMatrix ComputeDictionary(const DenseRow* column_scales);
 
+  // Initializes the matrix for the given 'linear_program' and 'state' and
+  // computes the variable values for basic variables using non-basic variables.
+  void ComputeBasicVariablesForState(const LinearProgram& linear_program,
+                                     const BasisState& state);
+
  private:
   // Propagates parameters_ to all the other classes that need it.
   //
@@ -242,8 +245,8 @@ class RevisedSimplex {
   // contructor though.
   void PropagateParameters();
 
-  // Returns a std::string containing the same information as with GetSolverStats,
-  // but in a much more human-readable format. For example:
+  // Returns a std::string containing the same information as with
+  // GetSolverStats, but in a much more human-readable format. For example:
   //     Problem status                               : Optimal
   //     Solving time                                 : 1.843
   //     Number of iterations                         : 12345
@@ -260,7 +263,8 @@ class RevisedSimplex {
   // corresponding to column col.
   std::string SimpleVariableInfo(ColIndex col) const;
 
-  // Displays a short std::string with the current iteration and objective value.
+  // Displays a short std::string with the current iteration and objective
+  // value.
   void DisplayIterationInfo() const;
 
   // Displays the error bounds of the current solution.
@@ -408,17 +412,10 @@ class RevisedSimplex {
   void ComputeDirection(ColIndex col);
 
   // Computes a - B.d in error_ and return the maximum std::abs() of its coeffs.
-  // TODO(user): Use this to trigger a refactorization of B? Or to track the
-  // error created by calls to SkipVariableForRatioTest()?
   Fractional ComputeDirectionError(ColIndex col);
 
-  // Marks the corresponding basic variable so that it will not take part in the
-  // ratio test and will never be chosen as a leaving variable. This is used
-  // to avoid degenerate pivots.
-  void SkipVariableForRatioTest(RowIndex row);
-
   // Computes the ratio of the basic variable corresponding to 'row'. A target
-  // bound (upper or lower) is choosen depending on the sign of the entering
+  // bound (upper or lower) is chosen depending on the sign of the entering
   // reduced cost and the sign of the direction 'd_[row]'. The ratio is such
   // that adding 'ratio * d_[row]' to the variable value changes it to its
   // target bound.
@@ -469,9 +466,9 @@ class RevisedSimplex {
   //   along this dual edge.
   // - target_bound: the bound at which the leaving variable should go when
   //   leaving the basis.
-  Status DualChooseLeavingVariableRow(
-      RowIndex* leaving_row, Fractional* cost_variation,
-      Fractional* target_bound) MUST_USE_RESULT;
+  Status DualChooseLeavingVariableRow(RowIndex* leaving_row,
+                                      Fractional* cost_variation,
+                                      Fractional* target_bound) MUST_USE_RESULT;
 
   // Updates the prices used by DualChooseLeavingVariableRow() after a simplex
   // iteration by using direction_. The prices are stored in
@@ -667,11 +664,6 @@ class RevisedSimplex {
   ScatteredColumn direction_;
   Fractional direction_infinity_norm_;
 
-  // Subpart of direction_ that was ignored during the ratio test. This is only
-  // used for degenerate problem. See SkipVariableForRatioTest() for more
-  // details.
-  SparseColumn direction_ignored_position_;
-
   // Used to compute the error 'b - A.x' or 'a - B.d'.
   DenseColumn error_;
 
@@ -809,8 +801,8 @@ class RevisedSimplexDictionary {
   RevisedSimplexDictionary(const DenseRow* col_scales,
                            RevisedSimplex* revised_simplex)
       : dictionary_(
-            CHECK_NOTNULL(revised_simplex)->ComputeDictionary(col_scales)),
-        basis_vars_(CHECK_NOTNULL(revised_simplex)->GetBasisVector()) {}
+            ABSL_DIE_IF_NULL(revised_simplex)->ComputeDictionary(col_scales)),
+        basis_vars_(ABSL_DIE_IF_NULL(revised_simplex)->GetBasisVector()) {}
 
   ConstIterator begin() const { return dictionary_.begin(); }
   ConstIterator end() const { return dictionary_.end(); }

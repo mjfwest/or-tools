@@ -14,16 +14,14 @@
 #include "ortools/sat/table.h"
 
 #include <algorithm>
-#include <unordered_map>
-#include <unordered_set>
 #include <memory>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
-#include "ortools/base/logging.h"
 #include "ortools/base/int_type.h"
+#include "ortools/base/logging.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/sat/sat_solver.h"
@@ -52,7 +50,7 @@ std::vector<std::vector<int64>> Transpose(
 
 // Converts the vector representation returned by FullDomainEncoding() to a map.
 std::unordered_map<IntegerValue, Literal> GetEncoding(IntegerVariable var,
-                                                       Model* model) {
+                                                      Model* model) {
   std::unordered_map<IntegerValue, Literal> encoding;
   IntegerEncoder* encoder = model->GetOrCreate<IntegerEncoder>();
   for (const auto& entry : encoder->FullDomainEncoding(var)) {
@@ -79,10 +77,10 @@ void FilterValues(IntegerVariable var, Model* model,
 // controling if the lines are possible or not. The column has the given values,
 // and the Literal of the column variable can be retrieved using the encoding
 // map.
-void ProcessOneColumn(
-    const std::vector<Literal>& line_literals,
-    const std::vector<IntegerValue>& values,
-    const std::unordered_map<IntegerValue, Literal>& encoding, Model* model) {
+void ProcessOneColumn(const std::vector<Literal>& line_literals,
+                      const std::vector<IntegerValue>& values,
+                      const std::unordered_map<IntegerValue, Literal>& encoding,
+                      Model* model) {
   CHECK_EQ(line_literals.size(), values.size());
   std::unordered_map<IntegerValue, std::vector<Literal>>
       value_to_list_of_line_literals;
@@ -91,11 +89,11 @@ void ProcessOneColumn(
   // is false too (i.e not possible).
   for (int i = 0; i < values.size(); ++i) {
     const IntegerValue v = values[i];
-    if (!ContainsKey(encoding, v)) {
+    if (!gtl::ContainsKey(encoding, v)) {
       model->Add(ClauseConstraint({line_literals[i].Negated()}));
     } else {
       value_to_list_of_line_literals[v].push_back(line_literals[i]);
-      model->Add(Implication(FindOrDie(encoding, v).Negated(),
+      model->Add(Implication(gtl::FindOrDie(encoding, v).Negated(),
                              line_literals[i].Negated()));
     }
   }
@@ -104,7 +102,7 @@ void ProcessOneColumn(
   // false too.
   for (const auto& entry : value_to_list_of_line_literals) {
     std::vector<Literal> clause = entry.second;
-    clause.push_back(FindOrDie(encoding, entry.first).Negated());
+    clause.push_back(gtl::FindOrDie(encoding, entry.first).Negated());
     model->Add(ClauseConstraint(clause));
   }
 }
@@ -140,7 +138,7 @@ std::function<void(Model*)> TableConstraint(
     for (const std::vector<int64>& tuple : tuples) {
       bool keep = true;
       for (int i = 0; i < n; ++i) {
-        if (!ContainsKey(values_per_var[i], tuple[i])) {
+        if (!gtl::ContainsKey(values_per_var[i], tuple[i])) {
           keep = false;
           break;
         }
@@ -165,7 +163,7 @@ std::function<void(Model*)> TableConstraint(
     }
 
     // Fully encode the variables using all the values appearing in the tuples.
-    IntegerTrail* interger_trail = model->GetOrCreate<IntegerTrail>();
+    IntegerTrail* integer_trail = model->GetOrCreate<IntegerTrail>();
     const std::vector<std::vector<int64>> tr_tuples = Transpose(new_tuples);
     for (int i = 0; i < n; ++i) {
       const int64 first = tr_tuples[i].front();
@@ -173,7 +171,7 @@ std::function<void(Model*)> TableConstraint(
                       [first](int64 v) { return v == first; })) {
         model->Add(Equality(vars[i], first));
       } else {
-        interger_trail->UpdateInitialDomain(
+        integer_trail->UpdateInitialDomain(
             vars[i], SortedDisjointIntervalsFromValues(tr_tuples[i]));
         model->Add(FullyEncodeVariable(vars[i]));
         ProcessOneColumn(
@@ -202,8 +200,8 @@ std::function<void(Model*)> NegatedTableConstraint(
     for (const std::vector<int64>& tuple : tuples) {
       bool add_tuple = true;
       for (int i = 0; i < n; ++i) {
-        if (ContainsKey(mapping[i], tuple[i])) {
-          clause[i] = FindOrDie(mapping[i], tuple[i]).Negated();
+        if (gtl::ContainsKey(mapping[i], tuple[i])) {
+          clause[i] = gtl::FindOrDie(mapping[i], tuple[i]).Negated();
         } else {
           add_tuple = false;
           break;
@@ -311,7 +309,7 @@ std::function<void(Model*)> TransitionConstraint(
       for (const std::vector<int64>& transition : automata) {
         CHECK_EQ(transition.size(), 3);
         const std::pair<int64, int64> p{transition[0], transition[1]};
-        CHECK(!ContainsKey(unique_transition_checker, p))
+        CHECK(!gtl::ContainsKey(unique_transition_checker, p))
             << "Duplicate outgoing transitions with value " << transition[1]
             << " from state " << transition[0] << ".";
         unique_transition_checker.insert(p);
@@ -341,8 +339,8 @@ std::function<void(Model*)> TransitionConstraint(
     // all the possible transitions.
     for (int time = 0; time + 1 < n; ++time) {
       for (const std::vector<int64>& transition : automata) {
-        if (!ContainsKey(reachable_states[time], transition[0])) continue;
-        if (!ContainsKey(possible_values[time], transition[1])) continue;
+        if (!gtl::ContainsKey(reachable_states[time], transition[0])) continue;
+        if (!gtl::ContainsKey(possible_values[time], transition[1])) continue;
         reachable_states[time + 1].insert(transition[2]);
       }
     }
@@ -351,9 +349,10 @@ std::function<void(Model*)> TransitionConstraint(
     for (int time = n - 1; time > 0; --time) {
       std::set<int64> new_set;
       for (const std::vector<int64>& transition : automata) {
-        if (!ContainsKey(reachable_states[time], transition[0])) continue;
-        if (!ContainsKey(possible_values[time], transition[1])) continue;
-        if (!ContainsKey(reachable_states[time + 1], transition[2])) continue;
+        if (!gtl::ContainsKey(reachable_states[time], transition[0])) continue;
+        if (!gtl::ContainsKey(possible_values[time], transition[1])) continue;
+        if (!gtl::ContainsKey(reachable_states[time + 1], transition[2]))
+          continue;
         new_set.insert(transition[0]);
       }
       reachable_states[time].swap(new_set);
@@ -376,9 +375,10 @@ std::function<void(Model*)> TransitionConstraint(
       std::vector<IntegerValue> transition_values;
       std::vector<IntegerValue> out_states;
       for (const std::vector<int64>& transition : automata) {
-        if (!ContainsKey(reachable_states[time], transition[0])) continue;
-        if (!ContainsKey(possible_values[time], transition[1])) continue;
-        if (!ContainsKey(reachable_states[time + 1], transition[2])) continue;
+        if (!gtl::ContainsKey(reachable_states[time], transition[0])) continue;
+        if (!gtl::ContainsKey(possible_values[time], transition[1])) continue;
+        if (!gtl::ContainsKey(reachable_states[time + 1], transition[2]))
+          continue;
 
         // TODO(user): if this transition correspond to just one in-state or
         // one-out state or one variable value, we could reuse the corresponding
@@ -388,13 +388,23 @@ std::function<void(Model*)> TransitionConstraint(
         in_states.push_back(IntegerValue(transition[0]));
 
         transition_values.push_back(IntegerValue(transition[1]));
-        out_states.push_back(IntegerValue(transition[2]));
+
+        // On the last step we don't need to distinguish the output states, so
+        // we use zero.
+        out_states.push_back(time + 1 == n ? IntegerValue(0)
+                                           : IntegerValue(transition[2]));
       }
 
+      // Exactly one tuple literal is true.
+      model->Add(ExactlyOneConstraint(tuple_literals));
+
       // Fully instantiate vars[time].
+      // Tricky: because we started adding constraints that can propagate, the
+      // possible values returned by encoding might not contains all the value
+      // computed in transition_values.
       {
         std::vector<IntegerValue> s = transition_values;
-        STLSortAndRemoveDuplicates(&s);
+        gtl::STLSortAndRemoveDuplicates(&s);
 
         encoding.clear();
         if (s.size() > 1) {
@@ -415,13 +425,9 @@ std::function<void(Model*)> TransitionConstraint(
       }
 
       // For each possible out states, create one Boolean variable.
-      //
-      // TODO(user): enforce an at most one constraint? it is not really needed
-      // though, so I am not sure it will improve or hurt the performance. To
-      // investigate on real problems.
       {
         std::vector<IntegerValue> s = out_states;
-        STLSortAndRemoveDuplicates(&s);
+        gtl::STLSortAndRemoveDuplicates(&s);
 
         out_encoding.clear();
         if (s.size() == 2) {
@@ -429,22 +435,25 @@ std::function<void(Model*)> TransitionConstraint(
           out_encoding[s.front()] = Literal(var, true);
           out_encoding[s.back()] = Literal(var, false);
         } else if (s.size() > 1) {
-          // Enforce at most one constraint?
+          std::vector<Literal> state_literals;
           for (const IntegerValue state : s) {
-            out_encoding[state] =
-                Literal(model->Add(NewBooleanVariable()), true);
+            const Literal l = Literal(model->Add(NewBooleanVariable()), true);
+            out_encoding[state] = l;
+            state_literals.push_back(l);
           }
+          // Exactly one state literal is true.
+          model->Add(ExactlyOneConstraint(state_literals));
         }
       }
 
       // Now we link everything together.
-      if (in_encoding.size() > 1) {
+      if (!in_encoding.empty()) {
         ProcessOneColumn(tuple_literals, in_states, in_encoding, model);
       }
-      if (encoding.size() > 1) {
+      if (!encoding.empty()) {
         ProcessOneColumn(tuple_literals, transition_values, encoding, model);
       }
-      if (out_encoding.size() > 1) {
+      if (!out_encoding.empty()) {
         ProcessOneColumn(tuple_literals, out_states, out_encoding, model);
       }
       in_encoding = out_encoding;

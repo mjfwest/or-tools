@@ -18,8 +18,8 @@
 #include <functional>
 #include <vector>
 
-#include "ortools/base/macros.h"
 #include "ortools/base/int_type.h"
+#include "ortools/base/macros.h"
 #include "ortools/sat/integer.h"
 #include "ortools/sat/intervals.h"
 #include "ortools/sat/model.h"
@@ -59,11 +59,11 @@ class TaskSet {
 
   struct Entry {
     int task;
-    IntegerValue min_start;
-    IntegerValue min_duration;
+    IntegerValue start_min;
+    IntegerValue duration_min;
 
     // Note that the tie-breaking is not important here.
-    bool operator<(Entry other) const { return min_start < other.min_start; }
+    bool operator<(Entry other) const { return start_min < other.start_min; }
   };
 
   // Insertion and modification. These leave sorted_tasks_ sorted.
@@ -74,10 +74,6 @@ class TaskSet {
   void AddEntry(const Entry& e);
   void NotifyEntryIsNowLastIfPresent(const Entry& e);
   void RemoveEntryWithIndex(int index);
-
-  // Like AddEntry() when we already know that e.min_start will be the largest
-  // one. This is checked in debug mode.
-  void AddOrderedLastEntry(const Entry& e);
 
   // Advanced usage. Instead of calling many AddEntry(), it is more efficient to
   // call AddUnsortedEntry() instead, but then Sort() MUST be called just after
@@ -100,7 +96,7 @@ class TaskSet {
   // A reason for the min end is:
   // - The duration-min of all the critical tasks.
   // - The fact that all critical tasks have a start-min greater or equal to the
-  //   first of them, that is SortedTasks()[critical_index].min_start.
+  //   first of them, that is SortedTasks()[critical_index].start_min.
   //
   // It is possible to behave like if one task was not in the set by setting
   // task_to_ignore to the id of this task. This returns 0 if the set is empty
@@ -130,7 +126,7 @@ class DisjunctiveOverloadChecker : public PropagatorInterface {
                              SchedulingConstraintHelper* helper)
       : time_direction_(time_direction), helper_(helper), theta_tree_() {
     // Resize this once and for all.
-    task_to_start_event_.resize(helper_->NumTasks());
+    task_to_event_.resize(helper_->NumTasks());
   }
   bool Propagate() final;
   int RegisterWith(GenericLiteralWatcher* watcher);
@@ -138,10 +134,11 @@ class DisjunctiveOverloadChecker : public PropagatorInterface {
  private:
   const bool time_direction_;
   SchedulingConstraintHelper* helper_;
+
   ThetaLambdaTree<IntegerValue> theta_tree_;
-  std::vector<int> task_to_start_event_;
-  std::vector<int> start_event_to_task_;
-  std::vector<IntegerValue> start_event_time_;
+  std::vector<int> task_to_event_;
+  std::vector<int> event_to_task_;
+  std::vector<IntegerValue> event_time_;
 };
 
 class DisjunctiveDetectablePrecedences : public PropagatorInterface {
@@ -179,16 +176,19 @@ class DisjunctiveEdgeFinding : public PropagatorInterface {
  public:
   DisjunctiveEdgeFinding(bool time_direction,
                          SchedulingConstraintHelper* helper)
-      : time_direction_(time_direction),
-        helper_(helper),
-        task_set_(helper->NumTasks()) {}
+      : time_direction_(time_direction), helper_(helper) {}
   bool Propagate() final;
   int RegisterWith(GenericLiteralWatcher* watcher);
 
  private:
   const bool time_direction_;
   SchedulingConstraintHelper* helper_;
-  TaskSet task_set_;
+
+  ThetaLambdaTree<IntegerValue> theta_tree_;
+  std::vector<int> non_gray_task_to_event_;
+  std::vector<int> event_to_task_;
+  std::vector<IntegerValue> event_time_;
+
   std::vector<bool> is_gray_;
 };
 
@@ -218,8 +218,23 @@ class DisjunctivePrecedences : public PropagatorInterface {
 
   TaskSet task_set_;
   std::vector<bool> task_is_currently_present_;
-  std::vector<LiteralIndex> reason_for_beeing_before_;
+  std::vector<int> task_to_arc_index_;
   std::vector<PrecedencesPropagator::IntegerPrecedences> before_;
+};
+
+// This is an optimization for the case when we have a big number of such
+// pairwise constraints. This should be roughtly equivalent to what the general
+// disjunctive case is doing, but it dealt with variable size better and has a
+// lot less overhead.
+class DisjunctiveWithTwoItems : public PropagatorInterface {
+ public:
+  explicit DisjunctiveWithTwoItems(SchedulingConstraintHelper* helper)
+      : helper_(helper) {}
+  bool Propagate() final;
+  int RegisterWith(GenericLiteralWatcher* watcher);
+
+ private:
+  SchedulingConstraintHelper* helper_;
 };
 
 }  // namespace sat

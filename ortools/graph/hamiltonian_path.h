@@ -11,14 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #ifndef OR_TOOLS_GRAPH_HAMILTONIAN_PATH_H_
 #define OR_TOOLS_GRAPH_HAMILTONIAN_PATH_H_
 
 // Solves the Shortest Hamiltonian Path Problem using a complete algorithm.
 // The algorithm was first described in
 // M. Held, R.M. Karp, A dynamic programming approach to sequencing problems,
-// J. SIAM 10 (1962) 196–210
+// J. SIAM 10 (1962) 196-210
 //
 // The Shortest Hamiltonian Path Problem (SHPP) is similar to the Traveling
 // Salesperson Problem (TSP).
@@ -798,9 +797,9 @@ bool HamiltonianPathSolver<CostType, CostFunction>::IsRobust() {
   }
   // We determine if the range of the cost matrix is going to
   // make the algorithm not robust because of precision issues.
-  robust_ = min_cost >= 0 &&
-            min_cost > num_nodes_ * max_cost *
-                           std::numeric_limits<CostType>::epsilon();
+  robust_ =
+      min_cost >= 0 && min_cost > num_nodes_ * max_cost *
+                                      std::numeric_limits<CostType>::epsilon();
   robustness_checked_ = true;
   return robust_;
 }

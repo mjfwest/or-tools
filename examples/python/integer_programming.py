@@ -10,9 +10,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Integer programming examples that show how to use the APIs."""
-
 
 from ortools.linear_solver import pywraplp
 
@@ -82,8 +80,8 @@ def SolveAndPrint(solver, variable_list):
 
 
 def Announce(solver, api_type):
-  print(('---- Integer programming example with ' + solver + ' (' +
-         api_type + ') -----'))
+  print(('---- Integer programming example with ' + solver + ' (' + api_type +
+         ') -----'))
 
 
 def RunAllIntegerExampleNaturalLanguageAPI():
@@ -99,6 +97,14 @@ def RunAllIntegerExampleNaturalLanguageAPI():
     Announce('SCIP', 'natural language API')
     RunIntegerExampleNaturalLanguageAPI(
         pywraplp.Solver.SCIP_MIXED_INTEGER_PROGRAMMING)
+  if hasattr(pywraplp.Solver, 'GUROBI_MIXED_INTEGER_PROGRAMMING'):
+    Announce('GUROBI', 'natural language API')
+    RunIntegerExampleNaturalLanguageAPI(
+        pywraplp.Solver.GUROBI_MIXED_INTEGER_PROGRAMMING)
+  if hasattr(pywraplp.Solver, 'CPLEX_MIXED_INTEGER_PROGRAMMING'):
+    Announce('CPLEX', 'natural language API')
+    RunIntegerExampleNaturalLanguageAPI(
+        pywraplp.Solver.CPLEX_MIXED_INTEGER_PROGRAMMING)
 
 
 def RunAllIntegerExampleCppStyleAPI():
@@ -110,8 +116,15 @@ def RunAllIntegerExampleCppStyleAPI():
     RunIntegerExampleCppStyleAPI(pywraplp.Solver.CBC_MIXED_INTEGER_PROGRAMMING)
   if hasattr(pywraplp.Solver, 'SCIP_MIXED_INTEGER_PROGRAMMING'):
     Announce('SCIP', 'C++ style API')
+    RunIntegerExampleCppStyleAPI(pywraplp.Solver.SCIP_MIXED_INTEGER_PROGRAMMING)
+  if hasattr(pywraplp.Solver, 'GUROBI_MIXED_INTEGER_PROGRAMMING'):
+    Announce('GUROBI', 'C++ style API')
     RunIntegerExampleCppStyleAPI(
-        pywraplp.Solver.SCIP_MIXED_INTEGER_PROGRAMMING)
+      pywraplp.Solver.GUROBI_MIXED_INTEGER_PROGRAMMING)
+  if hasattr(pywraplp.Solver, 'CPLEX_MIXED_INTEGER_PROGRAMMING'):
+    Announce('CPLEX', 'C++ style API')
+    RunIntegerExampleCppStyleAPI(
+      pywraplp.Solver.CPLEX_MIXED_INTEGER_PROGRAMMING)
 
 
 def main():

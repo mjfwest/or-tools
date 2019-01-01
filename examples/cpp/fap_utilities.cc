@@ -20,8 +20,8 @@
 #include <vector>
 
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/base/map_util.h"
+#include "ortools/base/stringprintf.h"
 
 namespace operations_research {
 
@@ -31,8 +31,8 @@ bool CheckConstraintSatisfaction(
     const std::map<int, int>& index_from_key) {
   bool status = true;
   for (const FapConstraint& ct : data_constraints) {
-    const int index1 = FindOrDie(index_from_key, ct.variable1);
-    const int index2 = FindOrDie(index_from_key, ct.variable2);
+    const int index1 = gtl::FindOrDie(index_from_key, ct.variable1);
+    const int index2 = gtl::FindOrDie(index_from_key, ct.variable2);
     CHECK_LT(index1, variables.size());
     CHECK_LT(index2, variables.size());
     const int var1 = variables[index1];
@@ -43,15 +43,13 @@ bool CheckConstraintSatisfaction(
       LOG(INFO) << "  Violation of contraint between variable " << ct.variable1
                 << " and variable " << ct.variable2 << ".";
       LOG(INFO) << "  Expected |" << var1 << " - " << var2
-                << "| (= " << absolute_difference << ") >  " << ct.value
-                << ".";
+                << "| (= " << absolute_difference << ") >  " << ct.value << ".";
       status = false;
     } else if ((ct.operation == "=") && (absolute_difference != ct.value)) {
       LOG(INFO) << "  Violation of contraint between variable " << ct.variable1
                 << " and variable " << ct.variable2 << ".";
       LOG(INFO) << "  Expected |" << var1 << " - " << var2
-                << "| (= " << absolute_difference << ") =  " << ct.value
-                << ".";
+                << "| (= " << absolute_difference << ") =  " << ct.value << ".";
       status = false;
     }
   }
@@ -63,7 +61,7 @@ bool CheckVariablePosition(const std::map<int, FapVariable>& data_variables,
                            const std::map<int, int>& index_from_key) {
   bool status = true;
   for (const auto& it : data_variables) {
-    const int index = FindOrDie(index_from_key, it.first);
+    const int index = gtl::FindOrDie(index_from_key, it.first);
     CHECK_LT(index, variables.size());
     const int var = variables[index];
 

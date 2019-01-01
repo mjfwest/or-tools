@@ -14,16 +14,15 @@
 #include "ortools/sat/cp_model_checker.h"
 
 #include <algorithm>
-#include <unordered_map>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
-#include "ortools/base/logging.h"
-#include "ortools/base/join.h"
-#include "ortools/base/map_util.h"
 #include "ortools/base/hash.h"
+#include "ortools/base/join.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/map_util.h"
 #include "ortools/port/proto_utils.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/util/saturated_arithmetic.h"
@@ -40,7 +39,7 @@ namespace {
 // If the std::string returned by "statement" is not empty, returns it.
 #define RETURN_IF_NOT_EMPTY(statement)                \
   do {                                                \
-    const std::string error_message = statement;           \
+    const std::string error_message = statement;      \
     if (!error_message.empty()) return error_message; \
   } while (false)
 
@@ -58,7 +57,7 @@ bool VariableReferenceIsValid(const CpModelProto& model, int reference) {
 }
 
 bool LiteralReferenceIsValid(const CpModelProto& model, int reference) {
-  if (std::max(-reference - 1, reference) >= model.variables_size()) {
+  if (std::max(NegatedRef(reference), reference) >= model.variables_size()) {
     return false;
   }
   const auto& var_proto = model.variables(PositiveRef(reference));
@@ -81,22 +80,11 @@ std::string ValidateIntegerVariable(const CpModelProto& model, int v) {
     return absl::StrCat("var #", v, " has and invalid domain() format: ",
                         ProtobufShortDebugString(proto));
   }
-  if (!proto.enforcement_literal().empty()) {
-    if (proto.enforcement_literal_size() > 1) {
-      return absl::StrCat("var #", v,
-                          " has more than one enforcement_literal: ",
-                          ProtobufShortDebugString(proto));
-    }
-    if (!LiteralReferenceIsValid(model, proto.enforcement_literal(0))) {
-      return absl::StrCat("var #", v, " has an invalid enforcement_literal: ",
-                          ProtobufShortDebugString(proto));
-    }
-  }
   return "";
 }
 
 std::string ValidateArgumentReferencesInConstraint(const CpModelProto& model,
-                                              int c) {
+                                                   int c) {
   const ConstraintProto& ct = model.constraints(c);
   IndexReferences references;
   AddReferencesUsedByConstraint(ct, &references);
@@ -107,12 +95,7 @@ std::string ValidateArgumentReferencesInConstraint(const CpModelProto& model,
                           ProtobufShortDebugString(ct));
     }
   }
-  if (ct.enforcement_literal_size() > 1) {
-    return absl::StrCat("More than one enforcement_literal in constraint #", c,
-                        " : ", ProtobufShortDebugString(ct));
-  }
-  if (ct.enforcement_literal_size() == 1) {
-    const int lit = ct.enforcement_literal(0);
+  for (const int lit : ct.enforcement_literal()) {
     if (!LiteralReferenceIsValid(model, lit)) {
       return absl::StrCat("Invalid enforcement literal ", lit,
                           " in constraint #", c, " : ",
@@ -141,37 +124,47 @@ std::string ValidateArgumentReferencesInConstraint(const CpModelProto& model,
   return "";
 }
 
-std::string ValidateLinearConstraint(const CpModelProto& model,
-                                const ConstraintProto& ct) {
-  const LinearConstraintProto& arg = ct.linear();
+template <class LinearExpressionProto>
+bool PossibleIntegerOverflow(const CpModelProto& model,
+                             const LinearExpressionProto& proto) {
   int64 sum_min = 0;
   int64 sum_max = 0;
-  for (int i = 0; i < arg.vars_size(); ++i) {
-    const int ref = arg.vars(i);
+  for (int i = 0; i < proto.vars_size(); ++i) {
+    const int ref = proto.vars(i);
     const auto& var_proto = model.variables(PositiveRef(ref));
     const int64 min_domain = var_proto.domain(0);
     const int64 max_domain = var_proto.domain(var_proto.domain_size() - 1);
-    const int64 coeff = RefIsPositive(ref) ? arg.coeffs(i) : -arg.coeffs(i);
+    const int64 coeff = RefIsPositive(ref) ? proto.coeffs(i) : -proto.coeffs(i);
     const int64 prod1 = CapProd(min_domain, coeff);
     const int64 prod2 = CapProd(max_domain, coeff);
 
     // Note that we use min/max with zero to disallow "alternative" terms and
     // be sure that we cannot have an overflow if we do the computation in a
     // different order.
-    sum_min = CapAdd(sum_min, std::min(0ll, std::min(prod1, prod2)));
-    sum_max = CapAdd(sum_max, std::max(0ll, std::max(prod1, prod2)));
+    sum_min = CapAdd(sum_min, std::min(int64{0}, std::min(prod1, prod2)));
+    sum_max = CapAdd(sum_max, std::max(int64{0}, std::max(prod1, prod2)));
     for (const int64 v : {prod1, prod2, sum_min, sum_max}) {
-      if (v == kint64max || v == kint64min) {
-        return "Possible integer overflow in constraint: " +
-               ProtobufDebugString(ct);
-      }
+      if (v == kint64max || v == kint64min) return true;
     }
+  }
+  return false;
+}
+
+std::string ValidateLinearConstraint(const CpModelProto& model,
+                                     const ConstraintProto& ct) {
+  const LinearConstraintProto& arg = ct.linear();
+  if (PossibleIntegerOverflow(model, arg)) {
+    return "Possible integer overflow in constraint: " +
+           ProtobufDebugString(ct);
   }
   return "";
 }
 
 std::string ValidateReservoirConstraint(const CpModelProto& model,
-                                   const ConstraintProto& ct) {
+                                        const ConstraintProto& ct) {
+  if (ct.enforcement_literal_size() > 0) {
+    return "Reservoir does not support enforcement literals.";
+  }
   for (const int t : ct.reservoir().times()) {
     const IntegerVariableProto& time = model.variables(t);
     for (const int64 bound : time.domain()) {
@@ -189,6 +182,14 @@ std::string ValidateReservoirConstraint(const CpModelProto& model,
              ProtobufDebugString(ct);
     }
   }
+  if (ct.reservoir().actives_size() > 0 &&
+      ct.reservoir().actives_size() != ct.reservoir().times_size()) {
+    return "Wrong array length of actives variables";
+  }
+  if (ct.reservoir().demands_size() > 0 &&
+      ct.reservoir().demands_size() != ct.reservoir().times_size()) {
+    return "Wrong array length of demands variables";
+  }
   return "";
 }
 
@@ -204,34 +205,10 @@ std::string ValidateCircuitCoveringConstraint(const ConstraintProto& ct) {
 }
 
 std::string ValidateObjective(const CpModelProto& model,
-                         const CpObjectiveProto& obj) {
-  // TODO(user): share the code with ValidateLinearConstraint().
-  if (obj.vars_size() == 1 && obj.coeffs(0) == 1) return "";
-  int64 sum_min = 0;
-  int64 sum_max = 0;
-  for (int i = 0; i < obj.vars_size(); ++i) {
-    const int ref = obj.vars(i);
-    const auto& var_proto = model.variables(PositiveRef(ref));
-    const int64 min_domain = var_proto.domain(0);
-    const int64 max_domain = var_proto.domain(var_proto.domain_size() - 1);
-    const int64 coeff = RefIsPositive(ref) ? obj.coeffs(i) : -obj.coeffs(i);
-    const int64 prod1 = CapProd(min_domain, coeff);
-    const int64 prod2 = CapProd(max_domain, coeff);
-
-    // Note that we use min/max with zero to disallow "alternative" terms and
-    // be sure that we cannot have an overflow if we do the computation in a
-    // different order.
-    sum_min = CapAdd(sum_min, std::min(0ll, std::min(prod1, prod2)));
-    sum_max = CapAdd(sum_max, std::max(0ll, std::max(prod1, prod2)));
-    for (const int64 v : {prod1, prod2, sum_min, sum_max}) {
-      // When introducing the objective variable, we use a [...] domain so we
-      // need to be more defensive here to make sure no overflow can happen in
-      // linear constraint propagator.
-      if (v == kint64max / 2 || v == kint64min / 2) {
-        return "Possible integer overflow in objective: " +
-               ProtobufDebugString(obj);
-      }
-    }
+                              const CpObjectiveProto& obj) {
+  if (PossibleIntegerOverflow(model, obj)) {
+    return "Possible integer overflow in objective: " +
+           ProtobufDebugString(obj);
   }
   return "";
 }
@@ -247,6 +224,7 @@ std::string ValidateCpModel(const CpModelProto& model) {
 
     // Other non-generic validations.
     // TODO(user): validate all constraints.
+    // TODO(user): Make sure enforcement literals are only set when supported.
     const ConstraintProto& ct = model.constraints(c);
     const ConstraintProto::ConstraintCase type = ct.constraint_case();
     switch (type) {
@@ -282,8 +260,8 @@ std::string ValidateCpModel(const CpModelProto& model) {
   if (model.has_objective()) {
     for (const int v : model.objective().vars()) {
       if (!VariableReferenceIsValid(model, v)) {
-        return StrCat("Out of bound objective variable ", v, " : ",
-                      ProtobufShortDebugString(model.objective()));
+        return absl::StrCat("Out of bound objective variable ", v, " : ",
+                            ProtobufShortDebugString(model.objective()));
       }
     }
     RETURN_IF_NOT_EMPTY(ValidateObjective(model, model.objective()));
@@ -317,23 +295,11 @@ class ConstraintChecker {
     return -variable_values_[-var - 1];
   }
 
-  // Note that this does not check the variables like
-  // ConstraintHasNonEnforcedVariables() does.
   bool ConstraintIsEnforced(const ConstraintProto& ct) {
-    return !HasEnforcementLiteral(ct) ||
-           LiteralIsTrue(ct.enforcement_literal(0));
-  }
-
-  bool ConstraintHasNonEnforcedVariables(const CpModelProto& model,
-                                         const ConstraintProto& ct) {
-    IndexReferences references;
-    AddReferencesUsedByConstraint(ct, &references);
-    for (const int ref : references.variables) {
-      const auto& var_proto = model.variables(PositiveRef(ref));
-      if (var_proto.enforcement_literal().empty()) continue;
-      if (LiteralIsFalse(var_proto.enforcement_literal(0))) return true;
+    for (const int lit : ct.enforcement_literal()) {
+      if (LiteralIsFalse(lit)) return false;
     }
-    return false;
+    return true;
   }
 
   bool BoolOrConstraintIsFeasible(const ConstraintProto& ct) {
@@ -391,6 +357,11 @@ class ConstraintChecker {
            Value(ct.int_div().vars(0)) / Value(ct.int_div().vars(1));
   }
 
+  bool IntModConstraintIsFeasible(const ConstraintProto& ct) {
+    return Value(ct.int_mod().target()) ==
+           Value(ct.int_mod().vars(0)) % Value(ct.int_mod().vars(1));
+  }
+
   bool IntMinConstraintIsFeasible(const ConstraintProto& ct) {
     const int64 min = Value(ct.int_min().target());
     int64 actual_min = kint64max;
@@ -403,7 +374,7 @@ class ConstraintChecker {
   bool AllDiffConstraintIsFeasible(const ConstraintProto& ct) {
     std::unordered_set<int64> values;
     for (const int v : ct.all_diff().vars()) {
-      if (ContainsKey(values, Value(v))) return false;
+      if (gtl::ContainsKey(values, Value(v))) return false;
       values.insert(Value(v));
     }
     return true;
@@ -535,7 +506,9 @@ class ConstraintChecker {
     for (int i = 0; i < num_steps; ++i) {
       const std::pair<int64, int64> key = {current_state,
                                            Value(ct.automata().vars(i))};
-      CHECK(ContainsKey(transition_map, key));
+      if (!gtl::ContainsKey(transition_map, key)) {
+        return false;
+      }
       current_state = transition_map[key];
     }
 
@@ -691,16 +664,19 @@ class ConstraintChecker {
   bool ReservoirConstraintIsFeasible(const ConstraintProto& ct) {
     const int num_variables = ct.reservoir().times_size();
     const int64 min_level = ct.reservoir().min_level();
-    const int64 max_level = ct.reservoir().min_level();
+    const int64 max_level = ct.reservoir().max_level();
     std::map<int64, int64> deltas;
     deltas[0] = 0;
+    const bool has_active_variables = ct.reservoir().actives_size() > 0;
     for (int i = 0; i < num_variables; i++) {
       const int64 time = Value(ct.reservoir().times(i));
       if (time < 0) {
         VLOG(1) << "reservoir times(" << i << ") is negative.";
         return false;
       }
-      deltas[time] += ct.reservoir().demands(i);
+      if (!has_active_variables || Value(ct.reservoir().actives(i)) == 1) {
+        deltas[time] += ct.reservoir().demands(i);
+      }
     }
     int64 current_level = 0;
     for (const auto& delta : deltas) {
@@ -728,11 +704,7 @@ bool SolutionIsFeasible(const CpModelProto& model,
   }
 
   // Check that all values fall in the variable domains.
-  int num_optional_vars = 0;
   for (int i = 0; i < model.variables_size(); ++i) {
-    if (!model.variables(i).enforcement_literal().empty()) {
-      ++num_optional_vars;
-    }
     if (!DomainInProtoContains(model.variables(i), variable_values[i])) {
       VLOG(1) << "Variable #" << i << " has value " << variable_values[i]
               << " which do not fall in its domain: "
@@ -748,11 +720,6 @@ bool SolutionIsFeasible(const CpModelProto& model,
     const ConstraintProto& ct = model.constraints(c);
 
     if (!checker.ConstraintIsEnforced(ct)) continue;
-    if (num_optional_vars > 0) {
-      // This function can be slow because it uses reflection. So we only
-      // call it if there is any optional variables.
-      if (checker.ConstraintHasNonEnforcedVariables(model, ct)) continue;
-    }
 
     bool is_feasible = true;
     const ConstraintProto::ConstraintCase type = ct.constraint_case();
@@ -774,6 +741,9 @@ bool SolutionIsFeasible(const CpModelProto& model,
         break;
       case ConstraintProto::ConstraintCase::kIntDiv:
         is_feasible = checker.IntDivConstraintIsFeasible(ct);
+        break;
+      case ConstraintProto::ConstraintCase::kIntMod:
+        is_feasible = checker.IntModConstraintIsFeasible(ct);
         break;
       case ConstraintProto::ConstraintCase::kIntMin:
         is_feasible = checker.IntMinConstraintIsFeasible(ct);

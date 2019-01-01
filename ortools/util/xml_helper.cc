@@ -11,15 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "ortools/util/xml_helper.h"
 
 #include <sstream>
 #include <string>
 
+#include "ortools/base/join.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/strutil.h"
-#include "ortools/base/join.h"
 
 namespace operations_research {
 
@@ -35,18 +34,19 @@ void XmlHelper::StartElement(const std::string& name) {
     content_.append(">\n");
   }
   tags_.push(name);
-  StringAppendF(&content_, "<%s", name.c_str());
+  absl::StrAppendFormat(&content_, "<%s", name.c_str());
   direction_down_ = true;
 }
 
 void XmlHelper::AddAttribute(const std::string& key, int value) {
-  AddAttribute(key, StrCat(value));
+  AddAttribute(key, absl::StrCat(value));
 }
 
 void XmlHelper::AddAttribute(const std::string& key, const std::string& value) {
   std::ostringstream escaped_value;
 
-  for (std::string::const_iterator it = value.begin(); it != value.end(); ++it) {
+  for (std::string::const_iterator it = value.begin(); it != value.end();
+       ++it) {
     unsigned char c = (unsigned char)*it;
 
     switch (c) {
@@ -70,7 +70,7 @@ void XmlHelper::AddAttribute(const std::string& key, const std::string& value) {
     }
   }
 
-  StringAppendF(&content_, " %s=\"%s\"", key.c_str(),
+  absl::StrAppendFormat(&content_, " %s=\"%s\"", key.c_str(),
                 escaped_value.str().c_str());
 }
 
@@ -80,7 +80,7 @@ void XmlHelper::EndElement() {
   if (direction_down_) {
     content_.append(" />\n");
   } else {
-    StringAppendF(&content_, "</%s>\n", tag.c_str());
+    absl::StrAppendFormat(&content_, "</%s>\n", tag.c_str());
   }
   direction_down_ = false;
 

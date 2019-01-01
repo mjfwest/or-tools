@@ -138,7 +138,6 @@ class LPSolver {
   // Returns the number of simplex iterations used by the last Solve().
   int GetNumberOfSimplexIterations() const;
 
-
   // Returns the "deterministic time" since the creation of the solver. Note
   // That this time is only increased when some operations take place in this
   // class.
@@ -153,7 +152,7 @@ class LPSolver {
   // Resizes all the solution vectors to the given sizes.
   // This is used in case of error to make sure all the getter functions will
   // not crash when given row/col inside the initial linear program dimension.
-  void ResizeSolution(RowIndex row, ColIndex col);
+  void ResizeSolution(RowIndex num_rows, ColIndex num_cols);
 
   // Make sure the primal and dual values are within their bounds in order to
   // have a strong guarantee on the optimal solution. See
@@ -165,7 +164,6 @@ class LPSolver {
   // already solved by the preprocessors).
   void RunRevisedSimplexIfNeeded(ProblemSolution* solution,
                                  TimeLimit* time_limit);
-
 
   // Checks that the returned solution values and statuses are consistent.
   // Returns true if this is the case. See the code for the exact check
@@ -247,7 +245,6 @@ class LPSolver {
 
   // The number of revised simplex iterations used by the last Solve().
   int num_revised_simplex_iterations_;
-
 
   // The current ProblemSolution.
   // TODO(user): use a ProblemSolution directly?

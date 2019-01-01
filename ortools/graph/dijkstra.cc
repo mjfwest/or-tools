@@ -11,14 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include <functional>
-#include <unordered_set>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
-#include "ortools/base/integral_types.h"
 #include "ortools/base/adjustable_priority_queue.h"
+#include "ortools/base/integral_types.h"
 
 namespace operations_research {
 namespace {
@@ -61,7 +60,7 @@ class DijkstraSP {
  private:
   void Initialize();
   int SelectClosestNode(int64* distance);
-  void Update(int label);
+  void Update(int node);
   void FindPath(int dest, std::vector<int>* nodes);
 
   const int node_count_;

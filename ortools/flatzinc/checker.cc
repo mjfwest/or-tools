@@ -71,7 +71,7 @@ bool CheckAllDifferentInt(
   std::unordered_set<int64> visited;
   for (int i = 0; i < Size(ct.arguments[0]); ++i) {
     const int64 value = EvalAt(ct.arguments[0], i, evaluator);
-    if (ContainsKey(visited, value)) {
+    if (gtl::ContainsKey(visited, value)) {
       return false;
     }
     visited.insert(value);
@@ -86,7 +86,7 @@ bool CheckAlldifferentExcept0(
   std::unordered_set<int64> visited;
   for (int i = 0; i < Size(ct.arguments[0]); ++i) {
     const int64 value = EvalAt(ct.arguments[0], i, evaluator);
-    if (value != 0 && ContainsKey(visited, value)) {
+    if (value != 0 && gtl::ContainsKey(visited, value)) {
       return false;
     }
     visited.insert(value);
@@ -154,6 +154,16 @@ bool CheckArrayIntElement(
   // Flatzinc arrays are 1 based.
   const int64 shifted_index = Eval(ct.arguments[0], evaluator) - 1;
   const int64 element = EvalAt(ct.arguments[1], shifted_index, evaluator);
+  const int64 target = Eval(ct.arguments[2], evaluator);
+  return element == target;
+}
+
+bool CheckArrayIntElementNoOffset(
+    const Constraint& ct,
+    const std::function<int64(IntegerVariable*)>& evaluator) {
+  CHECK_EQ(ct.arguments[0].variables.size(), 1);
+  const int64 index = Eval(ct.arguments[0], evaluator);
+  const int64 element = EvalAt(ct.arguments[1], index, evaluator);
   const int64 target = Eval(ct.arguments[2], evaluator);
   return element == target;
 }
@@ -388,12 +398,12 @@ std::vector<int64> ComputeGlobalCardinalityCards(
   std::unordered_map<int64, int> positions;
   for (int i = 0; i < ct.arguments[1].values.size(); ++i) {
     const int64 value = ct.arguments[1].values[i];
-    CHECK(!ContainsKey(positions, value));
+    CHECK(!gtl::ContainsKey(positions, value));
     positions[value] = i;
   }
   for (int i = 0; i < Size(ct.arguments[0]); ++i) {
     const int value = EvalAt(ct.arguments[0], i, evaluator);
-    if (ContainsKey(positions, value)) {
+    if (gtl::ContainsKey(positions, value)) {
       cards[positions[value]]++;
     }
   }
@@ -1023,7 +1033,7 @@ bool CheckSymmetricAllDifferent(
 
 using CallMap = std::unordered_map<
     std::string, std::function<bool(const Constraint& ct,
-                               std::function<int64(IntegerVariable*)>)>>;
+                                    std::function<int64(IntegerVariable*)>)>>;
 
 CallMap CreateCallMap() {
   CallMap m;
@@ -1035,6 +1045,7 @@ CallMap CreateCallMap() {
   m["array_bool_or"] = CheckArrayBoolOr;
   m["array_bool_xor"] = CheckArrayBoolXor;
   m["array_int_element"] = CheckArrayIntElement;
+  m["array_int_element_no_offset"] = CheckArrayIntElementNoOffset;
   m["array_var_bool_element"] = CheckArrayVarIntElement;
   m["array_var_int_element"] = CheckArrayVarIntElement;
   m["at_most_int"] = CheckAtMostInt;
@@ -1152,7 +1163,7 @@ bool CheckSolution(const Model& model,
   const CallMap call_map = CreateCallMap();
   for (Constraint* ct : model.constraints()) {
     if (!ct->active) continue;
-    const auto& checker = FindOrDie(call_map, ct->type);
+    const auto& checker = gtl::FindOrDie(call_map, ct->type);
     if (!checker(*ct, evaluator)) {
       FZLOG << "Failing constraint " << ct->DebugString() << FZENDL;
       ok = false;

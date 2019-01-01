@@ -17,13 +17,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
-#include "ortools/base/join.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/base/join.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/flatzinc/logging.h"
 
 namespace operations_research {
@@ -34,7 +31,7 @@ Domain Domain::IntegerList(std::vector<int64> values) {
   Domain result;
   result.is_interval = false;
   result.values = std::move(values);
-  STLSortAndRemoveDuplicates(&result.values);
+  gtl::STLSortAndRemoveDuplicates(&result.values);
   result.display_as_boolean = false;
   result.is_a_set = false;
   return result;
@@ -198,7 +195,7 @@ bool Domain::IntersectWithListOfIntegers(const std::vector<int64>& integers) {
     for (const int64 v : integers) {
       if (v >= dmin && v <= dmax) values.push_back(v);
     }
-    STLSortAndRemoveDuplicates(&values);
+    gtl::STLSortAndRemoveDuplicates(&values);
     if (!values.empty() &&
         values.back() - values.front() == values.size() - 1 &&
         values.size() >= 2) {
@@ -222,7 +219,7 @@ bool Domain::IntersectWithListOfIntegers(const std::vector<int64>& integers) {
     new_values.reserve(std::min(values.size(), integers.size()));
     bool changed = false;
     for (const int64 val : values) {
-      if (ContainsKey(other_values, val)) {
+      if (gtl::ContainsKey(other_values, val)) {
         if (new_values.empty() || val != new_values.back()) {
           new_values.push_back(val);
         }
@@ -304,7 +301,7 @@ bool Domain::OverlapsIntList(const std::vector<int64>& vec) const {
             ? std::unordered_set<int64>(vec.begin(), vec.end())
             : std::unordered_set<int64>(values.begin(), values.end());
     for (int64 value : to_scan) {
-      if (ContainsKey(container, value)) {
+      if (gtl::ContainsKey(container, value)) {
         return true;
       }
     }
@@ -378,9 +375,9 @@ std::string Domain::DebugString() const {
                              values[0], values[1]);
     }
   } else if (values.size() == 1) {
-    return StrCat(values.back());
+    return absl::StrCat(values.back());
   } else {
-    return StringPrintf("[%s]", absl::StrJoin(values, ", ").c_str());
+    return absl::StrFormat("[%s]", absl::StrJoin(values, ", ").c_str());
   }
 }
 
@@ -455,9 +452,9 @@ std::string Argument::DebugString() const {
       return absl::StrFormat("[%" GG_LL_FORMAT "d..%" GG_LL_FORMAT "d]",
                              values[0], values[1]);
     case INT_LIST:
-      return StringPrintf("[%s]", absl::StrJoin(values, ", ").c_str());
+      return absl::StrFormat("[%s]", absl::StrJoin(values, ", ").c_str());
     case DOMAIN_LIST:
-      return StringPrintf("[%s]", JoinDebugString(domains, ", ").c_str());
+      return absl::StrFormat("[%s]", JoinDebugString(domains, ", ").c_str());
     case INT_VAR_REF:
       return variables[0]->name;
     case INT_VAR_REF_ARRAY: {
@@ -545,7 +542,7 @@ bool Argument::Contains(int64 value) const {
     }
     default: {
       LOG(FATAL) << "Cannot call Contains() on " << DebugString();
-      return 0;
+      return false;
     }
   }
 }
@@ -585,15 +582,15 @@ IntegerVariable* Argument::VarAt(int pos) const {
 
 // ----- IntegerVariable -----
 
-IntegerVariable::IntegerVariable(const std::string& name_, const Domain& domain_,
-                                 bool temporary_)
+IntegerVariable::IntegerVariable(const std::string& name_,
+                                 const Domain& domain_, bool temporary_)
     : name(name_),
       domain(domain_),
       defining_constraint(nullptr),
       temporary(temporary_),
       active(true) {
   if (!domain.is_interval) {
-    STLSortAndRemoveDuplicates(&domain.values);
+    gtl::STLSortAndRemoveDuplicates(&domain.values);
   }
 }
 
@@ -623,7 +620,7 @@ std::string IntegerVariable::DebugString() const {
   if (!domain.is_interval && domain.values.size() == 1) {
     return absl::StrFormat("% " GG_LL_FORMAT "d", domain.values.back());
   } else {
-    return StringPrintf(
+    return absl::StrFormat(
         "%s(%s%s%s)%s", name.c_str(), domain.DebugString().c_str(),
         temporary ? ", temporary" : "",
         defining_constraint != nullptr ? ", target_variable" : "",
@@ -636,15 +633,16 @@ std::string IntegerVariable::DebugString() const {
 std::string Constraint::DebugString() const {
   const std::string strong = strong_propagation ? "strong propagation" : "";
   const std::string presolve_status_str =
-      active ? "" : (presolve_propagation_done ? "[propagated during presolve]"
-                                               : "[removed during presolve]");
+      active ? ""
+             : (presolve_propagation_done ? "[propagated during presolve]"
+                                          : "[removed during presolve]");
   const std::string target =
       target_variable != nullptr
-          ? StringPrintf(" => %s", target_variable->name.c_str())
+          ? absl::StrFormat(" => %s", target_variable->name.c_str())
           : "";
-  return StringPrintf("%s(%s)%s %s %s", type.c_str(),
-                      JoinDebugString(arguments, ", ").c_str(), target.c_str(),
-                      strong.c_str(), presolve_status_str.c_str());
+  return absl::StrFormat("%s(%s)%s %s %s", type.c_str(),
+                         JoinDebugString(arguments, ", ").c_str(), target.c_str(),
+                         strong.c_str(), presolve_status_str.c_str());
 }
 
 void Constraint::RemoveArg(int arg_pos) {
@@ -779,21 +777,21 @@ void Annotation::AppendAllIntegerVariables(
 std::string Annotation::DebugString() const {
   switch (type) {
     case ANNOTATION_LIST: {
-      return StringPrintf("[%s]", JoinDebugString(annotations, ", ").c_str());
+      return absl::StrFormat("[%s]", JoinDebugString(annotations, ", ").c_str());
     }
     case IDENTIFIER: {
       return id;
     }
     case FUNCTION_CALL: {
-      return StringPrintf("%s(%s)", id.c_str(),
-                          JoinDebugString(annotations, ", ").c_str());
+      return absl::StrFormat("%s(%s)", id.c_str(),
+                             JoinDebugString(annotations, ", ").c_str());
     }
     case INTERVAL: {
       return absl::StrFormat("%" GG_LL_FORMAT "d..%" GG_LL_FORMAT "d",
                              interval_min, interval_max);
     }
     case INT_VALUE: {
-      return StrCat(interval_min);
+      return absl::StrCat(interval_min);
     }
     case INT_VAR_REF: {
       return variables.front()->name;
@@ -807,7 +805,7 @@ std::string Annotation::DebugString() const {
       return result;
     }
     case STRING_VALUE: {
-      return StringPrintf("\"%s\"", string_value.c_str());
+      return absl::StrFormat("\"%s\"", string_value.c_str());
     }
   }
   LOG(FATAL) << "Unhandled case in DebugString " << static_cast<int>(type);
@@ -822,7 +820,8 @@ std::string SolutionOutputSpecs::Bounds::DebugString() const {
 }
 
 SolutionOutputSpecs SolutionOutputSpecs::SingleVariable(
-    const std::string& name, IntegerVariable* variable, bool display_as_boolean) {
+    const std::string& name, IntegerVariable* variable,
+    bool display_as_boolean) {
   SolutionOutputSpecs result;
   result.name = name;
   result.variable = variable;
@@ -851,23 +850,23 @@ SolutionOutputSpecs SolutionOutputSpecs::VoidOutput() {
 
 std::string SolutionOutputSpecs::DebugString() const {
   if (variable != nullptr) {
-    return StringPrintf("output_var(%s)", variable->name.c_str());
+    return absl::StrFormat("output_var(%s)", variable->name.c_str());
   } else {
-    return StringPrintf("output_array([%s] [%s])",
-                        JoinDebugString(bounds, ", ").c_str(),
-                        JoinNameFieldPtr(flat_variables, ", ").c_str());
+    return absl::StrFormat("output_array([%s] [%s])",
+                           JoinDebugString(bounds, ", ").c_str(),
+                           JoinNameFieldPtr(flat_variables, ", ").c_str());
   }
 }
 
 // ----- Model -----
 
 Model::~Model() {
-  STLDeleteElements(&variables_);
-  STLDeleteElements(&constraints_);
+  gtl::STLDeleteElements(&variables_);
+  gtl::STLDeleteElements(&constraints_);
 }
 
-IntegerVariable* Model::AddVariable(const std::string& name, const Domain& domain,
-                                    bool defined) {
+IntegerVariable* Model::AddVariable(const std::string& name,
+                                    const Domain& domain, bool defined) {
   IntegerVariable* const var = new IntegerVariable(name, domain, defined);
   variables_.push_back(var);
   return var;
@@ -875,14 +874,15 @@ IntegerVariable* Model::AddVariable(const std::string& name, const Domain& domai
 
 // TODO(user): Create only once constant per value.
 IntegerVariable* Model::AddConstant(int64 value) {
-  IntegerVariable* const var =
-      new IntegerVariable(StrCat(value), Domain::IntegerValue(value), true);
+  IntegerVariable* const var = new IntegerVariable(
+      absl::StrCat(value), Domain::IntegerValue(value), true);
   variables_.push_back(var);
   return var;
 }
 
-void Model::AddConstraint(const std::string& id, std::vector<Argument> arguments,
-                          bool is_domain, IntegerVariable* defines) {
+void Model::AddConstraint(const std::string& id,
+                          std::vector<Argument> arguments, bool is_domain,
+                          IntegerVariable* defines) {
   Constraint* const constraint =
       new Constraint(id, std::move(arguments), is_domain, defines);
   constraints_.push_back(constraint);
@@ -891,7 +891,8 @@ void Model::AddConstraint(const std::string& id, std::vector<Argument> arguments
   }
 }
 
-void Model::AddConstraint(const std::string& id, std::vector<Argument> arguments) {
+void Model::AddConstraint(const std::string& id,
+                          std::vector<Argument> arguments) {
   AddConstraint(id, std::move(arguments), false, nullptr);
 }
 
@@ -919,27 +920,27 @@ void Model::Maximize(IntegerVariable* obj,
 }
 
 std::string Model::DebugString() const {
-  std::string output = StringPrintf("Model %s\nVariables\n", name_.c_str());
+  std::string output = absl::StrFormat("Model %s\nVariables\n", name_.c_str());
   for (int i = 0; i < variables_.size(); ++i) {
-    StringAppendF(&output, "  %s\n", variables_[i]->DebugString().c_str());
+    absl::StrAppendFormat(&output, "  %s\n", variables_[i]->DebugString().c_str());
   }
   output.append("Constraints\n");
   for (int i = 0; i < constraints_.size(); ++i) {
     if (constraints_[i] != nullptr) {
-      StringAppendF(&output, "  %s\n", constraints_[i]->DebugString().c_str());
+      absl::StrAppendFormat(&output, "  %s\n", constraints_[i]->DebugString().c_str());
     }
   }
   if (objective_ != nullptr) {
-    StringAppendF(&output, "%s %s\n  %s\n", maximize_ ? "Maximize" : "Minimize",
-                  objective_->name.c_str(),
-                  JoinDebugString(search_annotations_, ", ").c_str());
+    absl::StrAppendFormat(&output, "%s %s\n  %s\n", maximize_ ? "Maximize" : "Minimize",
+                          objective_->name.c_str(),
+                          JoinDebugString(search_annotations_, ", ").c_str());
   } else {
-    StringAppendF(&output, "Satisfy\n  %s\n",
-                  JoinDebugString(search_annotations_, ", ").c_str());
+    absl::StrAppendFormat(&output, "Satisfy\n  %s\n",
+                          JoinDebugString(search_annotations_, ", ").c_str());
   }
   output.append("Output\n");
   for (int i = 0; i < output_.size(); ++i) {
-    StringAppendF(&output, "  %s\n", output_[i].DebugString().c_str());
+    absl::StrAppendFormat(&output, "  %s\n", output_[i].DebugString().c_str());
   }
 
   return output;

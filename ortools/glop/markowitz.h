@@ -75,8 +75,8 @@
 
 #include <queue>
 
-#include "ortools/base/logging.h"
 #include "ortools/base/inlined_vector.h"
+#include "ortools/base/logging.h"
 #include "ortools/glop/parameters.pb.h"
 #include "ortools/glop/status.h"
 #include "ortools/lp_data/lp_types.h"
@@ -105,9 +105,12 @@ class MatrixNonZeroPattern {
 
   // Resets the pattern to the one of the given matrix but only for the
   // rows/columns whose given permutation is kInvalidRow or kInvalidCol.
+  // This also fills the singleton columns/rows with the corresponding entries.
   void InitializeFromMatrixSubset(const MatrixView& basis_matrix,
                                   const RowPermutation& row_perm,
-                                  const ColumnPermutation& col_perm);
+                                  const ColumnPermutation& col_perm,
+                                  std::vector<ColIndex>* singleton_columns,
+                                  std::vector<RowIndex>* singleton_rows);
 
   // Adds a non-zero entry to the matrix. There should be no duplicates.
   void AddEntry(RowIndex row, ColIndex col);
@@ -158,7 +161,7 @@ class MatrixNonZeroPattern {
   // Returns the set of non-zeros of the given row (unsorted).
   // Call RemoveDeletedColumnsFromRow(row) to clean the row first.
   // This is only valid for the row indices still in the residual matrix.
-  const std::vector<ColIndex>& RowNonZero(RowIndex row) const {
+  const absl::InlinedVector<ColIndex, 6>& RowNonZero(RowIndex row) const {
     return row_non_zero_[row];
   }
 
@@ -174,7 +177,14 @@ class MatrixNonZeroPattern {
   // non-sorted version. Investigate more.
   void MergeIntoSorted(RowIndex pivot_row, RowIndex row);
 
-  ITIVector<RowIndex, std::vector<ColIndex>> row_non_zero_;
+  // Using InlinedVector helps because we usually have many rows with just a few
+  // non-zeros. Note that on a 64 bits computer we get exactly 6 inlined int32
+  // elements without extra space, and the size of the inlined vector is 4 times
+  // 64 bits.
+  //
+  // TODO(user): We could be even more efficient since a size of int32 is enough
+  // for us and we could store in common the inlined/not-inlined size.
+  gtl::ITIVector<RowIndex, absl::InlinedVector<ColIndex, 6>> row_non_zero_;
   StrictITIVector<RowIndex, int32> row_degree_;
   StrictITIVector<ColIndex, int32> col_degree_;
   DenseBooleanRow deleted_columns_;
@@ -247,7 +257,7 @@ class SparseMatrixWithReusableColumnMemory {
   // mutable_column(col) is stored in columns_[mapping_[col]].
   // The columns_ that can be reused have their index stored in free_columns_.
   const SparseColumn empty_column_;
-  ITIVector<ColIndex, int> mapping_;
+  gtl::ITIVector<ColIndex, int> mapping_;
   std::vector<int> free_columns_;
   std::vector<SparseColumn> columns_;
   DISALLOW_COPY_AND_ASSIGN(SparseMatrixWithReusableColumnMemory);
@@ -312,12 +322,6 @@ class Markowitz {
     RatioDistribution degree_two_pivot_columns;
   };
   Stats stats_;
-
-  // Initializes residual_matrix_non_zero_, singleton_column_ and
-  // singleton_row_.
-  void InitializeResidualMatrix(const MatrixView& basis_matrix,
-                                const RowPermutation& row_perm,
-                                const ColumnPermutation& col_perm);
 
   // Fast track for singleton columns of the matrix. Fills a part of the row and
   // column permutation that move these columns in order to form an identity

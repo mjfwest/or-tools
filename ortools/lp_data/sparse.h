@@ -309,14 +309,15 @@ class CompactSparseMatrix {
   // Adds a dense column to the CompactSparseMatrix (only the non-zero will be
   // actually stored). This work in O(input.size()) and returns the index of the
   // added column.
-  ColIndex AddDenseColumn(const DenseColumn& input);
+  ColIndex AddDenseColumn(const DenseColumn& dense_column);
 
   // Same as AddDenseColumn(), but only adds the non-zero from the given start.
-  ColIndex AddDenseColumnPrefix(const DenseColumn& input, RowIndex start);
+  ColIndex AddDenseColumnPrefix(const DenseColumn& dense_column,
+                                RowIndex start);
 
   // Same as AddDenseColumn(), but uses the given non_zeros pattern of input.
   // If non_zeros is empty, this actually calls AddDenseColumn().
-  ColIndex AddDenseColumnWithNonZeros(const DenseColumn& input,
+  ColIndex AddDenseColumnWithNonZeros(const DenseColumn& dense_column,
                                       const std::vector<RowIndex>& non_zeros);
 
   // Adds a dense column for which we know the non-zero positions and clears it.
@@ -339,7 +340,7 @@ class CompactSparseMatrix {
   RowIndex num_rows() const { return num_rows_; }
   ColIndex num_cols() const { return num_cols_; }
 
-  // Returns wheter or not this matrix contains any non-zero entries.
+  // Returns whether or not this matrix contains any non-zero entries.
   bool IsEmpty() const {
     DCHECK_EQ(coefficients_.size(), rows_.size());
     return coefficients_.empty();
@@ -350,8 +351,8 @@ class CompactSparseMatrix {
   //   const RowIndex row = compact_matrix_.EntryRow(i);
   //   const Fractional coefficient = compact_matrix_.EntryCoefficient(i);
   // }
-  util::IntegerRange<EntryIndex> Column(ColIndex col) const {
-    return util::IntegerRange<EntryIndex>(starts_[col], starts_[col + 1]);
+  ::util::IntegerRange<EntryIndex> Column(ColIndex col) const {
+    return ::util::IntegerRange<EntryIndex>(starts_[col], starts_[col + 1]);
   }
   Fractional EntryCoefficient(EntryIndex i) const { return coefficients_[i]; }
   RowIndex EntryRow(EntryIndex i) const { return rows_[i]; }
@@ -705,6 +706,12 @@ class TriangularMatrix : private CompactSparseMatrix {
                                      const RowPermutation& row_perm,
                                      RowIndexVector* lower_column_rows,
                                      RowIndexVector* upper_column_rows);
+
+  // The upper bound is computed using one of the algorithm presented in
+  // "A Survey of Condition Number Estimation for Triangular Matrices"
+  // https:epubs.siam.org/doi/pdf/10.1137/1029112/
+  Fractional ComputeInverseInfinityNormUpperBound() const;
+  Fractional ComputeInverseInfinityNorm() const;
 
  private:
   // Internal versions of some Solve() functions to avoid code duplication.

@@ -19,10 +19,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/stringpiece_utils.h"
-#include "ortools/base/hash.h"
 #include "ortools/flatzinc/model.h"
 
 namespace operations_research {
@@ -233,7 +233,9 @@ class Presolver {
 
   // Store changed objects.
   std::unordered_set<IntegerVariable*> changed_variables_;
+  std::vector<IntegerVariable*> changed_variables_vector_;
   std::unordered_set<Constraint*> changed_constraints_;
+  std::vector<Constraint*> changed_constraints_vector_;
 };
 }  // namespace fz
 }  // namespace operations_research

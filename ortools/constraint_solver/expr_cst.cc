@@ -21,11 +21,10 @@
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
+#include "ortools/base/join.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
-#include "ortools/base/join.h"
 #include "ortools/base/stl_util.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/saturated_arithmetic.h"
@@ -1192,7 +1191,7 @@ Constraint* Solver::MakeMemberCt(IntExpr* expr,
   // Catch empty set.
   if (copied_values.empty()) return MakeFalseConstraint();
   // Sort and remove duplicates.
-  STLSortAndRemoveDuplicates(&copied_values);
+  gtl::STLSortAndRemoveDuplicates(&copied_values);
   // Special case for singleton.
   if (copied_values.size() == 1) return MakeEquality(expr, copied_values[0]);
   // Catch contiguous intervals.
@@ -1261,7 +1260,7 @@ Constraint* Solver::MakeNotMemberCt(IntExpr* expr,
   // Catch empty set.
   if (copied_values.empty()) return MakeTrueConstraint();
   // Sort and remove duplicates.
-  STLSortAndRemoveDuplicates(&copied_values);
+  gtl::STLSortAndRemoveDuplicates(&copied_values);
   // Special case for singleton.
   if (copied_values.size() == 1) return MakeNonEquality(expr, copied_values[0]);
   // Catch contiguous intervals.
@@ -1318,7 +1317,7 @@ class IsMemberCt : public Constraint {
     DCHECK(v != nullptr);
     DCHECK(s != nullptr);
     DCHECK(b != nullptr);
-    while (ContainsKey(values_as_set_, neg_support_)) {
+    while (gtl::ContainsKey(values_as_set_, neg_support_)) {
       neg_support_++;
     }
   }
@@ -1382,7 +1381,7 @@ class IsMemberCt : public Constraint {
           } else {
             // Look for a new negative support.
             for (const int64 value : InitAndGetValues(domain_)) {
-              if (!ContainsKey(values_as_set_, value)) {
+              if (!gtl::ContainsKey(values_as_set_, value)) {
                 neg_support_ = value;
                 return;
               }

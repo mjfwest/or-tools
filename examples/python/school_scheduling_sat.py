@@ -91,8 +91,8 @@ class SchoolSchedulingSatSolver(object):
     for teacher in all_teachers:
       self.model.Add(
           sum([
-              self.assignment[c, s, teacher, slot]
-              for c in all_courses for s in all_subjects for slot in all_slots
+              self.assignment[c, s, teacher, slot] for c in all_courses
+              for s in all_subjects for slot in all_slots
           ]) <= self.problem.teacher_work_hours[teacher])
 
     # Teacher makes all the classes of a subject's course
@@ -113,26 +113,25 @@ class SchoolSchedulingSatSolver(object):
               sum(teacher_courses[course, subject, t]
                   for t in all_teachers) == 1)
 
-    # Solution collector
-    self.collector = None
-
   def solve(self):
     print('Solving')
     solver = cp_model.CpSolver()
     solution_printer = SchoolSchedulingSatSolutionPrinter()
-    status = solver.SearchForAllSolutions(self.model, solution_printer)
+    status = solver.Solve(self.model)
     print()
+    print('status', status)
     print('Branches', solver.NumBranches())
     print('Conflicts', solver.NumConflicts())
     print('WallTime', solver.WallTime())
 
-  def print_status(self):
-    pass
-
 
 class SchoolSchedulingSatSolutionPrinter(cp_model.CpSolverSolutionCallback):
 
-  def NewSolution(self):
+  def __init__(self):
+    cp_model.CpSolverSolutionCallback.__init__(self)
+    self.__solution_count = 0
+
+  def OnSolutionCallback(self):
     print('Found Solution!')
 
 
@@ -169,7 +168,6 @@ def main():
       periods, levels, sections, teachers_work_hours)
   solver = SchoolSchedulingSatSolver(problem)
   solver.solve()
-  solver.print_status()
 
 
 if __name__ == '__main__':

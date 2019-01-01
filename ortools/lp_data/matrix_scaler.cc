@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "ortools/lp_data/matrix_scaler.h"
 
 #include <algorithm>
@@ -65,7 +64,7 @@ std::string SparseMatrixScaler::DebugInformationString() const {
   Fractional min_magnitude;
   matrix_->ComputeMinAndMaxMagnitudes(&min_magnitude, &max_magnitude);
   const Fractional dynamic_range = max_magnitude / min_magnitude;
-  std::string output = StringPrintf(
+  std::string output = absl::StrFormat(
       "Min magnitude = %g, max magnitude = %g\n"
       "Dynamic range = %g\n"
       "Variance = %g\n"
@@ -135,8 +134,8 @@ void SparseMatrixScaler::Scale(GlopParameters::ScalingAlgorithm method) {
 
 namespace {
 template <class I>
-void ScaleVector(const ITIVector<I, Fractional>& scale, bool up,
-                 ITIVector<I, Fractional>* vector_to_scale) {
+void ScaleVector(const gtl::ITIVector<I, Fractional>& scale, bool up,
+                 gtl::ITIVector<I, Fractional>* vector_to_scale) {
   RETURN_IF_NULL(vector_to_scale);
   const I size(std::min(scale.size(), vector_to_scale->size()));
   if (up) {
@@ -153,7 +152,7 @@ void ScaleVector(const ITIVector<I, Fractional>& scale, bool up,
 template <typename InputIndexType>
 ColIndex CreateOrGetScaleIndex(
     InputIndexType num, LinearProgram* lp,
-    ITIVector<InputIndexType, ColIndex>* scale_var_indices) {
+    gtl::ITIVector<InputIndexType, ColIndex>* scale_var_indices) {
   if ((*scale_var_indices)[num] == -1) {
     (*scale_var_indices)[num] = lp->CreateNewVariable();
   }
@@ -374,8 +373,8 @@ Status SparseMatrixScaler::LPScale() {
 
   // Indices to variables in the LinearProgram populated by
   // GenerateLinearProgram.
-  ITIVector<ColIndex, ColIndex> col_scale_var_indices;
-  ITIVector<RowIndex, ColIndex> row_scale_var_indices;
+  gtl::ITIVector<ColIndex, ColIndex> col_scale_var_indices;
+  gtl::ITIVector<RowIndex, ColIndex> row_scale_var_indices;
   row_scale_var_indices.resize(RowToIntIndex(matrix_->num_rows()), kInvalidCol);
   col_scale_var_indices.resize(ColToIntIndex(matrix_->num_cols()), kInvalidCol);
   const ColIndex beta = linear_program->CreateNewVariable();

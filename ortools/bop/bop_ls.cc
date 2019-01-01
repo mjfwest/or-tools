@@ -13,7 +13,7 @@
 
 #include "ortools/bop/bop_ls.h"
 
-#include "ortools/base/stringprintf.h"
+#include "ortools/base/memory.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/bop/bop_util.h"
 #include "ortools/sat/boolean_problem.h"
@@ -49,9 +49,9 @@ BopOptimizerBase::Status LocalSearchOptimizer::Optimize(
   learned_info->Clear();
 
   if (assignment_iterator_ == nullptr) {
-    assignment_iterator_.reset(new LocalSearchAssignmentIterator(
+    assignment_iterator_ = absl::make_unique<LocalSearchAssignmentIterator>(
         problem_state, max_num_decisions_,
-        parameters.max_num_broken_constraints_in_ls(), &sat_wrapper_));
+        parameters.max_num_broken_constraints_in_ls(), &sat_wrapper_);
   }
 
   if (state_update_stamp_ != problem_state.update_stamp()) {
@@ -88,7 +88,8 @@ BopOptimizerBase::Status LocalSearchOptimizer::Optimize(
   // the ls? note that this is minor.
   sat_wrapper_.ExtractLearnedInfo(learned_info);
   if (assignment_iterator_->BetterSolutionHasBeenFound()) {
-    // TODO(user): simply use std::vector<bool> instead of a BopSolution internally.
+    // TODO(user): simply use std::vector<bool> instead of a BopSolution
+    // internally.
     learned_info->solution = assignment_iterator_->LastReferenceAssignment();
     return BopOptimizerBase::SOLUTION_FOUND;
   }
@@ -380,7 +381,7 @@ std::string AssignmentAndConstraintFeasibilityMaintainer::DebugString() const {
   str += "\nFlipped variables: ";
   // TODO(user): show the backtrack levels.
   for (const VariableIndex var : flipped_var_trail_) {
-    str += StringPrintf(" %d", var.value());
+    str += absl::StrFormat(" %d", var.value());
   }
   str += "\nmin  curr  max\n";
   for (ConstraintIndex ct(0); ct < constraint_values_.size(); ++ct) {
@@ -537,7 +538,7 @@ ConstraintIndex OneFlipConstraintRepairer::ConstraintToRepair() const {
 TermIndex OneFlipConstraintRepairer::NextRepairingTerm(
     ConstraintIndex ct_index, TermIndex init_term_index,
     TermIndex start_term_index) const {
-  const ITIVector<TermIndex, ConstraintTerm>& terms =
+  const gtl::ITIVector<TermIndex, ConstraintTerm>& terms =
       by_constraint_matrix_[ct_index];
   const int64 constraint_value = maintainer_.ConstraintValue(ct_index);
   const int64 lb = maintainer_.ConstraintLowerBound(ct_index);
@@ -589,13 +590,14 @@ sat::Literal OneFlipConstraintRepairer::GetFlip(ConstraintIndex ct_index,
 }
 
 void OneFlipConstraintRepairer::SortTermsOfEachConstraints(int num_variables) {
-  ITIVector<VariableIndex, int64> objective(num_variables, 0);
+  gtl::ITIVector<VariableIndex, int64> objective(num_variables, 0);
   for (const ConstraintTerm& term :
        by_constraint_matrix_[AssignmentAndConstraintFeasibilityMaintainer::
                                  kObjectiveConstraint]) {
     objective[term.var] = std::abs(term.weight);
   }
-  for (ITIVector<TermIndex, ConstraintTerm>& terms : by_constraint_matrix_) {
+  for (gtl::ITIVector<TermIndex, ConstraintTerm>& terms :
+       by_constraint_matrix_) {
     std::sort(terms.begin(), terms.end(),
               [&objective](const ConstraintTerm& a, const ConstraintTerm& b) {
                 return objective[a.var] > objective[b.var];
@@ -792,7 +794,8 @@ bool LocalSearchAssignmentIterator::NextAssignment() {
 
   // All nodes have been explored.
   if (search_nodes_.empty()) {
-    VLOG(1) << std::string(27, ' ') + "LS " << max_num_decisions_ << " finished."
+    VLOG(1) << std::string(27, ' ') + "LS " << max_num_decisions_
+            << " finished."
             << " #explored:" << num_nodes_
             << " #stored:" << transposition_table_.size()
             << " #skipped:" << num_skipped_nodes_;
@@ -816,9 +819,9 @@ double LocalSearchAssignmentIterator::deterministic_time() const {
 std::string LocalSearchAssignmentIterator::DebugString() const {
   std::string str = "Search nodes:\n";
   for (int i = 0; i < search_nodes_.size(); ++i) {
-    str +=
-        StringPrintf("  %d: %d  %d\n", i, search_nodes_[i].constraint.value(),
-                     search_nodes_[i].term_index.value());
+    str += absl::StrFormat("  %d: %d  %d\n", i,
+                           search_nodes_[i].constraint.value(),
+                           search_nodes_[i].term_index.value());
   }
   return str;
 }
@@ -938,7 +941,7 @@ bool LocalSearchAssignmentIterator::GoDeeper() {
   // Add the new decision.
   //
   // TODO(user): Store the last explored term index to not start from -1 each
-  // time. This will be very useful when a backtrack occured due to the SAT
+  // time. This will be very useful when a backtrack occurred due to the SAT
   // propagator. Note however that this behavior is already enforced when we use
   // the transposition table, since we will not explore again the branches
   // already explored.

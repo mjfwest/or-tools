@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include <cstddef>
-#include <unordered_set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "ortools/base/integral_types.h"
@@ -155,9 +154,9 @@ class CollectVariablesVisitor : public ModelParser {
       delegate->Accept(this);
       IgnoreIntegerVariable(const_cast<IntVar*>(variable));
     } else {
-      if (!ContainsKey(primary_set_, var) &&
-          !ContainsKey(secondary_set_, var) &&
-          !ContainsKey(ignored_set_, var) && !var->Bound()) {
+      if (!gtl::ContainsKey(primary_set_, var) &&
+          !gtl::ContainsKey(secondary_set_, var) &&
+          !gtl::ContainsKey(ignored_set_, var) && !var->Bound()) {
         primary_set_.insert(var);
       }
     }

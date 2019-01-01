@@ -55,11 +55,10 @@ function export_manylinux_wheel {
     # We need to force this target, otherwise the protobuf stub will be missing
     # (for the makefile, it exists even if previously generated for another
     # platform)
-    git pull
     make -B install_python_modules  # regenerates Makefile.local
     make python
     make test_python
-    make pypi_archive_dir
+    make pypi_archive
     # Build and repair wheels
     cd temp-python*/ortools
     python setup.py bdist_wheel
@@ -73,6 +72,7 @@ function test_installed {
     #   $@ the test files to be tested
     local testfiles=("${@}")
     cd "$(mktemp -d)" # ensure we are not importing something from $PWD
+    python --version
     for testfile in "${testfiles[@]}"
     do
         python "$testfile"
@@ -145,6 +145,7 @@ fi
 
 # For each python platform provided by manylinux, build, export and test
 # artifacts.
+BASE_PKG_CONFIG="${PKG_CONFIG_PATH}"
 for PYROOT in /opt/python/*
 do
     PYTAG=$(basename "$PYROOT")
@@ -165,6 +166,8 @@ do
     source "${BUILD_ROOT}/${PYTAG}/bin/activate"
     pip install -U pip setuptools wheel six  # six is needed by make test_python
     # Build artifact
+    export PKG_CONFIG_PATH="${PYROOT}/lib/pkgconfig:${BASE_PKG_CONFIG}"
+    echo "PKG_CONFIG_PATH: ${PKG_CONFIG_PATH}"
     export_manylinux_wheel "$SRC_ROOT" "$EXPORT_ROOT"
     # Ensure everything is clean (don't clean third_party anyway,
     # it has been built once)
@@ -183,6 +186,7 @@ do
     pip install -U pip setuptools wheel six
     # Install wheel and run tests
     pip install --no-cache-dir "$WHEEL_FILE"
+    pip show ortools
     test_installed "${TESTS[@]}"
     # Restore environment
     deactivate

@@ -28,9 +28,7 @@
 //
 // This code is based on (read: translated from) the Java version
 // (read: translated from) the Python version at
-//   http://www.clapper.org/software/python/munkres/
-// which in turn is based on
-//   http://www.public.iastate.edu/~ddoty/HungarianAlgorithm.html.
+//   http://www.clapper.org/software/python/munkres/.
 
 #ifndef OR_TOOLS_ALGORITHMS_HUNGARIAN_H_
 #define OR_TOOLS_ALGORITHMS_HUNGARIAN_H_
@@ -41,17 +39,14 @@
 namespace operations_research {
 
 // See IMPORTANT NOTE at the top of the file.
-void MinimizeLinearAssignment(
-    const std::vector<std::vector<double> >& cost,
-    std::unordered_map<int, int>* direct_assignment,
-    std::unordered_map<int, int>* reverse_assignment);
+void MinimizeLinearAssignment(const std::vector<std::vector<double> >& cost,
+                              std::unordered_map<int, int>* direct_assignment,
+                              std::unordered_map<int, int>* reverse_assignment);
 
 // See IMPORTANT NOTE at the top of the file.
-void MaximizeLinearAssignment(
-    const std::vector<std::vector<double> >& cost,
-    std::unordered_map<int, int>* direct_assignment,
-    std::unordered_map<int, int>* reverse_assignment);
-
+void MaximizeLinearAssignment(const std::vector<std::vector<double> >& cost,
+                              std::unordered_map<int, int>* direct_assignment,
+                              std::unordered_map<int, int>* reverse_assignment);
 }  // namespace operations_research
 
 #endif  // OR_TOOLS_ALGORITHMS_HUNGARIAN_H_

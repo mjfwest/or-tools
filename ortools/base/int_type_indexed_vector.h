@@ -64,9 +64,10 @@
 #include <string>
 #include <vector>
 
-#include "ortools/base/macros.h"
 #include "ortools/base/int_type.h"
+#include "ortools/base/macros.h"
 
+namespace gtl {
 // STL std::vector
 // ------------------------------------------------------------------
 template <typename IntType, typename T, typename Alloc = std::allocator<T> >
@@ -190,12 +191,12 @@ class ITIVector : protected std::vector<T, Alloc> {
                           const ITIVector<IntType, T, Alloc>& y) { \
     return x.get() op y.get();                                     \
   }
-ITIVECTOR_COMPARISON_OP(== );  // NOLINT
-ITIVECTOR_COMPARISON_OP(!= );  // NOLINT
-ITIVECTOR_COMPARISON_OP(< );   // NOLINT
-ITIVECTOR_COMPARISON_OP(<= );  // NOLINT
-ITIVECTOR_COMPARISON_OP(> );   // NOLINT
-ITIVECTOR_COMPARISON_OP(>= );  // NOLINT
+ITIVECTOR_COMPARISON_OP(==);  // NOLINT
+ITIVECTOR_COMPARISON_OP(!=);  // NOLINT
+ITIVECTOR_COMPARISON_OP(<);   // NOLINT
+ITIVECTOR_COMPARISON_OP(<=);  // NOLINT
+ITIVECTOR_COMPARISON_OP(>);   // NOLINT
+ITIVECTOR_COMPARISON_OP(>=);  // NOLINT
 #undef ITIVECTOR_COMPARISON_OP
 
 template <typename IntType, typename T, typename Alloc>
@@ -203,5 +204,7 @@ inline void swap(ITIVector<IntType, T, Alloc>& x,
                  ITIVector<IntType, T, Alloc>& y) {
   x.swap(y);
 }
+
+}  // namespace gtl
 
 #endif  // OR_TOOLS_BASE_INT_TYPE_INDEXED_VECTOR_H_

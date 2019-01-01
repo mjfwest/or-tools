@@ -15,21 +15,21 @@
 
 #include <stddef.h>
 #include <algorithm>
-#include <unordered_map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
+#include "ortools/base/port.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/timer.h"
-#include "ortools/base/port.h"
+#include "ortools/linear_solver/linear_solver.h"
 #include "scip/scip.h"
 #include "scip/scipdefplugins.h"
-#include "ortools/base/hash.h"
-#include "ortools/linear_solver/linear_solver.h"
 
 // Our own version of SCIP_CALL to do error management.
 // TODO(user): The error management could be improved, especially
@@ -90,9 +90,9 @@ class SCIPInterface : public MPSolverInterface {
   void ExtractObjective() override;
 
   std::string SolverVersion() const override {
-    return StringPrintf("SCIP %d.%d.%d [LP solver: %s]", SCIPmajorVersion(),
-                        SCIPminorVersion(), SCIPtechVersion(),
-                        SCIPlpiGetSolverName());
+    return absl::StrFormat("SCIP %d.%d.%d [LP solver: %s]", SCIPmajorVersion(),
+                           SCIPminorVersion(), SCIPtechVersion(),
+                           SCIPlpiGetSolverName());
   }
 
   bool InterruptSolve() override {
@@ -264,7 +264,7 @@ void SCIPInterface::ClearConstraint(MPConstraint* constraint) {
   const int constraint_index = constraint->index();
   // Constraint may not have been extracted yet.
   if (!constraint_is_extracted(constraint_index)) return;
-  for (CoeffEntry entry : constraint->coefficients_) {
+  for (const auto& entry : constraint->coefficients_) {
     const int var_index = entry.first->index();
     const double old_coef_value = entry.second;
     DCHECK(variable_is_extracted(var_index));
@@ -292,7 +292,7 @@ void SCIPInterface::ClearObjective() {
   InvalidateSolutionSynchronization();
   ORTOOLS_SCIP_CALL(SCIPfreeTransform(scip_));
   // Clear linear terms
-  for (CoeffEntry entry : solver_->objective_->coefficients_) {
+  for (const auto& entry : solver_->objective_->coefficients_) {
     const int var_index = entry.first->index();
     // Variable may have not been extracted yet.
     if (!variable_is_extracted(var_index)) {
@@ -334,7 +334,7 @@ void SCIPInterface::ExtractNewVariables() {
     // Add new variables to existing constraints.
     for (int i = 0; i < last_constraint_index_; i++) {
       MPConstraint* const ct = solver_->constraints_[i];
-      for (CoeffEntry entry : ct->coefficients_) {
+      for (const auto& entry : ct->coefficients_) {
         const int var_index = entry.first->index();
         DCHECK(variable_is_extracted(var_index));
         if (var_index >= last_variable_index_) {
@@ -363,7 +363,7 @@ void SCIPInterface::ExtractNewConstraints() {
         max_row_length = ct->coefficients_.size();
       }
     }
-    std::unique_ptr<SCIP_VAR* []> vars(new SCIP_VAR*[max_row_length]);
+    std::unique_ptr<SCIP_VAR*[]> vars(new SCIP_VAR*[max_row_length]);
     std::unique_ptr<double[]> coefs(new double[max_row_length]);
     // Add each new constraint.
     for (int i = last_constraint_index_; i < total_num_rows; ++i) {
@@ -371,7 +371,7 @@ void SCIPInterface::ExtractNewConstraints() {
       DCHECK(constraint_is_extracted(i));
       const int size = ct->coefficients_.size();
       int j = 0;
-      for (CoeffEntry entry : ct->coefficients_) {
+      for (const auto& entry : ct->coefficients_) {
         const int var_index = entry.first->index();
         DCHECK(variable_is_extracted(var_index));
         vars[j] = scip_variables_[var_index];
@@ -406,7 +406,7 @@ void SCIPInterface::ExtractObjective() {
   ORTOOLS_SCIP_CALL(SCIPfreeTransform(scip_));
   // Linear objective: set objective coefficients for all variables (some might
   // have been modified).
-  for (CoeffEntry entry : solver_->objective_->coefficients_) {
+  for (const auto& entry : solver_->objective_->coefficients_) {
     const int var_index = entry.first->index();
     const double obj_coef = entry.second;
     ORTOOLS_SCIP_CALL(
@@ -440,7 +440,7 @@ MPSolver::ResultStatus SCIPInterface::Solve(const MPSolverParameters& param) {
   }
 
   ExtractModel();
-  VLOG(1) << StringPrintf("Model built in %.3f seconds.", timer.Get());
+  VLOG(1) << absl::StrFormat("Model built in %.3f seconds.", timer.Get());
 
   // Time limit.
   if (solver_->time_limit() != 0) {
@@ -516,7 +516,7 @@ MPSolver::ResultStatus SCIPInterface::Solve(const MPSolverParameters& param) {
     result_status_ = MPSolver::ABNORMAL;
     return result_status_;
   }
-  VLOG(1) << StringPrintf("Solved in %.3f seconds.", timer.Get());
+  VLOG(1) << absl::StrFormat("Solved in %.3f seconds.", timer.Get());
 
   // Get the results.
   SCIP_SOL* const solution = SCIPgetBestSol(scip_);
@@ -670,7 +670,6 @@ std::string SCIPInterface::ValidFileExtensionForParameterFile() const {
 MPSolverInterface* BuildSCIPInterface(MPSolver* const solver) {
   return new SCIPInterface(solver);
 }
-
 
 }  // namespace operations_research
 #endif  //  #if defined(USE_SCIP)

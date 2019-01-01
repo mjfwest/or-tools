@@ -14,14 +14,14 @@
 #include "ortools/sat/all_different.h"
 
 #include <algorithm>
-#include <unordered_set>
 #include <map>
 #include <memory>
+#include <unordered_set>
 
-#include "ortools/base/logging.h"
-#include "ortools/graph/strongly_connected_components.h"
 #include "ortools/base/int_type.h"
+#include "ortools/base/logging.h"
 #include "ortools/base/map_util.h"
+#include "ortools/graph/strongly_connected_components.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/util/sort.h"
 
@@ -435,7 +435,7 @@ void AllDifferentBoundsPropagator::FillHallReason(IntegerValue hall_lb,
   to_insert_.clear();
   integer_reason_.clear();
   for (int64 v = hall_lb.value(); v <= hall_ub; ++v) {
-    const IntegerVariable var = FindOrDie(value_to_variable_, v);
+    const IntegerVariable var = gtl::FindOrDie(value_to_variable_, v);
     integer_reason_.push_back(IntegerLiteral::GreaterOrEqual(var, hall_lb));
     integer_reason_.push_back(IntegerLiteral::LowerOrEqual(var, hall_ub));
   }

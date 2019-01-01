@@ -18,20 +18,20 @@
 #define OR_TOOLS_SAT_CLAUSE_H_
 
 #include <deque>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <string>
 #include <utility>
 #include <vector>
 
-#include "ortools/base/integral_types.h"
-#include "ortools/base/macros.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/inlined_vector.h"
-#include "ortools/base/span.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
-#include "ortools/base/hash.h"
-#include "ortools/sat/drat.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/macros.h"
+#include "ortools/base/span.h"
+#include "ortools/sat/drat_proof_handler.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/util/bitset.h"
@@ -42,8 +42,8 @@ namespace operations_research {
 namespace sat {
 
 // This is how the SatSolver stores a clause. A clause is just a disjunction of
-// literals. In many places, we just use std::vector<literal> to encode one. But in
-// the critical propagation code, we use this class to remove one memory
+// literals. In many places, we just use std::vector<literal> to encode one. But
+// in the critical propagation code, we use this class to remove one memory
 // indirection.
 class SatClause {
  public:
@@ -158,8 +158,7 @@ class LiteralWatchers : public SatPropagator {
 
   // SatPropagator API.
   bool Propagate(Trail* trail) final;
-  absl::Span<Literal> Reason(const Trail& trail,
-                                   int trail_index) const final;
+  absl::Span<Literal> Reason(const Trail& trail, int trail_index) const final;
 
   // Returns the reason of the variable at given trail_index. This only works
   // for variable propagated by this class and is almost the same as Reason()
@@ -202,7 +201,7 @@ class LiteralWatchers : public SatPropagator {
   // that some learned clause are kept forever (heuristics) and do not appear
   // here.
   bool IsRemovable(SatClause* const clause) const {
-    return ContainsKey(clauses_info_, clause);
+    return gtl::ContainsKey(clauses_info_, clause);
   }
   int64 num_removable_clauses() const { return clauses_info_.size(); }
   std::unordered_map<SatClause*, ClauseInfo>* mutable_clauses_info() {
@@ -218,7 +217,9 @@ class LiteralWatchers : public SatPropagator {
   // Number of clauses currently watched.
   int64 num_watched_clauses() const { return num_watched_clauses_; }
 
-  void SetDratWriter(DratWriter* drat_writer) { drat_writer_ = drat_writer; }
+  void SetDratProofHandler(DratProofHandler* drat_proof_handler) {
+    drat_proof_handler_ = drat_proof_handler;
+  }
 
   // Really basic algorithm to return a clause to try to minimize. We simply
   // loop over the clause that we keep forever, in creation order. This starts
@@ -262,7 +263,7 @@ class LiteralWatchers : public SatPropagator {
     SatClause* clause;
     Literal blocking_literal;
   };
-  ITIVector<LiteralIndex, std::vector<Watcher>> watchers_on_false_;
+  gtl::ITIVector<LiteralIndex, std::vector<Watcher>> watchers_on_false_;
 
   // SatClause reasons by trail_index.
   std::vector<SatClause*> reasons_;
@@ -291,7 +292,7 @@ class LiteralWatchers : public SatPropagator {
   // Only contains removable clause.
   std::unordered_map<SatClause*, ClauseInfo> clauses_info_;
 
-  DratWriter* drat_writer_ = nullptr;
+  DratProofHandler* drat_proof_handler_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(LiteralWatchers);
 };
@@ -385,8 +386,7 @@ class BinaryImplicationGraph : public SatPropagator {
   }
 
   bool Propagate(Trail* trail) final;
-  absl::Span<Literal> Reason(const Trail& trail,
-                                   int trail_index) const final;
+  absl::Span<Literal> Reason(const Trail& trail, int trail_index) const final;
 
   // Resizes the data structure.
   void Resize(int num_variables);
@@ -481,7 +481,7 @@ class BinaryImplicationGraph : public SatPropagator {
   //
   // TODO(user): We could be even more efficient since a size of int32 is enough
   // for us and we could store in common the inlined/not-inlined size.
-  ITIVector<LiteralIndex, absl::InlinedVector<Literal, 6>> implications_;
+  gtl::ITIVector<LiteralIndex, absl::InlinedVector<Literal, 6>> implications_;
   int64 num_implications_;
 
   // Some stats.

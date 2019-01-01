@@ -66,6 +66,7 @@
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
+#include "ortools/base/memory.h"
 #include "ortools/util/time_limit.h"
 
 namespace operations_research {
@@ -115,13 +116,13 @@ class KnapsackSolver {
     KNAPSACK_BRUTE_FORCE_SOLVER = 0,
     KNAPSACK_64ITEMS_SOLVER = 1,
     KNAPSACK_DYNAMIC_PROGRAMMING_SOLVER = 2,
-    #if defined(USE_CBC)
+#if defined(USE_CBC)
     KNAPSACK_MULTIDIMENSION_CBC_MIP_SOLVER = 3,
-    #endif  // USE_CBC
+#endif  // USE_CBC
     KNAPSACK_MULTIDIMENSION_BRANCH_AND_BOUND_SOLVER = 5,
-    #if defined(USE_SCIP)
+#if defined(USE_SCIP)
     KNAPSACK_MULTIDIMENSION_SCIP_MIP_SOLVER = 6,
-    #endif  // USE_SCIP
+#endif  // USE_SCIP
   };
 
   explicit KnapsackSolver(const std::string& solver_name);
@@ -149,7 +150,7 @@ class KnapsackSolver {
   // obtained might not be optimal if the limit is reached.
   void set_time_limit(double time_limit_seconds) {
     time_limit_seconds_ = time_limit_seconds;
-    time_limit_.reset(new TimeLimit(time_limit_seconds_));
+    time_limit_ = absl::make_unique<TimeLimit>(time_limit_seconds_);
   }
 
  private:
@@ -407,8 +408,8 @@ class KnapsackPropagator {
   // called with current state.
   // This method is useful when a propagator is able to find a better solution
   // than the blind instantiation to false of unbound items.
-  virtual void CopyCurrentStateToSolutionPropagator(std::vector<bool>* solution)
-      const = 0;
+  virtual void CopyCurrentStateToSolutionPropagator(
+      std::vector<bool>* solution) const = 0;
 
   const KnapsackState& state() const { return state_; }
   const std::vector<KnapsackItemPtr>& items() const { return items_; }

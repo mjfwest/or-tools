@@ -16,11 +16,12 @@
 #include <string>
 #include <vector>
 
-#include "ortools/base/commandlineflags.h"
-#include "ortools/base/stringprintf.h"
 #include "google/protobuf/text_format.h"
-#include "ortools/base/stl_util.h"
 #include "ortools/algorithms/sparse_permutation.h"
+#include "ortools/base/commandlineflags.h"
+#include "ortools/base/memory.h"
+#include "ortools/base/stl_util.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/glop/lp_solver.h"
 #include "ortools/lp_data/lp_print_utils.h"
 #include "ortools/sat/boolean_problem.h"
@@ -92,7 +93,7 @@ BopOptimizerBase::Status GuidedSatFirstSolutionGenerator::SynchronizeIfNeeded(
 
   // Create the sat_solver if not already done.
   if (!sat_solver_) {
-    sat_solver_.reset(new sat::SatSolver());
+    sat_solver_ = absl::make_unique<sat::SatSolver>();
 
     // Add in symmetries.
     if (problem_state.GetParameters()
@@ -183,7 +184,7 @@ BopOptimizerBase::Status GuidedSatFirstSolutionGenerator::Optimize(
   time_limit->AdvanceDeterministicTime(sat_solver_->deterministic_time() -
                                        initial_deterministic_time);
 
-  if (sat_status == sat::SatSolver::MODEL_UNSAT) {
+  if (sat_status == sat::SatSolver::INFEASIBLE) {
     if (policy_ != Policy::kNotGuided) abort_ = true;
     if (problem_state.upper_bound() != kint64max) {
       // As the solution in the state problem is feasible, it is proved optimal.
@@ -195,7 +196,7 @@ BopOptimizerBase::Status GuidedSatFirstSolutionGenerator::Optimize(
   }
 
   ExtractLearnedInfoFromSatSolver(sat_solver_.get(), learned_info);
-  if (sat_status == sat::SatSolver::MODEL_SAT) {
+  if (sat_status == sat::SatSolver::FEASIBLE) {
     SatAssignmentToBopSolution(sat_solver_->Assignment(),
                                &learned_info->solution);
     return SolutionStatus(learned_info->solution, problem_state.lower_bound());
@@ -203,7 +204,6 @@ BopOptimizerBase::Status GuidedSatFirstSolutionGenerator::Optimize(
 
   return BopOptimizerBase::CONTINUE;
 }
-
 
 //------------------------------------------------------------------------------
 // BopRandomFirstSolutionGenerator
@@ -213,8 +213,7 @@ BopRandomFirstSolutionGenerator::BopRandomFirstSolutionGenerator(
     sat::SatSolver* sat_propagator, MTRandom* random)
     : BopOptimizerBase(name),
       random_(random),
-      sat_propagator_(sat_propagator),
-      sat_seed_(parameters.random_seed()) {}
+      sat_propagator_(sat_propagator) {}
 
 BopRandomFirstSolutionGenerator::~BopRandomFirstSolutionGenerator() {}
 
@@ -250,14 +249,12 @@ BopOptimizerBase::Status BopRandomFirstSolutionGenerator::Optimize(
 
   bool solution_found = false;
   while (remaining_num_conflicts > 0 && !time_limit->LimitReached()) {
-    ++sat_seed_;
     sat_propagator_->Backtrack(0);
     old_num_failures = sat_propagator_->num_failures();
 
     sat::SatParameters sat_params = saved_params;
     sat::RandomizeDecisionHeuristic(random_, &sat_params);
     sat_params.set_max_number_of_conflicts(kMaxNumConflicts);
-    sat_params.set_random_seed(sat_seed_);
     sat_propagator_->SetParameters(sat_params);
     sat_propagator_->ResetDecisionHeuristic();
 
@@ -291,14 +288,14 @@ BopOptimizerBase::Status BopRandomFirstSolutionGenerator::Optimize(
 
     const sat::SatSolver::Status sat_status =
         sat_propagator_->SolveWithTimeLimit(time_limit);
-    if (sat_status == sat::SatSolver::MODEL_SAT) {
+    if (sat_status == sat::SatSolver::FEASIBLE) {
       objective_need_to_be_overconstrained = true;
       solution_found = true;
       SatAssignmentToBopSolution(sat_propagator_->Assignment(),
                                  &learned_info->solution);
       CHECK_LT(learned_info->solution.GetCost(), best_cost);
       best_cost = learned_info->solution.GetCost();
-    } else if (sat_status == sat::SatSolver::MODEL_UNSAT) {
+    } else if (sat_status == sat::SatSolver::INFEASIBLE) {
       // The solution is proved optimal (if any).
       learned_info->lower_bound = best_cost;
       return best_cost == kint64max ? BopOptimizerBase::INFEASIBLE
@@ -344,6 +341,7 @@ LinearRelaxation::LinearRelaxation(const BopParameters& parameters,
       parameters_(parameters),
       state_update_stamp_(ProblemState::kInitialStampValue),
       lp_model_loaded_(false),
+      num_full_solves_(0),
       lp_model_(),
       lp_solver_(),
       scaling_(1),
@@ -360,6 +358,14 @@ BopOptimizerBase::Status LinearRelaxation::SynchronizeIfNeeded(
     return BopOptimizerBase::CONTINUE;
   }
   state_update_stamp_ = problem_state.update_stamp();
+
+  // If this is a pure feasibility problem, obey
+  // `BopParameters.max_lp_solve_for_feasibility_problems`.
+  if (problem_state.original_problem().objective().literals_size() == 0 &&
+      parameters_.max_lp_solve_for_feasibility_problems() >= 0 &&
+      num_full_solves_ >= parameters_.max_lp_solve_for_feasibility_problems()) {
+    return BopOptimizerBase::ABORT;
+  }
 
   // Check if the number of fixed variables is greater than last time.
   // TODO(user): Consider checking changes in number of conflicts too.
@@ -402,10 +408,11 @@ BopOptimizerBase::Status LinearRelaxation::SynchronizeIfNeeded(
       const ColIndex col_b(clause.b.Variable().value());
       lp_model_.SetConstraintName(
           constraint_index,
-          StringPrintf((clause.a.IsPositive() ? "%s" : "not(%s)"),
+          absl::StrFormat((clause.a.IsPositive() ? "%s" : "not(%s)"),
                        lp_model_.GetVariableName(col_a).c_str()) +
-              " or " + StringPrintf((clause.b.IsPositive() ? "%s" : "not(%s)"),
-                                    lp_model_.GetVariableName(col_b).c_str()));
+              " or " +
+              absl::StrFormat((clause.b.IsPositive() ? "%s" : "not(%s)"),
+                           lp_model_.GetVariableName(col_b).c_str()));
       lp_model_.SetCoefficient(constraint_index, col_a, coefficient_a);
       lp_model_.SetCoefficient(constraint_index, col_b, coefficient_b);
       lp_model_.SetConstraintBounds(constraint_index, rhs, glop::kInfinity);
@@ -422,10 +429,14 @@ BopOptimizerBase::Status LinearRelaxation::SynchronizeIfNeeded(
   return BopOptimizerBase::CONTINUE;
 }
 
-// Only run the LP solver when there is an objective to minimize.
+// Always let the LP solver run if there is an objective. If there isn't, only
+// let the LP solver run if the user asked for it by setting
+// `BopParameters.max_lp_solve_for_feasibility_problems` to a non-zero value
+// (a negative value means no limit).
 // TODO(user): also deal with problem_already_solved_
 bool LinearRelaxation::ShouldBeRun(const ProblemState& problem_state) const {
-  return problem_state.original_problem().objective().literals_size() > 0;
+  return problem_state.original_problem().objective().literals_size() > 0 ||
+         parameters_.max_lp_solve_for_feasibility_problems() != 0;
 }
 
 BopOptimizerBase::Status LinearRelaxation::Optimize(
@@ -443,11 +454,12 @@ BopOptimizerBase::Status LinearRelaxation::Optimize(
 
   const glop::ProblemStatus lp_status = Solve(false, time_limit);
   VLOG(1) << "                          LP: "
-          << StringPrintf("%.6f", lp_solver_.GetObjectiveValue())
+          << absl::StrFormat("%.6f", lp_solver_.GetObjectiveValue())
           << "   status: " << GetProblemStatusString(lp_status);
 
   if (lp_status == glop::ProblemStatus::OPTIMAL ||
       lp_status == glop::ProblemStatus::IMPRECISE) {
+    ++num_full_solves_;
     problem_already_solved_ = true;
   }
 
@@ -469,7 +481,7 @@ BopOptimizerBase::Status LinearRelaxation::Optimize(
       lower_bound =
           ComputeLowerBoundUsingStrongBranching(learned_info, time_limit);
       VLOG(1) << "                          LP: "
-              << StringPrintf("%.6f", lower_bound)
+              << absl::StrFormat("%.6f", lower_bound)
               << "   using strong branching.";
     }
 

@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include <cstring>
 #include <string>
 #include <vector>
@@ -37,7 +36,8 @@ int64 IndexToValue(int64 index) { return index + 1; }
 
 SequenceVar::SequenceVar(Solver* const s,
                          const std::vector<IntervalVar*>& intervals,
-                         const std::vector<IntVar*>& nexts, const std::string& name)
+                         const std::vector<IntVar*>& nexts,
+                         const std::string& name)
     : PropagationBaseObject(s),
       intervals_(intervals),
       nexts_(nexts),
@@ -131,7 +131,7 @@ void SequenceVar::ActiveHorizonRange(int64* const hmin,
   int64 hor_min = kint64max;
   int64 hor_max = kint64min;
   for (int i = 0; i < intervals_.size(); ++i) {
-    if (!ContainsKey(decided, i)) {
+    if (!gtl::ContainsKey(decided, i)) {
       IntervalVar* const t = intervals_[i];
       hor_min = std::min(hor_min, t->StartMin());
       hor_max = std::max(hor_max, t->EndMax());

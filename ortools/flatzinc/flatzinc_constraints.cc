@@ -17,7 +17,6 @@
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/stringprintf.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/flatzinc/logging.h"
 #include "ortools/util/string_array.h"
@@ -107,8 +106,8 @@ class BooleanSumOdd : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("BooleanSumOdd([%s])",
-                        JoinDebugStringPtr(vars_, ", ").c_str());
+    return absl::StrFormat("BooleanSumOdd([%s])",
+                           JoinDebugStringPtr(vars_, ", ").c_str());
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -155,7 +154,8 @@ class FixedModulo : public Constraint {
 
   std::string DebugString() const override {
     return absl::StrFormat("(%s %% %s == %" GG_LL_FORMAT "d)",
-                           var_->DebugString().c_str(), mod_->DebugString().c_str(), residual_);
+                           var_->DebugString().c_str(),
+                           mod_->DebugString().c_str(), residual_);
   }
 
  private:
@@ -202,7 +202,7 @@ class VariableParity : public Constraint {
   }
 
   std::string DebugString() const override {
-    return StringPrintf("VarParity(%s, %d)", var_->DebugString().c_str(), odd_);
+    return absl::StrFormat("VarParity(%s, %d)", var_->DebugString().c_str(), odd_);
   }
 
   void Accept(ModelVisitor* const visitor) const override {
@@ -465,7 +465,7 @@ class BooleanSumInRange : public Constraint {
 
 class StartVarDurationVarPerformedIntervalVar : public IntervalVar {
  public:
-  StartVarDurationVarPerformedIntervalVar(Solver* const s, IntVar* const start,
+  StartVarDurationVarPerformedIntervalVar(Solver* const s, IntVar* const var,
                                           IntVar* const duration,
                                           const std::string& name);
   ~StartVarDurationVarPerformedIntervalVar() override {}
@@ -623,9 +623,9 @@ std::string StartVarDurationVarPerformedIntervalVar::DebugString() const {
   } else {
     out = "IntervalVar(start = ";
   }
-  StringAppendF(&out, "%s, duration = %s, performed = true)",
-                start_->DebugString().c_str(),
-                duration_->DebugString().c_str());
+  absl::StrAppendFormat(&out, "%s, duration = %s, performed = true)",
+                        start_->DebugString().c_str(),
+                        duration_->DebugString().c_str());
   return out;
 }
 
@@ -914,7 +914,8 @@ Constraint* MakeFixedModulo(Solver* const s, IntVar* const var,
 }
 
 IntervalVar* MakePerformedIntervalVar(Solver* const solver, IntVar* const start,
-                                      IntVar* const duration, const std::string& n) {
+                                      IntVar* const duration,
+                                      const std::string& n) {
   CHECK(start != nullptr);
   CHECK(duration != nullptr);
   return solver->RegisterIntervalVar(solver->RevAlloc(

@@ -15,24 +15,23 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <unordered_map>
 #include <limits>
 #include <numeric>
+#include <unordered_map>
 #include <utility>
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/stringprintf.h"
-#include "ortools/base/stringprintf.h"
 #if !defined(__PORTABLE_PLATFORM__)
 #include "ortools/graph/io.h"
 #endif  // __PORTABLE_PLATFORM__
-#include "ortools/graph/util.h"
+#include "ortools/algorithms/find_graph_symmetries.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/map_util.h"
-#include "ortools/base/hash.h"
-#include "ortools/algorithms/find_graph_symmetries.h"
+#include "ortools/graph/util.h"
 #include "ortools/port/proto_utils.h"
 #include "ortools/sat/sat_parameters.pb.h"
 
@@ -48,10 +47,10 @@ namespace sat {
 using util::RemapGraph;
 
 void ExtractAssignment(const LinearBooleanProblem& problem,
-                       const SatSolver& solver, std::vector<bool>* assignemnt) {
-  assignemnt->clear();
+                       const SatSolver& solver, std::vector<bool>* assignment) {
+  assignment->clear();
   for (int i = 0; i < problem.num_variables(); ++i) {
-    assignemnt->push_back(
+    assignment->push_back(
         solver.Assignment().LiteralIsTrue(Literal(BooleanVariable(i), true)));
   }
 }
@@ -64,7 +63,7 @@ namespace {
 // A non-empty std::string indicates an error.
 template <typename LinearTerms>
 std::string ValidateLinearTerms(const LinearTerms& terms,
-                           std::vector<bool>* variable_seen) {
+                                std::vector<bool>* variable_seen) {
   // variable_seen already has all items false and is reset before return.
   std::string err_str;
   int num_errs = 0;
@@ -72,24 +71,24 @@ std::string ValidateLinearTerms(const LinearTerms& terms,
   for (int i = 0; i < terms.literals_size(); ++i) {
     if (terms.literals(i) == 0) {
       if (++num_errs <= max_num_errs) {
-        err_str += StringPrintf("Zero literal at position %d\n", i);
+        err_str += absl::StrFormat("Zero literal at position %d\n", i);
       }
     }
     if (terms.coefficients(i) == 0) {
       if (++num_errs <= max_num_errs) {
-        err_str += StringPrintf("Literal %d has a zero coefficient\n",
-                                terms.literals(i));
+        err_str += absl::StrFormat("Literal %d has a zero coefficient\n",
+                                   terms.literals(i));
       }
     }
     const int var = Literal(terms.literals(i)).Variable().value();
     if (var >= variable_seen->size()) {
       if (++num_errs <= max_num_errs) {
-        err_str += StringPrintf("Out of bound variable %d\n", var);
+        err_str += absl::StrFormat("Out of bound variable %d\n", var);
       }
     }
     if ((*variable_seen)[var]) {
       if (++num_errs <= max_num_errs) {
-        err_str += StringPrintf("Duplicated variable %d\n", var);
+        err_str += absl::StrFormat("Duplicated variable %d\n", var);
       }
     }
     (*variable_seen)[var] = true;
@@ -101,10 +100,12 @@ std::string ValidateLinearTerms(const LinearTerms& terms,
   }
   if (num_errs) {
     if (num_errs <= max_num_errs) {
-      err_str = StringPrintf("%d validation errors:\n", num_errs) + err_str;
+      err_str = absl::StrFormat("%d validation errors:\n", num_errs) + err_str;
     } else {
-      err_str = StringPrintf("%d validation errors; here are the first %d:\n",
-                             num_errs, max_num_errs) + err_str;
+      err_str =
+          absl::StrFormat("%d validation errors; here are the first %d:\n",
+                          num_errs, max_num_errs) +
+          err_str;
     }
   }
   return err_str;
@@ -132,14 +133,16 @@ util::Status ValidateBooleanProblem(const LinearBooleanProblem& problem) {
     const LinearBooleanConstraint& constraint = problem.constraints(i);
     const std::string error = ValidateLinearTerms(constraint, &variable_seen);
     if (!error.empty()) {
-      return util::Status(util::error::INVALID_ARGUMENT,
-                          StringPrintf("Invalid constraint %i: ", i) + error);
+      return util::Status(
+          util::error::INVALID_ARGUMENT,
+          absl::StrFormat("Invalid constraint %i: ", i) + error);
     }
   }
-  const std::string error = ValidateLinearTerms(problem.objective(), &variable_seen);
+  const std::string error =
+      ValidateLinearTerms(problem.objective(), &variable_seen);
   if (!error.empty()) {
     return util::Status(util::error::INVALID_ARGUMENT,
-                        StringPrintf("Invalid objective: ") + error);
+                        absl::StrFormat("Invalid objective: ") + error);
   }
   return util::Status::OK;
 }
@@ -383,7 +386,8 @@ bool IsAssignmentValid(const LinearBooleanProblem& problem,
 // Note(user): This function makes a few assumptions about the format of the
 // given LinearBooleanProblem. All constraint coefficients must be 1 (and of the
 // form >= 1) and all objective weights must be strictly positive.
-std::string LinearBooleanProblemToCnfString(const LinearBooleanProblem& problem) {
+std::string LinearBooleanProblemToCnfString(
+    const LinearBooleanProblem& problem) {
   std::string output;
   const bool is_wcnf = (problem.objective().coefficients_size() > 0);
   const LinearObjective& objective = problem.objective();
@@ -430,8 +434,8 @@ std::string LinearBooleanProblemToCnfString(const LinearBooleanProblem& problem)
                                                non_slack_objective.size()),
                               hard_weight);
   } else {
-    output += StringPrintf("p cnf %d %d\n", problem.num_variables(),
-                           problem.constraints_size());
+    output += absl::StrFormat("p cnf %d %d\n", problem.num_variables(),
+                              problem.constraints_size());
   }
 
   std::string constraint_output;
@@ -460,7 +464,8 @@ std::string LinearBooleanProblemToCnfString(const LinearBooleanProblem& problem)
       // Since it is falsifying this clause that cost "weigtht", we need to take
       // its negation.
       const Literal literal(-p.first);
-      output += absl::StrFormat("%lld %s 0\n", p.second, literal.DebugString().c_str());
+      output += absl::StrFormat("%lld %s 0\n", p.second,
+                                literal.DebugString().c_str());
     }
   }
 
@@ -501,7 +506,7 @@ class IdGenerator {
   // a new id, otherwise return the previously generated id.
   int GetId(int type, Coefficient coefficient) {
     const std::pair<int, int64> key(type, coefficient.value());
-    return LookupOrInsert(&id_map_, key, id_map_.size());
+    return gtl::LookupOrInsert(&id_map_, key, id_map_.size());
   }
 
  private:
@@ -736,7 +741,7 @@ void FindLinearBooleanProblemSymmetries(
 }
 
 void ApplyLiteralMappingToBooleanProblem(
-    const ITIVector<LiteralIndex, LiteralIndex>& mapping,
+    const gtl::ITIVector<LiteralIndex, LiteralIndex>& mapping,
     LinearBooleanProblem* problem) {
   Coefficient bound_shift;
   Coefficient max_value;
@@ -826,7 +831,7 @@ void ProbeAndSimplifyProblem(SatPostsolver* postsolver,
       LOG(INFO) << "UNSAT when loading the problem.";
     }
 
-    ITIVector<LiteralIndex, LiteralIndex> equiv_map;
+    gtl::ITIVector<LiteralIndex, LiteralIndex> equiv_map;
     ProbeAndFindEquivalentLiteral(&solver, postsolver, /*drat_writer=*/nullptr,
                                   &equiv_map);
 
@@ -852,7 +857,7 @@ void ProbeAndSimplifyProblem(SatPostsolver* postsolver,
     // Remap the variables into a dense set. All the variables for which the
     // equiv_map is not the identity are no longer needed.
     BooleanVariable new_var(0);
-    ITIVector<BooleanVariable, BooleanVariable> var_map;
+    gtl::ITIVector<BooleanVariable, BooleanVariable> var_map;
     for (BooleanVariable var(0); var < solver.NumVariables(); ++var) {
       if (equiv_map[Literal(var, true).Index()] == Literal(var, true).Index()) {
         var_map.push_back(new_var);

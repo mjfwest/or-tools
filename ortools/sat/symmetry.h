@@ -17,10 +17,10 @@
 #include <memory>
 #include <vector>
 
+#include "ortools/algorithms/sparse_permutation.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/macros.h"
 #include "ortools/base/span.h"
-#include "ortools/base/int_type_indexed_vector.h"
-#include "ortools/algorithms/sparse_permutation.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/util/stats.h"
 
@@ -65,8 +65,7 @@ class SymmetryPropagator : public SatPropagator {
 
   bool Propagate(Trail* trail) final;
   void Untrail(const Trail& trail, int trail_index) final;
-  absl::Span<Literal> Reason(const Trail& trail,
-                                   int trail_index) const final;
+  absl::Span<Literal> Reason(const Trail& trail, int trail_index) const final;
 
   // Adds a new permutation to this symmetry propagator. The ownership is
   // transferred. This must be an integer permutation such that:
@@ -110,7 +109,7 @@ class SymmetryPropagator : public SatPropagator {
     int permutation_index;
     Literal image;
   };
-  ITIVector<LiteralIndex, std::vector<ImageInfo>> images_;
+  gtl::ITIVector<LiteralIndex, std::vector<ImageInfo>> images_;
 
   // For each permutation p, we maintain the list of all assigned literals
   // affected by p whose trail index is < propagation_trail_index_; sorted by
@@ -136,12 +135,12 @@ class SymmetryPropagator : public SatPropagator {
   // Returns false if there is a non-symmetric literal in this trail with its
   // image not already assigned to true by the solver.
   bool Enqueue(const Trail& trail, Literal literal, Literal image,
-               std::vector<AssignedLiteralInfo>* permutation_trail);
+               std::vector<AssignedLiteralInfo>* p_trail);
 
   // The identity permutation over all the literals.
   // This is temporary modified to encode a sparse permutation and then always
   // restored to the identity.
-  mutable ITIVector<LiteralIndex, Literal> tmp_literal_mapping_;
+  mutable gtl::ITIVector<LiteralIndex, Literal> tmp_literal_mapping_;
 
   // Symmetry reason indexed by trail_index.
   struct ReasonInfo {

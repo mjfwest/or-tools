@@ -11,13 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include <cstddef>
 #include <functional>
-#include <unordered_set>
 #include <limits>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -27,12 +26,12 @@
 #include "ortools/base/macros.h"
 #include "ortools/base/stringprintf.h"
 
+#include "ortools/base/random.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/cached_log.h"
 #include "ortools/util/string_array.h"
-#include "ortools/base/random.h"
 
 DEFINE_int32(cp_impact_divider, 10, "Divider for continuous update.");
 
@@ -145,7 +144,9 @@ class FindVar : public DecisionVisitor {
 
   Operation operation() const { return operation_; }
 
-  std::string DebugString() const override { return "FindVar decision visitor"; }
+  std::string DebugString() const override {
+    return "FindVar decision visitor";
+  }
 
  private:
   IntVar* var_;
@@ -399,7 +400,7 @@ class ImpactRecorder : public SearchMonitor {
     }
     d->Accept(&find_var_);
     if (find_var_.operation() == FindVar::ASSIGN &&
-        ContainsKey(var_map_, find_var_.var())) {
+        gtl::ContainsKey(var_map_, find_var_.var())) {
       current_var_ = var_map_[find_var_.var()];
       current_value_ = find_var_.value();
       current_log_space_ = domain_watcher_->LogSearchSpaceSize();
@@ -622,7 +623,9 @@ class ImpactRecorder : public SearchMonitor {
     InitVarImpacts* without_split() { return &without_splits_; }
     InitVarImpactsWithSplits* with_splits() { return &with_splits_; }
 
-    std::string DebugString() const override { return "FirstRunVariableContainers"; }
+    std::string DebugString() const override {
+      return "FirstRunVariableContainers";
+    }
 
    private:
     const std::function<void(int, int64)> update_impact_callback_;
@@ -639,7 +642,7 @@ class ImpactRecorder : public SearchMonitor {
   // original_min_[i] + j to variable i.
   std::vector<std::vector<double> > impacts_;
   std::vector<int64> original_min_;
-  std::unique_ptr<IntVarIterator* []> domain_iterators_;
+  std::unique_ptr<IntVarIterator*[]> domain_iterators_;
   int64 init_count_;
   const DefaultPhaseParameters::DisplayLevel display_level_;
   int current_var_;
@@ -912,7 +915,7 @@ class RestartMonitor : public SearchMonitor {
         const int64 value = choice.value();
         if (choice.left()) {
           nogood->AddIntegerVariableEqualValueTerm(var, value);
-        } else if (!ContainsKey(positive_variable, choice.var())) {
+        } else if (!gtl::ContainsKey(positive_variable, choice.var())) {
           nogood->AddIntegerVariableNotEqualValueTerm(var, value);
         }
       }
@@ -961,7 +964,7 @@ class RunHeuristicsAsDives : public Decision {
     Init(solver, vars, heuristic_num_failures_limit);
   }
 
-  ~RunHeuristicsAsDives() override { STLDeleteElements(&heuristics_); }
+  ~RunHeuristicsAsDives() override { gtl::STLDeleteElements(&heuristics_); }
 
   void Apply(Solver* const solver) override {
     if (!RunAllHeuristics(solver)) {

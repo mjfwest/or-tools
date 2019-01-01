@@ -16,7 +16,7 @@
 // See http://en.wikipedia.org/wiki/Bron-Kerbosch_algorithm
 // and
 // C. Bron and J. Kerbosch, Joep, "Algorithm 457: finding all cliques of an
-// undirected graph", CACM 16 (9): 575–577, 1973.
+// undirected graph", CACM 16 (9): 575-577, 1973.
 // http://dl.acm.org/citation.cfm?id=362367&bnc=1.
 //
 // Keywords: undirected graph, clique, clique cover, Bron, Kerbosch.
@@ -25,14 +25,14 @@
 #define OR_TOOLS_GRAPH_CLIQUES_H_
 
 #include <functional>
-#include <unordered_set>
 #include <numeric>
+#include <unordered_set>
 #include <vector>
 
-#include "ortools/base/logging.h"
-#include "ortools/base/join.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
+#include "ortools/base/join.h"
+#include "ortools/base/logging.h"
 #include "ortools/util/time_limit.h"
 
 namespace operations_research {
@@ -82,7 +82,8 @@ enum class BronKerboschAlgorithmStatus {
 //
 // Typical usage:
 // auto graph = [](int node1, int node2) { return true; };
-// auto on_clique = [](const std::vector<int>& clique) { LOG(INFO) << "Clique!"; };
+// auto on_clique = [](const std::vector<int>& clique) { LOG(INFO) << "Clique!";
+// };
 //
 // BronKerboschAlgorithm<int> bron_kerbosch(graph, num_nodes, on_clique);
 // bron_kerbosch.Run();
@@ -244,14 +245,14 @@ class BronKerboschAlgorithm {
     // Creates a human-readable representation of the current state.
     std::string DebugString() {
       std::string buffer;
-      StrAppend(&buffer, "pivot = ", pivot,
+      absl::StrAppend(&buffer, "pivot = ", pivot,
                       "\nnum_remaining_candidates = ", num_remaining_candidates,
                       "\ncandidates = [");
       for (CandidateIndex i(0); i < candidates.size(); ++i) {
         if (i > 0) buffer += ", ";
-        StrAppend(&buffer, candidates[i]);
+        absl::StrAppend(&buffer, candidates[i]);
       }
-      StrAppend(
+      absl::StrAppend(
           &buffer, "]\nfirst_candidate_index = ", first_candidate_index.value(),
           "\ncandidate_for_recursion = ", candidate_for_recursion.value());
       return buffer;
@@ -271,7 +272,7 @@ class BronKerboschAlgorithm {
     // clique.
     // NOTE(user): We could store the delta between the iterations; however,
     // we need to evaluate the impact this would have on the performance.
-    ITIVector<CandidateIndex, NodeIndex> candidates;
+    gtl::ITIVector<CandidateIndex, NodeIndex> candidates;
     // The index of the first actual candidate in 'candidates'. This number is
     // also the number of elements of the "not" set stored at the beginning of
     // 'candidates'.
@@ -387,8 +388,9 @@ void BronKerboschAlgorithm<NodeIndex>::InitializeState(State* state) {
 }
 
 template <typename NodeIndex>
-typename BronKerboschAlgorithm<NodeIndex>::CandidateIndex BronKerboschAlgorithm<
-    NodeIndex>::SelectCandidateIndexForRecursion(State* state) {
+typename BronKerboschAlgorithm<NodeIndex>::CandidateIndex
+BronKerboschAlgorithm<NodeIndex>::SelectCandidateIndexForRecursion(
+    State* state) {
   DCHECK(state != nullptr);
   CandidateIndex disconnected_node_index =
       std::max(state->first_candidate_index, state->candidate_for_recursion);
@@ -434,7 +436,7 @@ std::string BronKerboschAlgorithm<NodeIndex>::CliqueDebugString(
     const std::vector<NodeIndex>& clique) {
   std::string message = "Clique: [ ";
   for (const NodeIndex node : clique) {
-    StrAppend(&message, node, " ");
+    absl::StrAppend(&message, node, " ");
   }
   message += "]";
   return message;
@@ -446,7 +448,7 @@ void BronKerboschAlgorithm<NodeIndex>::PushState(NodeIndex selected) {
   DCHECK(time_limit_ != nullptr);
   DVLOG(2) << "PushState: New depth = " << states_.size() + 1
            << ", selected node = " << selected;
-  ITIVector<CandidateIndex, NodeIndex> new_candidates;
+  gtl::ITIVector<CandidateIndex, NodeIndex> new_candidates;
 
   State* const previous_state = &states_.back();
   const double deterministic_time =

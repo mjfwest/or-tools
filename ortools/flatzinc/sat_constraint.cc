@@ -19,13 +19,13 @@
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
-#include "ortools/base/integral_types.h"
-#include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/logging.h"
 #include "ortools/base/map_util.h"
-#include "ortools/base/hash.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/flatzinc/logging.h"
@@ -73,7 +73,7 @@ class SatPropagator : public Constraint {
     CHECK(solver()->IsBooleanVar(expr, &expr_var, &expr_negated));
     SATDLOG << "  - SAT: Parse " << expr->DebugString() << " to "
             << expr_var->DebugString() << "/" << expr_negated << FZENDL;
-    if (ContainsKey(indices_, expr_var)) {
+    if (gtl::ContainsKey(indices_, expr_var)) {
       return sat::Literal(indices_[expr_var], !expr_negated);
     }
     const sat::BooleanVariable var = sat_.NewBooleanVariable();
@@ -165,7 +165,7 @@ class SatPropagator : public Constraint {
   sat::SatSolver* sat() { return &sat_; }
 
   std::string DebugString() const override {
-    return StringPrintf("SatConstraint(%d variables)", sat_.NumVariables());
+    return absl::StrFormat("SatConstraint(%d variables)", sat_.NumVariables());
   }
 
   void Accept(ModelVisitor* visitor) const override {

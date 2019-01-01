@@ -11,14 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "ortools/util/stats.h"
 
 #include <cmath>
 #include "ortools/base/stringprintf.h"
 
-
 #include "ortools/base/stl_util.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/port/sysinfo.h"
 #include "ortools/port/utf8.h"
 
@@ -27,21 +26,18 @@ namespace operations_research {
 std::string MemoryUsage() {
   const int64 mem = operations_research::sysinfo::MemoryUsageProcess();
   static const int64 kDisplayThreshold = 2;
-    static const int64 kKiloByte = 1024;
-    static const int64 kMegaByte = kKiloByte * kKiloByte;
-    static const int64 kGigaByte = kMegaByte * kKiloByte;
-    if (mem > kDisplayThreshold * kGigaByte) {
-      return StringPrintf("%.2lf GB",
-                          mem * 1.0 / kGigaByte);
-    } else if (mem > kDisplayThreshold * kMegaByte) {
-      return StringPrintf("%.2lf MB",
-                          mem * 1.0 / kMegaByte);
-    } else if (mem > kDisplayThreshold * kKiloByte) {
-      return StringPrintf("%2lf KB",
-                          mem * 1.0 / kKiloByte);
-    } else {
-      return StringPrintf("%" GG_LL_FORMAT "d", mem);
-    }
+  static const int64 kKiloByte = 1024;
+  static const int64 kMegaByte = kKiloByte * kKiloByte;
+  static const int64 kGigaByte = kMegaByte * kKiloByte;
+  if (mem > kDisplayThreshold * kGigaByte) {
+    return absl::StrFormat("%.2lf GB", mem * 1.0 / kGigaByte);
+  } else if (mem > kDisplayThreshold * kMegaByte) {
+    return absl::StrFormat("%.2lf MB", mem * 1.0 / kMegaByte);
+  } else if (mem > kDisplayThreshold * kKiloByte) {
+    return absl::StrFormat("%2lf KB", mem * 1.0 / kKiloByte);
+  } else {
+    return absl::StrFormat("%" GG_LL_FORMAT "d", mem);
+  }
 }
 
 Stat::Stat(const std::string& name, StatsGroup* group) : name_(name) {
@@ -52,7 +48,7 @@ std::string Stat::StatString() const {
   return std::string(name_ + ": " + ValueAsString());
 }
 
-StatsGroup::~StatsGroup() { STLDeleteValues(&time_distributions_); }
+StatsGroup::~StatsGroup() { gtl::STLDeleteValues(&time_distributions_); }
 
 void StatsGroup::Register(Stat* stat) { stats_.push_back(stat); }
 
@@ -189,12 +185,12 @@ std::string TimeDistribution::PrintCyclesAsTime(double cycles) {
   // This epsilon is just to avoid displaying 1000.00ms instead of 1.00s.
   double eps1 = 1 + 1e-3;
   double sec = CyclesToSeconds(cycles);
-  if (sec * eps1 >= 3600.0) return StringPrintf("%.2fh", sec / 3600.0);
-  if (sec * eps1 >= 60.0) return StringPrintf("%.2fm", sec / 60.0);
-  if (sec * eps1 >= 1.0) return StringPrintf("%.2fs", sec);
-  if (sec * eps1 >= 1e-3) return StringPrintf("%.2fms", sec * 1e3);
-  if (sec * eps1 >= 1e-6) return StringPrintf("%.2fus", sec * 1e6);
-  return StringPrintf("%.2fns", sec * 1e9);
+  if (sec * eps1 >= 3600.0) return absl::StrFormat("%.2fh", sec / 3600.0);
+  if (sec * eps1 >= 60.0) return absl::StrFormat("%.2fm", sec / 60.0);
+  if (sec * eps1 >= 1.0) return absl::StrFormat("%.2fs", sec);
+  if (sec * eps1 >= 1e-3) return absl::StrFormat("%.2fms", sec * 1e3);
+  if (sec * eps1 >= 1e-6) return absl::StrFormat("%.2fus", sec * 1e6);
+  return absl::StrFormat("%.2fns", sec * 1e9);
 }
 
 void TimeDistribution::AddTimeInSec(double seconds) {
@@ -209,7 +205,7 @@ void TimeDistribution::AddTimeInCycles(double cycles) {
 }
 
 std::string TimeDistribution::ValueAsString() const {
-  return StringPrintf(
+  return absl::StrFormat(
       "%8llu [%8s, %8s] %8s %8s %8s\n", num_, PrintCyclesAsTime(min_).c_str(),
       PrintCyclesAsTime(max_).c_str(), PrintCyclesAsTime(Average()).c_str(),
       PrintCyclesAsTime(StdDeviation()).c_str(),
@@ -222,16 +218,16 @@ void RatioDistribution::Add(double value) {
 }
 
 std::string RatioDistribution::ValueAsString() const {
-  return StringPrintf("%8llu [%7.2lf%%, %7.2lf%%] %7.2lf%% %7.2lf%%\n", num_,
-                      100.0 * min_, 100.0 * max_, 100.0 * Average(),
-                      100.0 * StdDeviation());
+  return absl::StrFormat("%8llu [%7.2lf%%, %7.2lf%%] %7.2lf%% %7.2lf%%\n", num_,
+                         100.0 * min_, 100.0 * max_, 100.0 * Average(),
+                         100.0 * StdDeviation());
 }
 
 void DoubleDistribution::Add(double value) { AddToDistribution(value); }
 
 std::string DoubleDistribution::ValueAsString() const {
-  return StringPrintf("%8llu [%8.1e, %8.1e] %8.1e %8.1e\n", num_, min_, max_,
-                      Average(), StdDeviation());
+  return absl::StrFormat("%8llu [%8.1e, %8.1e] %8.1e %8.1e\n", num_, min_, max_,
+                         Average(), StdDeviation());
 }
 
 void IntegerDistribution::Add(int64 value) {
@@ -239,8 +235,8 @@ void IntegerDistribution::Add(int64 value) {
 }
 
 std::string IntegerDistribution::ValueAsString() const {
-  return StringPrintf("%8llu [%8.lf, %8.lf] %8.2lf %8.2lf %8.lf\n", num_, min_,
-                      max_, Average(), StdDeviation(), sum_);
+  return absl::StrFormat("%8llu [%8.lf, %8.lf] %8.2lf %8.2lf %8.lf\n", num_, min_,
+                         max_, Average(), StdDeviation(), sum_);
 }
 
 #ifdef HAS_PERF_SUBSYSTEM

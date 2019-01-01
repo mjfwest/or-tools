@@ -1,15 +1,13 @@
+from __future__ import print_function
 from ortools.constraint_solver import pywrapcp
 
-
 def main():
-
   # Create the solver.
   solver = pywrapcp.Solver('Vendors scheduling')
 
   #
   # data
   #
-
   num_vendors = 9
   num_hours = 10
   num_work_types = 1
@@ -20,13 +18,12 @@ def main():
   # Last columns are :
   #   index_of_the_schedule, sum of worked hours (per work type).
   # The index is useful for branching.
-  possible_schedules = [
-      [1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 8],
-      [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 4],
-      [0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 2, 5],
-      [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 3, 4],
-      [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 4, 3],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0]]
+  possible_schedules = [[1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0,
+                         8], [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1,
+                              4], [0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 2,
+                                   5], [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 3, 4],
+                        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 4,
+                         3], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0]]
 
   num_possible_schedules = len(possible_schedules)
   selected_schedules = []
@@ -70,8 +67,7 @@ def main():
   #
   # Search
   #
-  db = solver.Phase(selected_schedules,
-                    solver.CHOOSE_FIRST_UNBOUND,
+  db = solver.Phase(selected_schedules, solver.CHOOSE_FIRST_UNBOUND,
                     solver.ASSIGN_MIN_VALUE)
 
   solver.NewSearch(db)
@@ -81,23 +77,22 @@ def main():
     num_solutions += 1
 
     for i in range(num_vendors):
-      print 'Vendor %i: ' % i, possible_schedules[selected_schedules[i].Value()]
-    print
+      print('Vendor %i: ' % i, possible_schedules[selected_schedules[i].Value()])
+    print()
 
-    print 'Statistics per day:'
+    print('Statistics per day:')
     for j in range(num_hours):
-      print 'Day%2i: ' % j,
-      print hours_stat[j].Value(),
-      print
-    print
+      print('Day%2i: ' % j, end=' ')
+      print(hours_stat[j].Value(), end=' ')
+      print()
+    print()
 
   solver.EndSearch()
-  print
-  print 'num_solutions:', num_solutions
-  print 'failures:', solver.Failures()
-  print 'branches:', solver.Branches()
-  print 'WallTime:', solver.WallTime(), 'ms'
-
+  print()
+  print('num_solutions:', num_solutions)
+  print('failures:', solver.Failures())
+  print('branches:', solver.Branches())
+  print('WallTime:', solver.WallTime(), 'ms')
 
 if __name__ == '__main__':
   main()

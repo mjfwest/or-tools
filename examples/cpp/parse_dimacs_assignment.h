@@ -27,10 +27,10 @@
 
 #include "ortools/base/callback.h"
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/filelineiter.h"
 #include "ortools/base/logging.h"
 #include "ortools/graph/ebert_graph.h"
 #include "ortools/graph/linear_assignment.h"
-#include "ortools/base/filelineiter.h"
 
 DECLARE_bool(assignment_maximize_cost);
 DECLARE_bool(assignment_optimize_layout);
@@ -98,7 +98,8 @@ class DimacsAssignmentParser {
 
 // Implementation is below here.
 template <typename GraphType>
-void DimacsAssignmentParser<GraphType>::ParseProblemLine(const std::string& line) {
+void DimacsAssignmentParser<GraphType>::ParseProblemLine(
+    const std::string& line) {
   static const char* kIncorrectProblemLine =
       "Incorrect assignment problem line.";
   static const char* kAssignmentProblemType = "asn";
@@ -220,8 +221,8 @@ void DimacsAssignmentParser<GraphType>::ParseOneLine(const std::string& line) {
 template <typename GraphType>
 LinearSumAssignment<GraphType>* DimacsAssignmentParser<GraphType>::Parse(
     std::string* error_message, GraphType** graph_handle) {
-  CHECK_NOTNULL(error_message);
-  CHECK_NOTNULL(graph_handle);
+  CHECK(error_message != nullptr);
+  CHECK(graph_handle != nullptr);
 
   for (const std::string& line : FileLines(filename_)) {
     if (line.empty()) {

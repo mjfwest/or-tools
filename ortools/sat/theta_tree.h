@@ -62,7 +62,7 @@ namespace sat {
 //   initial_envelope(event) + sum_energy_min(event).
 //
 // We also maintain envelope_opt with is the maximum envelope a node could take
-// if at most one of the event where at its maximum energy.
+// if at most one of the events were at its maximum energy.
 // _ energy_delta(leaf) = energy_max(leaf) - energy_min(leaf)
 // _ max_energy_delta(node) = max_{leaf \in leaves(node)} energy_delta(leaf)
 // _ envelope_opt(node) =
@@ -179,7 +179,7 @@ class ThetaLambdaTree {
   int GetEventFromLeaf(int leaf) const;
 
   // Propagates the change of leaf energies and envelopes towards the root.
-  void RefreshNode(int leaf);
+  void RefreshNode(int node);
 
   // Finds the maximum leaf under node such that
   // initial_envelope(leaf) + sum_{leaf' >= leaf} energy_min(leaf')

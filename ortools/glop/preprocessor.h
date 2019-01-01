@@ -416,7 +416,6 @@ class SingletonPreprocessor : public Preprocessor {
   void UpdateConstraintBoundsWithVariableBounds(MatrixEntry e,
                                                 LinearProgram* lp);
 
-
   // A singleton column with a cost of zero can always be removed by changing
   // the corresponding constraint bounds to take into acount the bound of this
   // singleton column.
@@ -455,9 +454,9 @@ class SingletonPreprocessor : public Preprocessor {
 
   // This is used as a "cache" by MakeConstraintAnEqualityIfPossible() to avoid
   // scanning more than once each row. See the code to see how this is used.
-  ITIVector<RowIndex, bool> row_sum_is_cached_;
-  ITIVector<RowIndex, SumWithNegativeInfiniteAndOneMissing> row_lb_sum_;
-  ITIVector<RowIndex, SumWithPositiveInfiniteAndOneMissing> row_ub_sum_;
+  gtl::ITIVector<RowIndex, bool> row_sum_is_cached_;
+  gtl::ITIVector<RowIndex, SumWithNegativeInfiniteAndOneMissing> row_lb_sum_;
+  gtl::ITIVector<RowIndex, SumWithPositiveInfiniteAndOneMissing> row_ub_sum_;
 
   // The columns that are deleted by this preprocessor.
   SparseMatrix deleted_columns_;
@@ -619,7 +618,6 @@ class DoubletonFreeColumnPreprocessor : public Preprocessor {
     // The deleted row as a column.
     SparseColumn deleted_row_as_column;
   };
-
 
   std::vector<RestoreInfo> restore_stack_;
   RowDeletionHelper row_deletion_helper_;
@@ -818,9 +816,27 @@ class DoubletonEqualityRowPreprocessor : public Preprocessor {
   void SwapDeletedAndModifiedVariableRestoreInfo(RestoreInfo* r);
 
   std::vector<RestoreInfo> restore_stack_;
+  DenseColumn saved_row_lower_bounds_;
+  DenseColumn saved_row_upper_bounds_;
 
   DISALLOW_COPY_AND_ASSIGN(DoubletonEqualityRowPreprocessor);
 };
+
+// Because of numerical imprecision, a preprocessor like
+// DoubletonEqualityRowPreprocessor can transform a constraint/variable domain
+// like [1, 1+1e-7] to a fixed domain (for ex by multiplying the above domain by
+// 1e9). This causes an issue because at postsolve, a FIXED_VALUE status now
+// needs to be transformed to a AT_LOWER_BOUND/AT_UPPER_BOUND status. This is
+// what this function is doing for the constraint statuses only.
+//
+// TODO(user): A better solution would simply be to get rid of the FIXED status
+// altogether, it is better to simply use AT_LOWER_BOUND/AT_UPPER_BOUND
+// depending on the constraining bound in the optimal solution. Note that we can
+// always at the end transform any variable/constraint with a fixed domain to
+// FIXED_VALUE if needed to keep the same external API.
+void FixConstraintWithFixedStatuses(const DenseColumn& row_lower_bounds,
+                                    const DenseColumn& row_upper_bounds,
+                                    ProblemSolution* solution);
 
 // --------------------------------------------------------
 // DualizerPreprocessor
@@ -1003,7 +1019,7 @@ class SolowHalimPreprocessor : public Preprocessor {
   } ColumnTransformType;
 
   // Contains the coordinate change information for each column
-  ITIVector<ColIndex, ColumnTransformType> column_transform_;
+  gtl::ITIVector<ColIndex, ColumnTransformType> column_transform_;
 
   // Contains the initial problem bounds.
   DenseRow variable_initial_lbs_;

@@ -59,7 +59,8 @@ class SearchReportingInterface {
 
   // Worker 'thread_id' notifies a new solution in a satisfaction
   // problem. 'solution_string' is the solution to display if needed.
-  virtual void OnSatSolution(int thread_id, const std::string& solution_string) = 0;
+  virtual void OnSatSolution(int thread_id,
+                             const std::string& solution_string) = 0;
 
   // Worker 'thread_id' notifies a new solution in an optimization
   // problem. 'solution_string' is the solution to display if needed.
@@ -100,7 +101,7 @@ class SearchReportingInterface {
   // Indicates if we should print all solutions.
   bool ShouldPrintAllSolutions() const { return print_all_solutions_; }
 
-// ----- Dedicated methods to create MT/Sequential specific objects -----
+  // ----- Dedicated methods to create MT/Sequential specific objects -----
 
 #if !defined(SWIG)
   // Creates the objective used by the search.
@@ -129,10 +130,11 @@ class MonoThreadReporting : public SearchReportingInterface {
 
   void Init(int thread_id, const std::string& init_string) override;
   void OnSearchStart(int thread_id, Type type) override;
-  void OnSatSolution(int thread_id, const std::string& solution_string) override;
+  void OnSatSolution(int thread_id,
+                     const std::string& solution_string) override;
   void OnOptimizeSolution(int thread_id, int64 value,
                           const std::string& solution_string) override;
-  void Log(int thread_id, const std::string& message) const override;
+  void Log(int thread_id, const std::string& final_output) const override;
   void Print(int thread_id, const std::string& final_output) const override;
   bool ShouldFinish() const override;
   void OnSearchEnd(int thread_id, bool interrupted) override;
@@ -167,16 +169,17 @@ class MultiThreadReporting : public SearchReportingInterface {
   ~MultiThreadReporting() override;
   void Init(int thread_id, const std::string& init_string) override;
   void OnSearchStart(int thread_id, Type type) override;
-  void OnSatSolution(int thread_id, const std::string& solution_string) override;
+  void OnSatSolution(int thread_id,
+                     const std::string& solution_string) override;
   void OnOptimizeSolution(int thread_id, int64 value,
                           const std::string& solution_string) override;
   void Log(int thread_id, const std::string& message) const override;
-  void Print(int thread_id, const std::string& final_out) const override;
+  void Print(int thread_id, const std::string& message) const override;
   bool ShouldFinish() const override;
   void OnSearchEnd(int thread_id, bool interrupted) override;
   int64 BestSolution() const override;
   OptimizeVar* CreateObjective(Solver* s, bool maximize, IntVar* var,
-                               int64 step, int w) const override;
+                               int64 step, int thread_id) const override;
   SearchLimit* CreateLimit(Solver* s, int thread_id) const override;
   bool Interrupted() const override;
 
@@ -184,7 +187,7 @@ class MultiThreadReporting : public SearchReportingInterface {
   void LogNoLock(int thread_id, const std::string& message);
 
   const bool verbose_;
-  mutable Mutex mutex_;
+  mutable absl::Mutex mutex_;
   Type type_ GUARDED_BY(mutex_);
   std::string last_solution_ GUARDED_BY(mutex_);
   int last_thread_ GUARDED_BY(mutex_);

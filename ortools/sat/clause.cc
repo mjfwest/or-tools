@@ -56,7 +56,7 @@ LiteralWatchers::LiteralWatchers()
       stats_("LiteralWatchers") {}
 
 LiteralWatchers::~LiteralWatchers() {
-  STLDeleteElements(&clauses_);
+  gtl::STLDeleteElements(&clauses_);
   IF_STATS_ENABLED(LOG(INFO) << stats_.StatString());
 }
 
@@ -69,11 +69,13 @@ void LiteralWatchers::Resize(int num_variables) {
 
 // Note that this is the only place where we add Watcher so the DCHECK
 // guarantees that there are no duplicates.
-void LiteralWatchers::AttachOnFalse(Literal a, Literal b, SatClause* clause) {
+void LiteralWatchers::AttachOnFalse(Literal literal, Literal blocking_literal,
+                                    SatClause* clause) {
   SCOPED_TIME_STAT(&stats_);
   DCHECK(is_clean_);
-  DCHECK(!WatcherListContains(watchers_on_false_[a.Index()], *clause));
-  watchers_on_false_[a.Index()].push_back(Watcher(clause, b));
+  DCHECK(!WatcherListContains(watchers_on_false_[literal.Index()], *clause));
+  watchers_on_false_[literal.Index()].push_back(
+      Watcher(clause, blocking_literal));
 }
 
 bool LiteralWatchers::PropagateOnFalse(Literal false_literal, Trail* trail) {
@@ -168,7 +170,7 @@ bool LiteralWatchers::Propagate(Trail* trail) {
 }
 
 absl::Span<Literal> LiteralWatchers::Reason(const Trail& trail,
-                                                  int trail_index) const {
+                                            int trail_index) const {
   return reasons_[trail_index]->PropagationReason();
 }
 
@@ -258,8 +260,8 @@ void LiteralWatchers::Attach(SatClause* clause, Trail* trail) {
 void LiteralWatchers::InternalDetach(SatClause* clause) {
   --num_watched_clauses_;
   const size_t size = clause->Size();
-  if (drat_writer_ != nullptr && size > 2) {
-    drat_writer_->DeleteClause({clause->begin(), size});
+  if (drat_proof_handler_ != nullptr && size > 2) {
+    drat_proof_handler_->DeleteClause({clause->begin(), size});
   }
   clauses_info_.erase(clause);
   clause->LazyDetach();
@@ -312,7 +314,7 @@ void LiteralWatchers::DeleteDetachedClauses() {
   std::vector<SatClause*>::iterator iter =
       std::stable_partition(clauses_.begin(), clauses_.end(),
                             [](SatClause* a) { return a->IsAttached(); });
-  STLDeleteContainerPointers(iter, clauses_.end());
+  gtl::STLDeleteContainerPointers(iter, clauses_.end());
   clauses_.erase(iter, clauses_.end());
 }
 
@@ -363,7 +365,7 @@ bool BinaryImplicationGraph::PropagateOnTrue(Literal true_literal,
       // enqueued after the true_literal on the trail. This property is
       // important for ComputeFirstUIPConflict() to work since it needs the
       // trail order to be a topological order for the deduction graph.
-      // But the performance where not too good...
+      // But the performance was not too good...
       continue;
     }
 
@@ -393,8 +395,8 @@ bool BinaryImplicationGraph::Propagate(Trail* trail) {
   return true;
 }
 
-absl::Span<Literal> BinaryImplicationGraph::Reason(
-    const Trail& trail, int trail_index) const {
+absl::Span<Literal> BinaryImplicationGraph::Reason(const Trail& trail,
+                                                   int trail_index) const {
   return {&reasons_[trail_index], 1};
 }
 
@@ -634,8 +636,8 @@ void BinaryImplicationGraph::RemoveFixedVariables(
     for (Literal lit : implications_[true_literal.NegatedIndex()]) {
       is_marked_.Set(lit.NegatedIndex());
     }
-    STLClearObject(&(implications_[true_literal.Index()]));
-    STLClearObject(&(implications_[true_literal.NegatedIndex()]));
+    gtl::STLClearObject(&(implications_[true_literal.Index()]));
+    gtl::STLClearObject(&(implications_[true_literal.NegatedIndex()]));
   }
   for (const LiteralIndex i : is_marked_.PositionsSetAtLeastOnce()) {
     RemoveIf(&implications_[i], [&assignment](const Literal& lit) {

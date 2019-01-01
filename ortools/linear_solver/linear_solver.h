@@ -137,8 +137,6 @@
 #define OR_TOOLS_LINEAR_SOLVER_LINEAR_SOLVER_H_
 
 #include <functional>
-#include <unordered_map>
-#include <unordered_set>
 #include <limits>
 #include <map>
 #include <memory>
@@ -146,15 +144,22 @@
 #include <utility>
 #include <vector>
 
+#include "ortools/base/commandlineflags.h"
+
+#include <unordered_map>
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
+#include "ortools/base/macros.h"
+#include "ortools/base/optional.h"
+#include "ortools/base/port.h"
+#include "ortools/base/status.h"
+#include "ortools/base/stringprintf.h"
+#include "ortools/base/strutil.h"
 #include "ortools/base/timer.h"
 #include "ortools/glop/parameters.pb.h"
 #include "ortools/linear_solver/linear_expr.h"
 #include "ortools/linear_solver/linear_solver.pb.h"
 #include "ortools/port/proto_utils.h"
-#include "ortools/base/status.h"
-
 
 namespace operations_research {
 
@@ -173,42 +178,42 @@ class MPSolver {
   // This must remain consistent with MPModelRequest::OptimizationProblemType
   // (take particular care of the open-source version).
   enum OptimizationProblemType {
-    // Linear programming problems.
-    #ifdef USE_CLP
+// Linear programming problems.
+#ifdef USE_CLP
     CLP_LINEAR_PROGRAMMING = 0,  // Recommended default value.
-    #endif
-    #ifdef USE_GLPK
+#endif
+#ifdef USE_GLPK
     GLPK_LINEAR_PROGRAMMING = 1,
-    #endif
-    #ifdef USE_GLOP
+#endif
+#ifdef USE_GLOP
     GLOP_LINEAR_PROGRAMMING = 2,
-    #endif
-    #ifdef USE_GUROBI
+#endif
+#ifdef USE_GUROBI
     GUROBI_LINEAR_PROGRAMMING = 6,
-    #endif
-    #ifdef USE_CPLEX
+#endif
+#ifdef USE_CPLEX
     CPLEX_LINEAR_PROGRAMMING = 10,
-    #endif
+#endif
 
-    // Integer programming problems.
-    #ifdef USE_SCIP
+// Integer programming problems.
+#ifdef USE_SCIP
     SCIP_MIXED_INTEGER_PROGRAMMING = 3,  // Recommended default value.
-    #endif
-    #ifdef USE_GLPK
+#endif
+#ifdef USE_GLPK
     GLPK_MIXED_INTEGER_PROGRAMMING = 4,
-    #endif
-    #ifdef USE_CBC
+#endif
+#ifdef USE_CBC
     CBC_MIXED_INTEGER_PROGRAMMING = 5,
-    #endif
-    #if defined(USE_GUROBI)
+#endif
+#if defined(USE_GUROBI)
     GUROBI_MIXED_INTEGER_PROGRAMMING = 7,
-    #endif
-    #if defined(USE_CPLEX)
+#endif
+#if defined(USE_CPLEX)
     CPLEX_MIXED_INTEGER_PROGRAMMING = 11,
-    #endif
-    #if defined(USE_BOP)
+#endif
+#if defined(USE_BOP)
     BOP_INTEGER_PROGRAMMING = 12,
-    #endif
+#endif
   };
 
   MPSolver(const std::string& name, OptimizationProblemType problem_type);
@@ -220,12 +225,12 @@ class MPSolver {
 
   // Parses the name of the solver. Returns true if the solver type is
   // successfully parsed as one of the OptimizationProblemType.
-  static bool ParseSolverType(const std::string& solver,
+  static bool ParseSolverType(absl::string_view solver,
                               OptimizationProblemType* type);
 
   bool IsMIP() const;
 
-  std::string Name() const {
+  const std::string& Name() const {
     return name_;  // Set at construction.
   }
 
@@ -244,15 +249,19 @@ class MPSolver {
   // Returns the array of variables handled by the MPSolver.
   // (They are listed in the order in which they were created.)
   const std::vector<MPVariable*>& variables() const { return variables_; }
-  // Look up a variable by name, and return NULL if it does not exist.
+  // Looks up a variable by name, and returns nullptr if it does not exist.
+  // The first call has a O(n) complexity, as the variable name index is lazily
+  // created upon first use. Will crash if variable names are not unique.
   MPVariable* LookupVariableOrNull(const std::string& var_name) const;
 
   // Creates a variable with the given bounds, integrality requirement
   // and name. Bounds can be finite or +/- MPSolver::infinity().
   // The MPSolver owns the variable (i.e. the returned pointer is borrowed).
-  // Variable names must be unique (it may crash otherwise). Empty variable
-  // names are allowed, an automated variable name will then be assigned.
-  MPVariable* MakeVar(double lb, double ub, bool integer, const std::string& name);
+  // Variable names are optional. If you give an empty name, name() will
+  // auto-generate one for you upon request.
+
+  MPVariable* MakeVar(double lb, double ub, bool integer,
+                      const std::string& name);
   // Creates a continuous variable.
   MPVariable* MakeNumVar(double lb, double ub, const std::string& name);
   // Creates an integer variable.
@@ -266,7 +275,8 @@ class MPSolver {
   // @param name the prefix of the variable names. Variables are named
   // name0, name1, ...
   void MakeVarArray(int nb, double lb, double ub, bool integer,
-                    const std::string& name_prefix, std::vector<MPVariable*>* vars);
+                    const std::string& name_prefix,
+                    std::vector<MPVariable*>* vars);
   // Creates an array of continuous variables.
   void MakeNumVarArray(int nb, double lb, double ub, const std::string& name,
                        std::vector<MPVariable*>* vars);
@@ -284,12 +294,12 @@ class MPSolver {
   // (They are listed in the order in which they were created.)
   const std::vector<MPConstraint*>& constraints() const { return constraints_; }
 
-  // Sets whether constraints should be indexed. Setting to false makes adding
-  // constraints faster and uses less memory.
-  void SetIndexConstraints(bool enabled);
-  // Look up a constraint by name, and return nullptr if it does not exist or if
-  // constraints are not indexed.
-  MPConstraint* LookupConstraintOrNull(const std::string& constraint_name) const;
+  // Looks up a constraint by name, and returns nullptr if it does not exist.
+  // The first call has a O(n) complexity, as the constraint name index is
+  // lazily created upon first use. Will crash if constraint names are not
+  // unique.
+  MPConstraint* LookupConstraintOrNull(
+      const std::string& constraint_name) const;
 
   // Creates a linear constraint with given bounds. Bounds can be
   // finite or +/- MPSolver::infinity(). The MPSolver class assumes
@@ -299,7 +309,8 @@ class MPSolver {
   // Creates a constraint with -infinity and +infinity bounds.
   MPConstraint* MakeRowConstraint();
   // Creates a named constraint with given bounds.
-  MPConstraint* MakeRowConstraint(double lb, double ub, const std::string& name);
+  MPConstraint* MakeRowConstraint(double lb, double ub,
+                                  const std::string& name);
   // Creates a named constraint with -infinity and +infinity bounds.
   MPConstraint* MakeRowConstraint(const std::string& name);
 
@@ -307,7 +318,8 @@ class MPSolver {
   // range.lower_bound() <= range.linear_expr() <= range.upper_bound()
   MPConstraint* MakeRowConstraint(const LinearRange& range);
   // As above, but also names the constraint.
-  MPConstraint* MakeRowConstraint(const LinearRange& range, const std::string& name);
+  MPConstraint* MakeRowConstraint(const LinearRange& range,
+                                  const std::string& name);
 
   // ----- Objective -----
   // Note that the objective is owned by the solver, and is initialized to
@@ -318,12 +330,9 @@ class MPSolver {
   // ----- Solve -----
 
   // The status of solving the problem. The straightforward translation to
-  // homonymous enum values of MPSolutionResponse::Status
+  // homonymous enum values of MPSolverResponseStatus
   // (see ./linear_solver.proto) is guaranteed by ./enum_consistency_test.cc,
   // you may rely on it.
-  // TODO(user): Figure out once and for all what the status of
-  // underlying solvers exactly mean, especially for feasible and
-  // infeasible.
   enum ResultStatus {
     OPTIMAL,        // optimal.
     FEASIBLE,       // feasible, or stopped by limit.
@@ -464,10 +473,21 @@ class MPSolver {
     return solver_specific_parameter_string_;
   }
 
-  // Advanced usage: starting hint. This instructs the solver to first pin some
-  // variables to particular values and use that to quickly get an upper bound
-  // on the solution quality. Currently, only GLIP supports this.
-  void SetHint(const PartialVariableAssignment& hint);
+  // Set an hint for solution.
+  //
+  // If a feasible or almost-feasible solution to the problem is already known,
+  // it may be helpful to pass it to the solver so that it can be used. A solver
+  // that supports this feature will try to use this information to create its
+  // initial feasible solution.
+  //
+  // Note that it may not always be faster to give a hint like this to the
+  // solver. There is also no guarantee that the solver will use this hint or
+  // try to return a solution "close" to this assignment in case of multiple
+  // optimal solutions.
+  //
+  // As of 2018-08, this is only used by SCIP, BOP, Gurobi, with various
+  // behaviors, and ignored by other solvers. Contact or-core-team@ for details.
+  void SetHint(std::vector<std::pair<MPVariable*, double> > hint);
 
   // Advanced usage: possible basis status values for a variable and the
   // slack variable of a linear constraint.
@@ -568,6 +588,20 @@ class MPSolver {
   // is ill conditioned.
   double ComputeExactConditionNumber() const;
 
+  // Some solvers (MIP only, not LP) can produce multiple solutions to the
+  // problem. Returns true when another solution is available, and updates the
+  // MPVariable* objects to make the new solution queryable. Call only after
+  // calling solve.
+  //
+  // The optimality properties of the additional solutions found, and whether
+  // or not the solver computes them ahead of time or when NextSolution() is
+  // called is solver specific.
+  //
+  // As of 2018-08-09, only Gurobi supports NextSolution(), see
+  // linear_solver_underlying_gurobi_test for an example of how to configure
+  // Gurobi for this purpose. The other solvers return false unconditionally.
+  bool NextSolution() MUST_USE_RESULT;
+
   friend class GLPKInterface;
   friend class CLPInterface;
   friend class CBCInterface;
@@ -597,6 +631,12 @@ class MPSolver {
   // Returns true if the model has at least 1 integer variable.
   bool HasIntegerVariables() const;
 
+  // Generates the map from variable names to their indices.
+  void GenerateVariableNameIndex() const;
+
+  // Generates the map from constraint names to their indices.
+  void GenerateConstraintNameIndex() const;
+
   // The name of the linear programming problem.
   const std::string name_;
 
@@ -609,14 +649,16 @@ class MPSolver {
   // The vector of variables in the problem.
   std::vector<MPVariable*> variables_;
   // A map from a variable's name to its index in variables_.
-  std::unordered_map<std::string, int> variable_name_to_index_;
+  mutable absl::optional<std::unordered_map<std::string, int> >
+      variable_name_to_index_;
   // Whether variables have been extracted to the underlying interface.
   std::vector<bool> variable_is_extracted_;
 
   // The vector of constraints in the problem.
   std::vector<MPConstraint*> constraints_;
   // A map from a constraint's name to its index in constraints_.
-  std::unique_ptr<std::unordered_map<std::string, int> > constraint_name_to_index_;
+  mutable absl::optional<std::unordered_map<std::string, int> >
+      constraint_name_to_index_;
   // Whether constraints have been extracted to the underlying interface.
   std::vector<bool> constraint_is_extracted_;
 
@@ -627,6 +669,9 @@ class MPSolver {
   // exploited as a starting hint by a solver.
   //
   // Note(user): as of 05/05/2015, we can't use >> because of some SWIG errors.
+  //
+  // TODO(user): replace by two vectors, a std::vector<bool> to indicate if a
+  // hint is provided and a std::vector<double> for the hint value.
   std::vector<std::pair<MPVariable*, double> > solution_hint_;
 
   // Time limit in milliseconds (0 = no limit).
@@ -637,9 +682,9 @@ class MPSolver {
   // Permanent storage for SetSolverSpecificParametersAsString().
   std::string solver_specific_parameter_string_;
 
-
   MPSolverResponseStatus LoadModelFromProtoInternal(
-      const MPModelProto& input_model, bool clear_names, std::string* error_message);
+      const MPModelProto& input_model, bool clear_names,
+      std::string* error_message);
 
   DISALLOW_COPY_AND_ASSIGN(MPSolver);
 };
@@ -649,21 +694,6 @@ inline std::ostream& operator<<(std::ostream& os,
   return os << ProtoEnumToString<MPSolverResponseStatus>(
              static_cast<MPSolverResponseStatus>(status));
 }
-
-// The data structure used to store the coefficients of the contraints and of
-// the objective. Also define a type to facilitate iteration over them with:
-//  for (CoeffEntry entry : coefficients_) { ... }
-class CoeffMap : public std::unordered_map<const MPVariable*, double> {
- public:
-  explicit CoeffMap(int num_buckets)
-#if !defined(_MSC_VER)  // Visual C++ doesn't support this constructor
-      : std::unordered_map<const MPVariable*, double>(num_buckets)
-#endif  // _MSC_VER
-  {
-  }
-};
-
-typedef std::pair<const MPVariable*, double> CoeffEntry;
 
 // A class to express a linear objective.
 class MPObjective {
@@ -680,19 +710,20 @@ class MPObjective {
   // is 0 if the variable does not appear in the objective).
   double GetCoefficient(const MPVariable* const var) const;
 
+  // Returns a map from variables to their coefficients in the objective. If a
+  // variable is not present in the map, then its coefficient is zero.
+  const std::unordered_map<const MPVariable*, double>& terms() const {
+    return coefficients_;
+  }
+
   // Sets the constant term in the objective.
   void SetOffset(double value);
   // Gets the constant term in the objective.
   double offset() const { return offset_; }
 
-  // Adds a constant term to the objective.
-  // Note: please use the less ambiguous SetOffset() if possible!
-  // TODO(user): remove this.
-  void AddOffset(double value) { SetOffset(offset() + value); }
-
   // Resets the current objective to take the value of linear_expr, and sets
   // the objective direction to maximize if "is_maximize", otherwise minimizes.
-  void OptimizeLinearExpr(const LinearExpr& linear_expr, bool is_maximize);
+  void OptimizeLinearExpr(const LinearExpr& linear_expr, bool is_maximization);
   void MaximizeLinearExpr(const LinearExpr& linear_expr) {
     OptimizeLinearExpr(linear_expr, true);
   }
@@ -755,7 +786,7 @@ class MPObjective {
   MPSolverInterface* const interface_;
 
   // Mapping var -> coefficient.
-  CoeffMap coefficients_;
+  std::unordered_map<const MPVariable*, double> coefficients_;
   // Constant term.
   double offset_;
 
@@ -823,13 +854,13 @@ class MPVariable {
   // Constructor. A variable points to a single MPSolverInterface that
   // is specified in the constructor. A variable cannot belong to
   // several models.
-  MPVariable(int index, double lb, double ub, bool integer, const std::string& name,
-             MPSolverInterface* const interface)
+  MPVariable(int index, double lb, double ub, bool integer,
+             const std::string& name, MPSolverInterface* const interface)
       : index_(index),
         lb_(lb),
         ub_(ub),
         integer_(integer),
-        name_(name),
+        name_(name.empty() ? absl::StrFormat("auto_v_%09d", index) : name),
         solution_value_(0.0),
         reduced_cost_(0.0),
         interface_(interface) {}
@@ -866,6 +897,12 @@ class MPConstraint {
   // Gets the coefficient of a given variable on the constraint (which
   // is 0 if the variable does not appear in the constraint).
   double GetCoefficient(const MPVariable* const var) const;
+
+  // Returns a map from variables to their coefficients in the constraint. If a
+  // variable is not present in the map, then its coefficient is zero.
+  const std::unordered_map<const MPVariable*, double>& terms() const {
+    return coefficients_;
+  }
 
   // Returns the lower bound.
   double lb() const { return lb_; }
@@ -930,7 +967,7 @@ class MPConstraint {
         index_(index),
         lb_(lb),
         ub_(ub),
-        name_(name),
+        name_(name.empty() ? absl::StrFormat("auto_c_%09d", index) : name),
         is_lazy_(false),
         dual_value_(0.0),
         interface_(interface) {}
@@ -943,7 +980,7 @@ class MPConstraint {
   bool ContainsNewVariables();
 
   // Mapping var -> coefficient.
-  CoeffMap coefficients_;
+  std::unordered_map<const MPVariable*, double> coefficients_;
 
   const int index_;  // See index().
 
@@ -1092,7 +1129,6 @@ class MPSolverParameters {
   int GetIntegerParam(MPSolverParameters::IntegerParam param) const;
   // @}
 
-
  private:
   // @{
   // Parameter value for each parameter.
@@ -1111,7 +1147,6 @@ class MPSolverParameters {
   // solver's default value. Only parameters for which the wrapper
   // does not define a default value need such an indicator.
   bool lp_algorithm_is_default_;
-
 
   DISALLOW_COPY_AND_ASSIGN(MPSolverParameters);
 };
@@ -1294,11 +1329,10 @@ class MPSolverInterface {
     LOG(FATAL) << "Not supported by this solver.";
   }
 
-  virtual void SetHint(const PartialVariableAssignment& hint) {
-    LOG(FATAL) << "Not supported by this solver.";
-  }
-
   virtual bool InterruptSolve() { return false; }
+
+  // See MPSolver::NextSolution() for contract.
+  virtual bool NextSolution() { return false; }
 
   friend class MPSolver;
 
@@ -1375,7 +1409,8 @@ class MPSolverInterface {
   // temporary file and calls ReadParameterFile to import the parameter file
   // into the solver. Solvers that support passing the parameters directly can
   // override this method to skip the temporary file logic.
-  virtual bool SetSolverSpecificParametersAsString(const std::string& parameters);
+  virtual bool SetSolverSpecificParametersAsString(
+      const std::string& parameters);
 
   // Reads a solver-specific file of parameters and set them.
   // Returns true if there was no errors.
@@ -1390,7 +1425,6 @@ class MPSolverInterface {
   virtual void SetScalingMode(int value) = 0;
   virtual void SetLpAlgorithm(int value) = 0;
 };
-
 
 }  // namespace operations_research
 

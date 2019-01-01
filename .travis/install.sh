@@ -24,6 +24,17 @@ function installmono() {
 		sudo apt-get install -yqq mono-complete
 }
 
+function installdotnetsdk(){
+		# Installs for Ubuntu Trusty distro
+		curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg &&
+		sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg &&
+		sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-trusty-prod trusty main" > /etc/apt/sources.list.d/dotnetdev.list' &&
+		# Install dotnet sdk 2.1
+		sudo apt-get install apt-transport-https &&
+		sudo apt-get update -qq &&
+		sudo apt-get install -yqq dotnet-sdk-2.1
+}
+
 ################
 ##  MAKEFILE  ##
 ################
@@ -35,14 +46,16 @@ if [ "${BUILDER}" == make ]; then
 			if [ "${LANGUAGE}" != cc ]; then
 				installswig
 			fi
-			if [ "${LANGUAGE}" == python ]; then
+			if [ "${LANGUAGE}" == python2 ]; then
+				pyenv global system 2.7;
+				python2.7 -m pip install -q virtualenv wheel six;
+			elif [ "${LANGUAGE}" == python3 ]; then
 				pyenv global system 3.6;
 				python3.6 -m pip install -q virtualenv wheel six;
-			elif [ "${LANGUAGE}" == csharp ]; then
-				installmono
-			elif [ "${LANGUAGE}" == fsharp ]; then
-				installmono
+			elif [ "${LANGUAGE}" == dotnet ]; then
+				#installmono
 				sudo apt-get -yqq install fsharp
+				installdotnetsdk
 			fi
 		else
 			# Linux Docker Makefile build:
@@ -51,17 +64,25 @@ if [ "${BUILDER}" == make ]; then
 		fi
 	elif [ "${TRAVIS_OS_NAME}" == osx ]; then
 		if [ "${DISTRO}" == native ]; then
+			brew update;
+			brew install make --with-default-names;
 			if [ "${LANGUAGE}" != cc ]; then
-				brew update;
 				brew install swig;
 			fi
-			if [ "${LANGUAGE}" == python ]; then
+			if [ "${LANGUAGE}" == python2 ]; then
+				brew outdated | grep -q python@2 && brew upgrade python@2;
+				python2 -m pip install -q virtualenv wheel six;
+			elif [ "${LANGUAGE}" == python3 ]; then
 				brew upgrade python;
-				python3.6 -m pip install -q virtualenv wheel six;
+				python3 -m pip install -q virtualenv wheel six;
 			elif [ "${LANGUAGE}" == java ]; then
 				brew cask install java;
-			elif [ "${LANGUAGE}" == csharp ] || [ "${LANGUAGE}" == fsharp ]; then
-				brew install mono;
+			elif [ "${LANGUAGE}" == dotnet ]; then
+				#brew install mono;
+				# Installer changes path but won't be picked up in current terminal session
+				# Need to explicitly add location (see Makefile.fsharp.mk)
+				brew tap caskroom/cask
+				brew cask install dotnet-sdk;
 			fi
 		else
 			# MacOS Docker Makefile build:
@@ -78,6 +99,8 @@ if [ "${BUILDER}" == cmake ]; then
 	if [ "${TRAVIS_OS_NAME}" == linux ]; then
 		if [ "${DISTRO}" == native ]; then
 			installswig
+			pyenv global system 3.6;
+			python3.6 -m pip install -q virtualenv wheel six;
 		else
 			# Linux Docker CMake build:
 			echo "NOT SUPPORTED"

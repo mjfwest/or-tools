@@ -61,19 +61,17 @@ class EnteringVariable {
   // IsValidPrimalEnteringCandidate() for more details) or kInvalidCol if no
   // such column exists. This latter case means that the primal algorithm has
   // terminated: the optimal has been reached.
-  Status PrimalChooseEnteringColumn(ColIndex* entering_col)
-      MUST_USE_RESULT;
+  Status PrimalChooseEnteringColumn(ColIndex* entering_col) MUST_USE_RESULT;
 
   // Dual optimization phase (i.e. phase II) ratio test.
   // Returns the index of the entering column given that we want to move along
   // the "update" row vector in the direction given by the sign of
   // cost_variation. Computes the smallest step that keeps the dual feasibility
-  // for all the columns. The pivot is the coefficient of the "update" vector at
-  // the entering column index.
+  // for all the columns.
   Status DualChooseEnteringColumn(const UpdateRow& update_row,
                                   Fractional cost_variation,
                                   std::vector<ColIndex>* bound_flip_candidates,
-                                  ColIndex* entering_col, Fractional* pivot,
+                                  ColIndex* entering_col,
                                   Fractional* step) MUST_USE_RESULT;
 
   // Dual feasibility phase (i.e. phase I) ratio test.
@@ -83,7 +81,6 @@ class EnteringVariable {
   Status DualPhaseIChooseEnteringColumn(const UpdateRow& update_row,
                                         Fractional cost_variation,
                                         ColIndex* entering_col,
-                                        Fractional* pivot,
                                         Fractional* step) MUST_USE_RESULT;
 
   // Sets the pricing parameters. This does not change the pricing rule.

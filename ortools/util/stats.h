@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // Helper classes to track statistics of a program component.
 //
 // Usage example:
@@ -61,6 +60,7 @@
 // times your function calls!
 //
 // IMPORTANT: The SCOPED_TIME_STAT() macro only does something if OR_STATS is
+// defined, so you need to build your code with blaze build --copt='-DOR_STATS'.
 // The idea is that by default the instrumentation is off. You can also use the
 // macro IF_STATS_ENABLED() that does nothing if OR_STATS is not defined or just
 // translates to its argument otherwise.
@@ -79,7 +79,8 @@
 
 namespace operations_research {
 
-// Returns the current thread's total memory usage in an human-readable std::string.
+// Returns the current thread's total memory usage in an human-readable
+// std::string.
 std::string MemoryUsage();
 
 // Forward declaration.
@@ -136,8 +137,8 @@ class StatsGroup {
       : name_(name), stats_(), time_distributions_() {}
   ~StatsGroup();
 
-  // Registers a Stat, which will appear in the std::string returned by StatString().
-  // The Stat object must live as long as this StatsGroup.
+  // Registers a Stat, which will appear in the std::string returned by
+  // StatString(). The Stat object must live as long as this StatsGroup.
   void Register(Stat* stat);
 
   // Returns this group name, followed by one line per Stat registered with this
@@ -231,10 +232,10 @@ class TimeDistribution : public DistributionStat {
   static double CyclesToSeconds(double num_cycles);
 
   // Adds a time in seconds to this distribution.
-  void AddTimeInSec(double value);
+  void AddTimeInSec(double seconds);
 
   // Adds a time in CPU cycles to this distribution.
-  void AddTimeInCycles(double value);
+  void AddTimeInCycles(double cycles);
 
   // Starts the timer in preparation of a StopTimerAndAddElapsedTime().
   inline void StartTimer() { timer_.Restart(); }
@@ -257,7 +258,8 @@ class TimeDistribution : public DistributionStat {
 // Statistic on the distribution of a sequence of ratios, displayed as %.
 class RatioDistribution : public DistributionStat {
  public:
-  explicit RatioDistribution(const std::string& name) : DistributionStat(name) {}
+  explicit RatioDistribution(const std::string& name)
+      : DistributionStat(name) {}
   RatioDistribution(const std::string& name, StatsGroup* group)
       : DistributionStat(name, group) {}
   std::string ValueAsString() const override;
@@ -267,7 +269,8 @@ class RatioDistribution : public DistributionStat {
 // Statistic on the distribution of a sequence of doubles.
 class DoubleDistribution : public DistributionStat {
  public:
-  explicit DoubleDistribution(const std::string& name) : DistributionStat(name) {}
+  explicit DoubleDistribution(const std::string& name)
+      : DistributionStat(name) {}
   DoubleDistribution(const std::string& name, StatsGroup* group)
       : DistributionStat(name, group) {}
   std::string ValueAsString() const override;
@@ -277,7 +280,8 @@ class DoubleDistribution : public DistributionStat {
 // Statistic on the distribution of a sequence of integers.
 class IntegerDistribution : public DistributionStat {
  public:
-  explicit IntegerDistribution(const std::string& name) : DistributionStat(name) {}
+  explicit IntegerDistribution(const std::string& name)
+      : DistributionStat(name) {}
   IntegerDistribution(const std::string& name, StatsGroup* group)
       : DistributionStat(name, group) {}
   std::string ValueAsString() const override;
@@ -402,7 +406,8 @@ using ScopedInstructionCounter = DisabledScopedInstructionCounter;
 
 #ifdef HAS_PERF_SUBSYSTEM
 
-inline std::string RemoveOperationsResearchAndGlop(const std::string& pretty_function) {
+inline std::string RemoveOperationsResearchAndGlop(
+    const std::string& pretty_function) {
   return strings::GlobalReplaceSubstrings(
       pretty_function, {{"operations_research::", ""}, {"glop::", ""}});
 }

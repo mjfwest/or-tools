@@ -55,8 +55,8 @@ setup(
         'ortools.linear_solver' : ['_pywraplp.dll'],
         'ortools.graph' : ['_pywrapgraph.dll'],
         'ortools.algorithms' : ['_pywrapknapsack_solver.dll'],
-        'ortools.sat' : ['_pywrapsat.dll'],
-        DELETEWIN 'ortools' : ['libortools.DLL']
+        'ortools.sat' : ['_pywrapsat.dll', '*.md'],
+        DELETEWIN 'ortools' : ['.libs/*' DDDD]
     },
     include_package_data=True,
     license='Apache 2.0',
@@ -80,6 +80,7 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
         'Topic :: Office/Business :: Scheduling',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',

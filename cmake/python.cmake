@@ -39,7 +39,7 @@ endforeach()
 add_custom_target(Py${PROJECT_NAME}_proto DEPENDS ${PROTO_PYS} ortools::ortools)
 
 # Setup Python
-set(Python_ADDITIONAL_VERSIONS "3.6;3.5;2.7" CACHE STRING "Python to use for binding")
+set(Python_ADDITIONAL_VERSIONS "3.7;3.6;3.5;2.7" CACHE STRING "Python to use for binding")
 find_package(PythonInterp REQUIRED)
 # Force PythonLibs to find the same version than the python interpreter.
 set(Python_ADDITIONAL_VERSIONS "${PYTHON_VERSION_STRING}")
@@ -53,7 +53,7 @@ endif()
 
 # CMake will remove all '-D' prefix (i.e. -DUSE_FOO become USE_FOO)
 #get_target_property(FLAGS ortools::ortools COMPILE_DEFINITIONS)
-set(FLAGS -DUSE_BOP -DUSE_GLOP -DUSE_CBC -DUSE_CLP)
+set(FLAGS -DUSE_BOP -DUSE_GLOP -DUSE_CBC -DUSE_CLP -DMUST_USE_RESULT)
 list(APPEND CMAKE_SWIG_FLAGS ${FLAGS} "-I${PROJECT_SOURCE_DIR}")
 
 foreach(SUBPROJECT constraint_solver linear_solver sat graph algorithms data)
@@ -89,31 +89,38 @@ add_custom_command(OUTPUT setup.py dist ${PROJECT_NAME}.egg-info
 	COMMAND ${CMAKE_COMMAND} -E echo "  def has_ext_modules(self):" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "    return True" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "" >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "from setuptools.command.install import install" >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "class InstallPlatlib(install):" >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "    def finalize_options(self):" >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "        install.finalize_options(self)" >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "        self.install_lib=self.install_platlib" >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "setup(" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  name='ortools'," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  license='Apache 2.0'," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  version='${PROJECT_VERSION}'," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  author='Google Inc'," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "  author_email = 'lperron@google.com'," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "  description = 'Google OR-Tools python libraries and modules'," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "  long_description = 'read(README.txt)'," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "  keywords = ('operations research' +" >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  author_email='lperron@google.com'," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  description='Google OR-Tools python libraries and modules'," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  long_description='read(README.txt)'," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  keywords=('operations research' +" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  ', constraint programming' +" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  ', linear programming' +" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  ', flow algoritms' +" >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  ', python')," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "  url = 'https://developers.google.com/optimization/'," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "  download_url = 'https://github.com/google/or-tools/releases'," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  url='https://developers.google.com/optimization/'," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  download_url='https://github.com/google/or-tools/releases'," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  distclass=BinaryDistribution," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  cmdclass={'install': InstallPlatlib}," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  packages=find_packages()," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  package_data={" >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "	'ortools':[$<$<NOT:$<PLATFORM_ID:Windows>>:'../$<TARGET_SONAME_FILE_NAME:ortools>'>]," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "	'ortools.constraint_solver':['$<TARGET_FILE_NAME:_pywrapcp>']," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "	'ortools.linear_solver':['$<TARGET_FILE_NAME:_pywraplp>']," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "	'ortools.sat':['$<TARGET_FILE_NAME:_pywrapsat>']," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "	'ortools.graph':['$<TARGET_FILE_NAME:_pywrapgraph>']," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "	'ortools.algorithms':['$<TARGET_FILE_NAME:_pywrapknapsack_solver>']," >> setup.py
-	COMMAND ${CMAKE_COMMAND} -E echo "	'ortools.data':['$<TARGET_FILE_NAME:_pywraprcpsp>']," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  'ortools':[$<$<NOT:$<PLATFORM_ID:Windows>>:'.libs/*', '../$<TARGET_SONAME_FILE_NAME:ortools>'>]," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  'ortools.constraint_solver':['$<TARGET_FILE_NAME:_pywrapcp>']," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  'ortools.linear_solver':['$<TARGET_FILE_NAME:_pywraplp>']," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  'ortools.sat':['$<TARGET_FILE_NAME:_pywrapsat>']," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  'ortools.graph':['$<TARGET_FILE_NAME:_pywrapgraph>']," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  'ortools.algorithms':['$<TARGET_FILE_NAME:_pywrapknapsack_solver>']," >> setup.py
+	COMMAND ${CMAKE_COMMAND} -E echo "  'ortools.data':['$<TARGET_FILE_NAME:_pywraprcpsp>']," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  }," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  include_package_data=True," >> setup.py
 	COMMAND ${CMAKE_COMMAND} -E echo "  install_requires=[" >> setup.py
@@ -153,7 +160,7 @@ function(search_python_module MODULE_NAME)
 	else()
 		message(WARNING "Can't find python module \"${MODULE_NAME}\", install it using pip...")
 		execute_process(
-			COMMAND ${PYTHON_EXECUTABLE} -m pip install ${MODULE_NAME}
+			COMMAND ${PYTHON_EXECUTABLE} -m pip install --user ${MODULE_NAME}
 			OUTPUT_STRIP_TRAILING_WHITESPACE
 			)
 	endif()

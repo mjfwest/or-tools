@@ -16,10 +16,9 @@
 #include <set>
 
 #include "ortools/base/logging.h"
+#include "ortools/base/random.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/routing.h"
-#include "ortools/base/random.h"
-#include "ortools/base/random.h"
 
 namespace operations_research {
 
@@ -162,12 +161,13 @@ void DisplayPlan(
 
   // Display dropped orders.
   std::string dropped;
-  for (int order = 1; order < routing.nodes(); ++order) {
+  for (int64 order = 0; order < routing.Size(); ++order) {
+    if (routing.IsStart(order) || routing.IsEnd(order)) continue;
     if (plan.Value(routing.NextVar(order)) == order) {
       if (dropped.empty()) {
-        StringAppendF(&dropped, " %d", order);
+        StringAppendF(&dropped, " %d", routing.IndexToNode(order).value());
       } else {
-        StringAppendF(&dropped, ", %d", order);
+        StringAppendF(&dropped, ", %d", routing.IndexToNode(order).value());
       }
     }
   }
@@ -179,12 +179,11 @@ void DisplayPlan(
     int group_size = 0;
     int64 group_same_vehicle_cost = 0;
     std::set<int> visited;
-    const RoutingModel::NodeIndex kFirstNodeAfterDepot(1);
-    for (RoutingModel::NodeIndex order = kFirstNodeAfterDepot;
-         order < routing.nodes(); ++order) {
+    for (int64 order = 0; order < routing.Size(); ++order) {
+      if (routing.IsStart(order) || routing.IsEnd(order)) continue;
       ++group_size;
       visited.insert(
-          plan.Value(routing.VehicleVar(routing.NodeToIndex(order))));
+          plan.Value(routing.VehicleVar(order)));
       if (group_size == max_nodes_per_group) {
         if (visited.size() > 1) {
           group_same_vehicle_cost += (visited.size() - 1) * same_vehicle_cost;
@@ -217,15 +216,18 @@ void DisplayPlan(
         if (slack_var != nullptr && plan.Contains(slack_var)) {
           StringAppendF(
               &plan_output,
-              "%lld Load(%lld) Time(%lld, %lld) Slack(%lld, %lld) -> ", order,
+              "%lld Load(%lld) Time(%lld, %lld) Slack(%lld, %lld)",
+              routing.IndexToNode(order).value(),
               plan.Value(load_var), plan.Min(time_var), plan.Max(time_var),
               plan.Min(slack_var), plan.Max(slack_var));
         } else {
-          StringAppendF(&plan_output, "%lld Load(%lld) Time(%lld, %lld) -> ",
-                        order, plan.Value(load_var), plan.Min(time_var),
+          StringAppendF(&plan_output, "%lld Load(%lld) Time(%lld, %lld)",
+                        routing.IndexToNode(order).value(),
+                        plan.Value(load_var), plan.Min(time_var),
                         plan.Max(time_var));
         }
         if (routing.IsEnd(order)) break;
+        plan_output += " -> ";
         order = plan.Value(routing.NextVar(order));
       }
       plan_output += "\n";

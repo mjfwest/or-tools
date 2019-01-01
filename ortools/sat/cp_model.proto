@@ -16,6 +16,9 @@
 syntax = "proto3";
 
 option csharp_namespace = "Google.OrTools.Sat";
+option java_package = "com.google.ortools.sat";
+option java_multiple_files = true;
+option java_outer_classname = "CpModelProtobuf";
 
 package operations_research.sat;
 
@@ -55,20 +58,6 @@ message IntegerVariableProto {
   //  - for all i < n   :      min_i <= max_i
   //  - for all i < n-1 :  max_i + 1 < min_{i+1}.
   repeated int64 domain = 2;
-
-  // Advanced usage. Note that this is not fully supported yet, contact or-sat@
-  // if this does not work as expected.
-  //
-  // If this is not empty, it must contains only one literal. Any constraint
-  // having a reference to this variable will be ignored if this literal is
-  // true. When this is the case, the value of this variable can thus take any
-  // value in its domain. As of 2017/09/18, only linear constraints with two
-  // terms support this (i.e. precedence constraints).
-  //
-  // This can be a powerful concept because it allows the solver to propagate
-  // the variable regardless of the enforcement literal, and if its domain
-  // become empty, it can propagate this literal to false.
-  repeated int32 enforcement_literal = 3;
 }
 
 // Argument of the constraints of the form OP(literals).
@@ -128,12 +117,12 @@ message NoOverlap2DConstraintProto {
   repeated int32 y_intervals = 2;  // Same size as x_intervals.
 }
 
-// The sum of the demands * durations of the intervals at each interval point
-// cannot exceed a capacity. Note that intervals are interpreted as [start, end)
-// and as such intervals like [2,3) and [3,4) do not overlap for the point of
-// view of this constraint.
+// The sum of the demands of the intervals at each interval point
+// cannot exceed a capacity. Note that intervals are interpreted as
+// [start, end) and as such intervals like [2,3) and [3,4) do not
+// overlap for the point of view of this constraint.
 //
-// Note: this enforce that all start <= end.
+// Note: this enforces that all start <= end.
 message CumulativeConstraintProto {
   int32 capacity = 1;
   repeated int32 intervals = 2;
@@ -143,18 +132,23 @@ message CumulativeConstraintProto {
 // Maintain a reservoir level within bounds. The water level starts at 0, and at
 // any time >= 0, it must be within min_level, and max_level. Furthermore, this
 // constraints expect all times variables to be >= 0.
-// If the variable times[i] is assigned a value t, then the current level
-// changes by demands[i] (which is constant) at the time t.
+// If the variable actives[i] is true, and if the variable times[i] is assigned
+// a value t, then the current level changes by demands[i] (which is constant)
+// at the time t.
 //
 // Note that level min can be > 0, or level max can be < 0. It just forces
 // some demands to be executed at time 0 to make sure that we are within those
 // bounds with the executed demands. Therefore, at any time t >= 0:
-//      sum(demands[i] if times[i] <= t) in [min_level, max_level]
+//      sum(demands[i] * actives[i] if times[i] <= t) in [min_level, max_level]
+// The array of boolean variables 'actives', if defined, indicates which actions
+// are actually performed. If this array is not defined, then it is assumed that
+// all actions will be performed.
 message ReservoirConstraintProto {
   int64 min_level = 1;
   int64 max_level = 2;
   repeated int32 times = 3;
   repeated int64 demands = 4;
+  repeated int32 actives = 5;
 }
 
 // The circuit constraint is defined on a graph where the arc presence are
@@ -178,8 +172,8 @@ message CircuitConstraintProto {
 // - #incoming arcs == 1 except for node 0.
 // - #outgoing arcs == 1 except for node 0.
 // - for node zero, #incoming arcs == #outgoing arcs.
-// - There is no duplicate arcs.
-// - Self-arc are allowed except for node 0.
+// - There are no duplicate arcs.
+// - Self-arcs are allowed except for node 0.
 // - There is no cycle in this graph, except through node 0.
 //
 // TODO(user): It is probably possible to generalize this constraint to a
@@ -250,39 +244,89 @@ message ConstraintProto {
   // For debug/logging only. Can be empty.
   string name = 1;
 
-  // This should contain at most one literal. If there is one, then the
-  // constraint must be true when this literal is true, if it is false, then it
-  // doesn't matter. This is also called half-reification. To have an
-  // equivalence between a literal and a constraint (full reification), one must
-  // add both a constraint (controlled by a literal l) and its negation
-  // (controlled by the negation of l).
+  // The constraint will be enforced iff all literals listed here are true. If
+  // this is empty, then the constraint will always be enforced. An enforced
+  // constraint must be satisfied, and an un-enforced one will simply be
+  // ignored.
+  //
+  // This is also called half-reification. To have an equivalence between a
+  // literal and a constraint (full reification), one must add both a constraint
+  // (controlled by a literal l) and its negation (controlled by the negation of
+  // l).
+  //
+  // Important: as of September 2018, only a few constraint support enforcement:
+  // - bool_or, bool_and, linear: fully supported.
+  // - interval: only support a single enforcement literal.
+  // - other: no support (but can be added on a per-demand basis).
   repeated int32 enforcement_literal = 2;
 
   // The actual constraint with its arguments.
   oneof constraint {
-    BoolArgumentProto bool_or = 3;   // OR(literals) is true.
-    BoolArgumentProto bool_and = 4;  // AND(literals) is true.
 
-    // XOR(literals) is true.  For more than two literals, note that
-    // (a_1 XOR a_2 XOR ... XOR a_n) is equivalent to an odd number the a_i
-    // being true.
+    // The bool_or constraint forces at least one literal to be true.
+    BoolArgumentProto bool_or = 3;
+
+    // The bool_and constraint forces all of the literals to be true.
+    BoolArgumentProto bool_and = 4;
+
+    // The bool_xor constraint forces an odd number of the literals to be true.
     BoolArgumentProto bool_xor = 5;
 
-    IntegerArgumentProto int_div = 7;    // target = vars[0] / vars[1]
-    IntegerArgumentProto int_mod = 8;    // target = vars[0] % vars[1]
-    IntegerArgumentProto int_max = 9;    // target = MAX(vars)
-    IntegerArgumentProto int_min = 10;   // target = MIN(vars)
-    IntegerArgumentProto int_prod = 11;  // target = PROD(vars)
+    // The int_div constraint forces the target to equal vars[0] / vars[1].
+    IntegerArgumentProto int_div = 7;
 
+    // The int_mod constraint forces the target to equal vars[0] % vars[1].
+    IntegerArgumentProto int_mod = 8;
+
+    // The int_max constraint forces the target to equal the maximum of all
+    // variables.
+    IntegerArgumentProto int_max = 9;
+
+    // The int_min constraint forces the target to equal the minimum of all
+    // variables.
+    IntegerArgumentProto int_min = 10;
+
+    // The int_min constraint forces the target to equal the product of all
+    // variables.
+    IntegerArgumentProto int_prod = 11;
+
+    // The linear constraint enforces a linear inequality among the variables,
+    // such as 0 <= x + 2y <= 10.
     LinearConstraintProto linear = 12;
+
+    // The all_diff constraint forces all variables to take different values.
     AllDifferentConstraintProto all_diff = 13;
+
+    // The element constraint forces the variable with the given index
+    // to be equal to the target.
     ElementConstraintProto element = 14;
+
+    // The circuit constraint takes a graph and forces the arcs present
+    // (with arc presence indicated by a literal) to form a unique cycle.
     CircuitConstraintProto circuit = 15;
+
+    // The routes constraint implements the vehicle routing problem.
     RoutesConstraintProto routes = 23;
+
+    // The circuit_covering constraint is similar to the circuit constraint,
+    // but allows multiple non-overlapping cycles instead of just one.
     CircuitCoveringConstraintProto circuit_covering = 25;
+
+    // The table constraint enforces what values a tuple of variables may
+    // take.
     TableConstraintProto table = 16;
+
+    // The automata constraint forces a sequence of variables to be accepted
+    // by an automaton.
     AutomataConstraintProto automata = 17;
+
+    // The inverse constraint forces two arrays to be inverses of each other:
+    // the values of one are the indices of the other, and vice versa.
     InverseConstraintProto inverse = 18;
+
+    // The reservoir constraint forces the sum of a set of active demands
+    // to always be between a specified minimum and maximum value during
+    // specific times.
     ReservoirConstraintProto reservoir = 24;
 
     // Constraints on intervals.
@@ -292,10 +336,23 @@ message ConstraintProto {
     // enforcement_literal set to false are ignored by these constraints.
     //
     // TODO(user): Explain what happen for intervals of size zero. Some
-    // constraints ignore them, other do take them into account.
+    // constraints ignore them; others do take them into account.
+
+    // The interval constraint takes a start, end, and size, and forces
+    // start + size == end.
     IntervalConstraintProto interval = 19;
+
+    // The no_overlap constraint prevents a set of intervals from
+    // overlapping; in scheduling, this is called a disjunctive
+    // constraint.
     NoOverlapConstraintProto no_overlap = 20;
+
+    // The no_overlap_2d constraint prevents a set of boxes from overlapping.
     NoOverlap2DConstraintProto no_overlap_2d = 21;
+
+    // The cumulative constraint ensures that for any integer point, the sum
+    // of the demands of the intervals containing that point does not exceed
+    // the capacity.
     CumulativeConstraintProto cumulative = 22;
   }
 }
@@ -395,16 +452,12 @@ message CpModelProto {
   // search_branching parameter is set to FIXED_SEARCH. Note that this strategy
   // is also used as a heuristic when we are not in fixed search.
   //
-  // If empty, the solver will try to assign all variables to their min value in
-  // the order of their appearance in the variables field above. Otherwise, it
-  // will assign the variables in each DecisionStrategyProto according to the
-  // order defined there and only move to the next proto in this field once all
-  // variables from the previous one have been assigned.
-  //
-  // Advanced Usage: if not all variables appears, the solver will not try to
-  // assign the missing ones. Thus, at the end of the search, not all variables
-  // may be fixed and this is why the solution_lower_bounds and
-  // solution_upper_bounds fields in the CpSolverResponse are for.
+  // Advanced Usage: if not all variables appears and the parameter
+  // "instantiate_all_variables" is set to false, then the solver will not try
+  // to instantiate the variables that do not appear. Thus, at the end of the
+  // search, not all variables may be fixed and this is why we have the
+  // solution_lower_bounds and solution_upper_bounds fields in the
+  // CpSolverResponse.
   repeated DecisionStrategyProto search_strategy = 5;
 
   // Solution hint.
@@ -423,8 +476,8 @@ message CpModelProto {
 
 // The status returned by a solver trying to solve a CpModelProto.
 enum CpSolverStatus {
-  // The status of the model is still unknown. A search limit as been reached
-  // before any of the status below could be decided.
+  // The status of the model is still unknown. A search limit has been reached
+  // before any of the statuses below could be determined.
   UNKNOWN = 0;
 
   // The given CpModelProto didn't pass the validation step. You can get a
@@ -433,10 +486,10 @@ enum CpSolverStatus {
 
   // A feasible solution as been found. For an optimization problem, we still
   // don't know if it is the optimal one though.
-  MODEL_SAT = 2;
+  FEASIBLE = 2;
 
-  // The problem as been proven to be UNSAT. No feasible solution exists.
-  MODEL_UNSAT = 3;
+  // The problem has been proven infeasible.
+  INFEASIBLE = 3;
 
   // An optimal feasible solution has been found.
   OPTIMAL = 4;
@@ -461,13 +514,15 @@ message CpSolverResponse {
   // If the problem has some variables that are not fixed at the end of the
   // search (because of a particular search strategy in the CpModelProto) then
   // this will be used instead of filling the solution above. The two fields
-  // will then contains the lower and upper bound of each variable as they where
+  // will then contains the lower and upper bounds of each variable as they were
   // when the best "solution" was found.
   repeated int64 solution_lower_bounds = 18;
   repeated int64 solution_upper_bounds = 19;
 
-  // Only make sense for an optimization problem and if solution is non-empty.
-  // The objective value of the returned solution.
+  // Only make sense for an optimization problem. The objective value of the
+  // returned solution if it is non-empty. If there is no solution, then for a
+  // minimization problem, this will be an upper-bound of the objective of any
+  // feasible solution, and a lower-bound for a maximization problem.
   double objective_value = 3;
 
   // Only make sense for an optimization problem. A proven lower-bound on the
@@ -477,7 +532,7 @@ message CpSolverResponse {
 
   // This will be true iff the solver was asked to find all solutions to a
   // satisfiability problem (or all optimal solutions to an optimization
-  // problem), and he was succesfull in doing so.
+  // problem), and it was successful in doing so.
   bool all_solutions_were_found = 5;
 
   // Some statistics about the solve.
@@ -489,4 +544,7 @@ message CpSolverResponse {
   double wall_time = 15;
   double user_time = 16;
   double deterministic_time = 17;
+
+  // Additional information about how the solution was found.
+  string solution_info = 20;
 }

@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // Vector with map from element to index in the vector.
 
 #ifndef OR_TOOLS_UTIL_VECTOR_MAP_H_
@@ -52,17 +51,21 @@ class VectorMap {
   }
 
   // Will return the index of the element if present, or die otherwise.
-  int IndexOrDie(const T& element) const { return FindOrDie(map_, element); }
+  int IndexOrDie(const T& element) const {
+    return gtl::FindOrDie(map_, element);
+  }
 
   // Returns -1 if the element is not in the vector, or its unique
   // index if it is.
   int Index(const T& element) const {
-    return FindWithDefault(map_, element, -1);
+    return gtl::FindWithDefault(map_, element, -1);
   }
   // TODO(user): explore a int-type version.
 
   // Returns wether the element has already been added to the vector-map.
-  bool Contains(const T& element) const { return ContainsKey(map_, element); }
+  bool Contains(const T& element) const {
+    return gtl::ContainsKey(map_, element);
+  }
 
   // Returns the element at position index.
   const T& Element(int index) const {

@@ -14,7 +14,6 @@
 #ifndef OR_TOOLS_BASE_HASH_H_
 #define OR_TOOLS_BASE_HASH_H_
 
-
 #include <array>
 #include <string>
 #include <utility>
@@ -145,5 +144,15 @@ struct hash<std::array<T, N>> {
 }  // namespace std
 
 #endif  // SWIG
+
+namespace util_hash {
+
+inline uint64 Hash(uint64 num, uint64 c) {
+  uint64 b = GG_ULONGLONG(0xe08c1d668b756f82);  // More of the golden ratio.
+  operations_research::mix(num, b, c);
+  return c;
+}
+
+}  // namespace util_hash
 
 #endif  // OR_TOOLS_BASE_HASH_H_

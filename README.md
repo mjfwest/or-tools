@@ -2,8 +2,10 @@
 
 [![Build
 Status](https://travis-ci.org/google/or-tools.svg?branch=master)](https://travis-ci.org/google/or-tools)
+[![Build status](https://ci.appveyor.com/api/projects/status/9hyykkcm8sh3ua6x?svg=true)](https://ci.appveyor.com/project/lperron/or-tools-98u1n)
 [![PyPI version](https://badge.fury.io/py/ortools.svg)](https://badge.fury.io/py/ortools)
 [![NuGet version](https://badge.fury.io/nu/Google.OrTools.svg)](https://badge.fury.io/nu/Google.OrTools)
+[![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/google/or-tools/master)
 
 Google's software suite for combinatorial optimization.
 
@@ -25,11 +27,11 @@ portable software suite for solving combinatorial optimization problems.
 
 The suite contains:
 * A constraint programming solver;
-* A linear programming solvers;
+* A linear programming solver;
 * Wrappers around commercial and other open source solvers, including mixed
 integer solvers;
 * Bin packing and knapsack algorithms;
-* Algorithms for the Traveling Salesman Problem and Vehicule Routing Problem;
+* Algorithms for the Traveling Salesman Problem and Vehicle Routing Problem;
 * Graph algorithms (shortest paths, min cost flow, max flow, linear sum
 assignment).
 
@@ -112,7 +114,7 @@ We also provide experimental CMake support.<br>Please check the
 The best way to learn how to use OR-Tools is to follow the tutorials in our
 developer guide:
 
-https://developers.google.com/optimization/introduction/using
+https://developers.google.com/optimization/introduction/get_started
 
 If you want to learn from code examples, take a look at the examples in the
 [examples](examples) directory.
@@ -131,5 +133,5 @@ proposals and reach consensus before sending your first PR.
 
 ## License
 
-The OR-Tools software suite is licensed under the terms of the Apache license.
+The OR-Tools software suite is licensed under the terms of the Apache License 2.0.
 <br>See [LICENSE-2.0](LICENSE-2.0.txt) for more information.

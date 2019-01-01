@@ -13,20 +13,20 @@
 
 //
 
-#include <unordered_map>
 #include <limits>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
+#include "ortools/base/port.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/timer.h"
-#include "ortools/base/port.h"
-#include "ortools/base/hash.h"
 #include "ortools/linear_solver/linear_solver.h"
 
 #if defined(USE_CBC)
@@ -238,6 +238,16 @@ void CBCInterface::AddVariable(MPVariable* const var) {
 // Solve the LP/MIP. Returns true only if the optimal solution was revealed.
 // Returns the status of the search.
 MPSolver::ResultStatus CBCInterface::Solve(const MPSolverParameters& param) {
+  // CBC requires unique variable and constraint names. By using Lookup*, we
+  // generate variable and constraint indices and ensure the duplicate name
+  // crash will happen here with a readable error message.
+  if (!solver_->variables_.empty()) {
+    solver_->LookupVariableOrNull(solver_->variables_[0]->name());
+  }
+  if (!solver_->constraints_.empty()) {
+    solver_->LookupConstraintOrNull(solver_->constraints_[0]->name());
+  }
+
   WallTimer timer;
   timer.Start();
 
@@ -296,7 +306,7 @@ MPSolver::ResultStatus CBCInterface::Solve(const MPSolverParameters& param) {
         MPConstraint* const ct = solver_->constraints_[i];
         const int size = ct->coefficients_.size();
         int j = 0;
-        for (CoeffEntry entry : ct->coefficients_) {
+        for (const auto& entry : ct->coefficients_) {
           const int index = MPSolverVarIndexToCbcVarIndex(entry.first->index());
           indices[j] = index;
           coefs[j] = entry.second;
@@ -312,8 +322,12 @@ MPSolver::ResultStatus CBCInterface::Solve(const MPSolverParameters& param) {
       osi_.loadFromCoinModel(build);
       break;
     }
-    case MODEL_SYNCHRONIZED: { break; }
-    case SOLUTION_SYNCHRONIZED: { break; }
+    case MODEL_SYNCHRONIZED: {
+      break;
+    }
+    case SOLUTION_SYNCHRONIZED: {
+      break;
+    }
   }
 
   // Changing optimization direction through OSI so that the model file
@@ -321,7 +335,7 @@ MPSolver::ResultStatus CBCInterface::Solve(const MPSolverParameters& param) {
   osi_.setObjSense(maximize_ ? -1 : 1);
 
   sync_status_ = MODEL_SYNCHRONIZED;
-  VLOG(1) << StringPrintf("Model built in %.3f seconds.", timer.Get());
+  VLOG(1) << absl::StrFormat("Model built in %.3f seconds.", timer.Get());
 
   ResetBestObjectiveBound();
 
@@ -368,7 +382,7 @@ MPSolver::ResultStatus CBCInterface::Solve(const MPSolverParameters& param) {
   CHECK_NE(kBadReturnStatus, return_status);  // Should never happen according
                                               // to the CBC source
 
-  VLOG(1) << StringPrintf("Solved in %.3f seconds.", timer.Get());
+  VLOG(1) << absl::StrFormat("Solved in %.3f seconds.", timer.Get());
 
   // Check the status: optimal, infeasible, etc.
   int tmp_status = model.status();
@@ -501,7 +515,9 @@ void CBCInterface::SetPresolveMode(int value) {
       // CBC presolve is always on.
       break;
     }
-    default: { SetUnsupportedIntegerParam(MPSolverParameters::PRESOLVE); }
+    default: {
+      SetUnsupportedIntegerParam(MPSolverParameters::PRESOLVE);
+    }
   }
 }
 
@@ -516,7 +532,6 @@ void CBCInterface::SetLpAlgorithm(int value) {
 MPSolverInterface* BuildCBCInterface(MPSolver* const solver) {
   return new CBCInterface(solver);
 }
-
 
 }  // namespace operations_research
 #endif  // #if defined(USE_CBC)

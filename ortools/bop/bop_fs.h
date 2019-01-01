@@ -17,11 +17,12 @@
 #include <string>
 
 #include "ortools/base/basictypes.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/int_type.h"
-#include "ortools/base/int_type_indexed_vector.h"
+#include "ortools/base/random.h"
 #include "ortools/bop/bop_base.h"
 #include "ortools/bop/bop_parameters.pb.h"
 #include "ortools/bop/bop_solution.h"
@@ -31,7 +32,6 @@
 #include "ortools/sat/boolean_problem.pb.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/util/time_limit.h"
-#include "ortools/base/random.h"
 
 namespace operations_research {
 namespace bop {
@@ -70,7 +70,6 @@ class GuidedSatFirstSolutionGenerator : public BopOptimizerBase {
   std::unique_ptr<sat::SatSolver> sat_solver_;
 };
 
-
 // This class implements an optimizer that tries various random search
 // strategies, each with a really low conflict limit. It can be used to generate
 // a first solution or to improve an existing one.
@@ -101,7 +100,6 @@ class BopRandomFirstSolutionGenerator : public BopOptimizerBase {
   int random_seed_;
   MTRandom* random_;
   sat::SatSolver* sat_propagator_;
-  uint32 sat_seed_;
 };
 
 // This class computes the linear relaxation of the state problem.
@@ -143,6 +141,7 @@ class LinearRelaxation : public BopOptimizerBase {
   const BopParameters parameters_;
   int64 state_update_stamp_;
   bool lp_model_loaded_;
+  int num_full_solves_;
   glop::LinearProgram lp_model_;
   glop::LPSolver lp_solver_;
   double scaling_;

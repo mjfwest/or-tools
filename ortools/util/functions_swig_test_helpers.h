@@ -23,12 +23,15 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 #include "ortools/base/integral_types.h"
 
 namespace operations_research {
 class FunctionSwigTestHelpers {
  public:
-  static std::string NoOpVoidToString(std::function<std::string()> fun) { return fun(); }
+  static std::string NoOpVoidToString(std::function<std::string()> fun) {
+    return fun();
+  }
 
   static int64 NoOpInt64ToInt64(std::function<int64(int64)> fun, int64 x) {
     return fun(x);
@@ -67,7 +70,8 @@ class FunctionSwigTestHelpers {
 
   static void NoOpVoidToVoid(std::function<void()> fun) { fun(); }
 
-  static void NoOpStringToVoid(std::function<void(std::string)> fun, std::string x) {
+  static void NoOpStringToVoid(std::function<void(std::string)> fun,
+                               std::string x) {
     fun(x);
   }
 };

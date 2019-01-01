@@ -23,8 +23,6 @@
 #include "ortools/base/map_util.h"
 #include "ortools/flatzinc/model.h"
 
-using operations_research::StringPrintf;
-
 namespace operations_research {
 namespace fz {
 // This is the context used during parsing.
@@ -34,7 +32,8 @@ struct ParserContext {
   std::unordered_map<std::string, double> float_map;
   std::unordered_map<std::string, std::vector<double>> float_array_map;
   std::unordered_map<std::string, IntegerVariable*> variable_map;
-  std::unordered_map<std::string, std::vector<IntegerVariable*>> variable_array_map;
+  std::unordered_map<std::string, std::vector<IntegerVariable*>>
+      variable_array_map;
   std::unordered_map<std::string, Domain> domain_map;
   std::unordered_map<std::string, std::vector<Domain>> domain_array_map;
 };

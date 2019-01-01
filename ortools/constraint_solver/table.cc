@@ -15,18 +15,17 @@
 // This file implements the table constraints.
 
 #include <algorithm>
-#include <unordered_map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
+#include "ortools/base/join.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
-#include "ortools/base/join.h"
 #include "ortools/base/map_util.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/constraint_solver/sat_constraint.h"
@@ -303,7 +302,7 @@ class PositiveTableConstraint : public BasePositiveTableConstraint {
       IntVar* const var = vars_[var_index];
       to_remove_.clear();
       for (const int64 value : InitAndGetValues(iterators_[var_index])) {
-        if (!ContainsKey(mask, value)) {
+        if (!gtl::ContainsKey(mask, value)) {
           to_remove_.push_back(value);
         }
       }
@@ -366,7 +365,7 @@ class PositiveTableConstraint : public BasePositiveTableConstraint {
   bool Supported(int var_index, int64 value) {
     DCHECK_GE(var_index, 0);
     DCHECK_LT(var_index, arity_);
-    DCHECK(ContainsKey(masks_[var_index], value));
+    DCHECK(gtl::ContainsKey(masks_[var_index], value));
     const std::vector<uint64>& mask = masks_[var_index][value];
     int tmp = 0;
     return active_tuples_.Intersects(mask, &tmp);
@@ -1141,7 +1140,7 @@ class SmallCompactPositiveTableConstraint : public BasePositiveTableConstraint {
 };
 
 bool HasCompactDomains(const std::vector<IntVar*>& vars) {
-  return true; // Always assume compact table.
+  return true;  // Always assume compact table.
 }
 
 // ---------- Deterministic Finite Automaton ----------

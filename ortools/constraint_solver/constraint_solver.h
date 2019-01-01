@@ -65,31 +65,30 @@
 #define OR_TOOLS_CONSTRAINT_SOLVER_CONSTRAINT_SOLVER_H_
 
 #include <functional>
-#include <unordered_map>
-#include <unordered_set>
 #include <iosfwd>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
+#include "ortools/base/map_util.h"
+#include "ortools/base/random.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/sysinfo.h"
 #include "ortools/base/timer.h"
-#include "ortools/base/map_util.h"
-#include "ortools/base/hash.h"
 #include "ortools/constraint_solver/solver_parameters.pb.h"
 #include "ortools/util/piecewise_linear_function.h"
 #include "ortools/util/sorted_interval_list.h"
 #include "ortools/util/tuple_set.h"
-#include "ortools/base/random.h"
 
 class File;
-
 
 namespace operations_research {
 
@@ -570,7 +569,7 @@ class Solver {
   // This enum is used in Solver::MakeOperator associated with an evaluator
   // to specify the neighborhood to create.
   enum EvaluatorLocalSearchOperators {
-    // Lin–Kernighan local search.
+    // Lin-Kernighan local search.
     // While the accumulated local gain is positive, perform a 2opt or a 3opt
     // move followed by a series of 2opt moves. Return a neighbor for which the
     // global gain is positive.
@@ -1029,9 +1028,12 @@ class Solver {
       std::vector<IntervalVar*>* const interval_variables);
 
   ConstraintBuilder GetConstraintBuilder(const std::string& tag) const;
-  IntegerExpressionBuilder GetIntegerExpressionBuilder(const std::string& tag) const;
-  IntervalVariableBuilder GetIntervalVariableBuilder(const std::string& tag) const;
-  SequenceVariableBuilder GetSequenceVariableBuilder(const std::string& tag) const;
+  IntegerExpressionBuilder GetIntegerExpressionBuilder(
+      const std::string& tag) const;
+  IntervalVariableBuilder GetIntervalVariableBuilder(
+      const std::string& tag) const;
+  SequenceVariableBuilder GetSequenceVariableBuilder(
+      const std::string& tag) const;
 #endif  // SWIG
 
 #if !defined(SWIG)
@@ -1047,7 +1049,6 @@ class Solver {
 
   // Current memory usage in bytes
   static int64 MemoryUsage();
-
 
   // The wall_time() in ms since the creation of the solver.
   int64 wall_time() const;
@@ -1593,7 +1594,8 @@ class Solver {
   Constraint* MakeSortingConstraint(const std::vector<IntVar*>& vars,
                                     const std::vector<IntVar*>& sorted);
   // TODO(user): Add void MakeSortedArray(const std::vector<IntVar*>& vars,
-  //                                         std::vector<IntVar*>* const sorted);
+  //                                         std::vector<IntVar*>* const
+  //                                         sorted);
 
   // Creates a constraint that enforces that left is lexicographically less
   // than right.
@@ -1765,7 +1767,7 @@ class Solver {
   // Compatibility layer for python API.
   Constraint* MakeAllowedAssignments(
       const std::vector<IntVar*>& vars,
-      const std::vector<std::vector<int64> >& raw_tuples) {
+      const std::vector<std::vector<int64>>& raw_tuples) {
     IntTupleSet tuples(vars.size());
     tuples.InsertAll(raw_tuples);
     return MakeAllowedAssignments(vars, tuples);
@@ -1773,7 +1775,7 @@ class Solver {
 
   Constraint* MakeTransitionConstraint(
       const std::vector<IntVar*>& vars,
-      const std::vector<std::vector<int64> >& raw_transitions,
+      const std::vector<std::vector<int64>>& raw_transitions,
       int64 initial_state, const std::vector<int>& final_states) {
     IntTupleSet transitions(3);
     transitions.InsertAll(raw_transitions);
@@ -1847,7 +1849,8 @@ class Solver {
   // Creates a performed interval var with a fixed duration. The duration must
   // be greater than 0.
   IntervalVar* MakeFixedDurationIntervalVar(IntVar* const start_variable,
-                                            int64 duration, const std::string& name);
+                                            int64 duration,
+                                            const std::string& name);
 
   // Creates an interval var with a fixed duration, and performed var.
   // The duration must be greater than 0.
@@ -2391,7 +2394,6 @@ class Solver {
   // display callback.
   SearchMonitor* MakeSearchLog(int branch_period, OptimizeVar* const opt_var,
                                std::function<std::string()> display_callback);
-
 
   // ----- Search Trace ------
 
@@ -3109,7 +3111,8 @@ class Solver {
   // Registers a constraint builder.
   void RegisterBuilder(const std::string& tag, ConstraintBuilder builder);
   // Registers an integer expression builder.
-  void RegisterBuilder(const std::string& tag, IntegerExpressionBuilder builder);
+  void RegisterBuilder(const std::string& tag,
+                       IntegerExpressionBuilder builder);
   // Registers an interval variable builder.
   void RegisterBuilder(const std::string& tag, IntervalVariableBuilder builder);
   // Registers a sequence variable builder.
@@ -3143,8 +3146,10 @@ class Solver {
 
   const std::string name_;
   const ConstraintSolverParameters parameters_;
-  std::unordered_map<const PropagationBaseObject*, std::string> propagation_object_names_;
-  std::unordered_map<const PropagationBaseObject*, IntegerCastInfo> cast_information_;
+  std::unordered_map<const PropagationBaseObject*, std::string>
+      propagation_object_names_;
+  std::unordered_map<const PropagationBaseObject*, IntegerCastInfo>
+      cast_information_;
   std::unordered_set<const Constraint*> cast_constraints_;
   const std::string empty_name_;
   std::unique_ptr<Queue> queue_;
@@ -3186,7 +3191,8 @@ class Solver {
   int num_int_vars_;
 
   // Support for model loading.
-  std::unordered_map<std::string, IntegerExpressionBuilder> expression_builders_;
+  std::unordered_map<std::string, IntegerExpressionBuilder>
+      expression_builders_;
   std::unordered_map<std::string, ConstraintBuilder> constraint_builders_;
   std::unordered_map<std::string, IntervalVariableBuilder> interval_builders_;
   std::unordered_map<std::string, SequenceVariableBuilder> sequence_builders_;
@@ -4615,11 +4621,11 @@ class SequenceVar : public PropagationBaseObject {
   // of all currently unranked interval vars.
   void RankNotFirst(int index);
 
-  // Ranks the index_th interval var first of all unranked interval
+  // Ranks the index_th interval var last of all unranked interval
   // vars. After that, it will no longer be considered ranked.
   void RankLast(int index);
 
-  // Indicates that the index_th interval var will not be ranked first
+  // Indicates that the index_th interval var will not be ranked last
   // of all currently unranked interval vars.
   void RankNotLast(int index);
 
@@ -4969,8 +4975,8 @@ class AssignmentContainer {
   }
   E* MutableElement(const V* const var) {
     E* const element = MutableElementOrNull(var);
-    DCHECK(element != nullptr) << "Unknown variable " << var->DebugString()
-                               << " in solution";
+    DCHECK(element != nullptr)
+        << "Unknown variable " << var->DebugString() << " in solution";
     return element;
   }
   E* MutableElementOrNull(const V* const var) {
@@ -4982,8 +4988,8 @@ class AssignmentContainer {
   }
   const E& Element(const V* const var) const {
     const E* const element = ElementPtrOrNull(var);
-    DCHECK(element != nullptr) << "Unknown variable " << var->DebugString()
-                               << " in solution";
+    DCHECK(element != nullptr)
+        << "Unknown variable " << var->DebugString() << " in solution";
     return *element;
   }
   const E* ElementPtrOrNull(const V* const var) const {
@@ -5024,7 +5030,8 @@ class AssignmentContainer {
     // but also how the map is hashed (e.g., number of buckets). This is not
     // what we want.
     for (const E& element : container.elements_) {
-      const int position = FindWithDefault(elements_map_, element.Var(), -1);
+      const int position =
+          gtl::FindWithDefault(elements_map_, element.Var(), -1);
       if (position < 0 || elements_[position] != element) {
         return false;
       }
@@ -5059,7 +5066,7 @@ class AssignmentContainer {
     } else {
       EnsureMapIsUpToDate();
       DCHECK_EQ(elements_map_.size(), elements_.size());
-      return FindCopy(elements_map_, var, index);
+      return gtl::FindCopy(elements_map_, var, index);
     }
   }
 
@@ -5360,13 +5367,13 @@ class Pack : public Constraint {
   const int bins_;
   std::vector<Dimension*> dims_;
   std::unique_ptr<RevBitMatrix> unprocessed_;
-  std::vector<std::vector<int> > forced_;
-  std::vector<std::vector<int> > removed_;
+  std::vector<std::vector<int>> forced_;
+  std::vector<std::vector<int>> removed_;
   std::vector<IntVarIterator*> holes_;
   uint64 stamp_;
   Demon* demon_;
-  std::vector<std::pair<int, int> > to_set_;
-  std::vector<std::pair<int, int> > to_unset_;
+  std::vector<std::pair<int, int>> to_set_;
+  std::vector<std::pair<int, int>> to_unset_;
   bool in_process_;
 };
 

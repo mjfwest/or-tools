@@ -1,0 +1,656 @@
+# Let's discover something about where we run
+ifeq ($(OS),Windows_NT)
+OS = Windows
+endif
+ifeq ($(OS),Windows)
+SYSTEM = win
+else
+SYSTEM = unix
+endif
+
+.SECONDARY:
+
+# Useful directories.
+INC_DIR = include
+EX_DIR = examples
+CPP_EX_DIR = examples/cpp
+CPP_EX_PATH = $(subst /,$S,$(CPP_EX_DIR))
+JAVA_EX_DIR = examples/java
+JAVA_EX_PATH = $(subst /,$S,$(JAVA_EX_DIR))
+DOTNET_EX_DIR = examples/dotnet
+DOTNET_EX_PATH = $(subst /,$S,$(DOTNET_EX_DIR))
+OBJ_DIR = objs
+CLASS_DIR = classes
+LIB_DIR = lib
+BIN_DIR = bin
+
+# Unix specific part.
+ifeq ($(SYSTEM),unix)
+  OS = $(shell uname -s)
+# C++
+  ifeq ($(OS),Linux)
+    CXX = g++
+    LDFLAGS = \
+-Wl,-rpath,"\$$ORIGIN" \
+-Wl,-rpath,"\$$ORIGIN/../lib64" \
+-Wl,-rpath,"\$$ORIGIN/../lib" \
+-lz -lrt -lpthread
+    LBITS = $(shell getconf LONG_BIT)
+    ifeq ($(LBITS),64)
+      PORT = Linux64
+      ARCH = -DARCH_K8
+      NETPLATFORM = anycpu
+    else
+      PORT = Linux32
+      ARCH =
+      NETPLATFORM = x86
+    endif
+    MONO = LD_LIBRARY_PATH=$(LIB_DIR):$(LD_LIBRARY_PATH) mono
+    L = .so
+  endif # ifeq($(OS),Linux)
+  ifeq ($(OS),Darwin) # Assume Mac Os X
+    CXX = clang++
+    LDFLAGS = \
+-Wl,-rpath,@loader_path \
+-Wl,-rpath,@loader_path/../lib \
+-lz
+    PORT = MacOsX64
+    ARCH = -DARCH_K8
+    NETPLATFORM = x64
+    MONO = DYLD_FALLBACK_LIBRARY_PATH=$(LIB_DIR):$(DYLD_LIBRARY_PATH) mono
+    L = .dylib
+  endif # ifeq($(OS),Darwin)
+  CXX_BIN := $(shell command -v $(CXX) 2> /dev/null)
+  DEBUG = -O4 -DNDEBUG
+  CXXFLAGS = -fPIC -std=c++11 $(DEBUG) \
+ -I$(INC_DIR) -I. $(ARCH) -Wno-deprecated \
+ -DUSE_CBC -DUSE_CLP -DUSE_BOP -DUSE_GLOP
+  LIB_PREFIX = lib
+  PRE_LIB = -Llib -Llib64
+  CBC_LNK = -lCbcSolver -lCbc -lOsiCbc -lCgl -lClpSolver -lClp -lOsiClp -lOsi -lCoinUtils
+  OR_TOOLS_LNK = $(PRE_LIB) -lprotobuf -lglog -lgflags $(CBC_LNK) -lortools
+  CVRPTW_LNK = $(PRE_LIB) -lcvrptw_lib -lprotobuf -lglog -lgflags $(CBC_LNK) -lortools
+  DIMACS_LNK = $(PRE_LIB) -ldimacs -lglog -lgflags $(CBC_LNK) -lortools
+  FAP_LNK = $(PRE_LIB) -lfap -lglog -lgflags $(CBC_LNK) -lortools
+  OBJ_OUT = -o #
+  EXE_OUT = -o #
+  O = .o
+  J = .jar
+  D = .dll
+  E =
+# Java
+ifneq ($(JAVA_HOME),)
+  JAVAC_BIN := $(shell command -v $(JAVA_HOME)/bin/javac 2> /dev/null)
+  JAR_BIN := $(shell command -v $(JAVA_HOME)/bin/jar 2> /dev/null)
+  JAVA_BIN := $(shell command -v $(JAVA_HOME)/bin/java 2> /dev/null)
+else
+  JAVAC_BIN := $(shell command -v javac 2> /dev/null)
+  JAR_BIN := $(shell command -v jar 2> /dev/null)
+  JAVA_BIN := $(shell command -v java 2> /dev/null)
+endif
+  JAVAFLAGS = -Djava.library.path=$(LIB_DIR)
+  CPSEP = :
+# .Net
+  DOTNET = dotnet
+  DOTNET_BIN := $(shell command -v $(DOTNET) 2> /dev/null)
+# Makefile
+  S = /
+  DEL = rm -f
+  DEL_REC = rm -rf
+  MKDIR = mkdir
+endif # SYSTEM == unix
+
+# Windows specific part.
+ifeq ($(SYSTEM),win)
+  WHICH = tools\\win\\which.exe
+  ifeq ("$(Platform)","X64")
+    PLATFORM = Win64
+  endif
+  ifeq ("$(Platform)","x64")
+    PLATFORM = Win64
+  endif
+  ifeq ("$(PLATFORM)","Win64")
+    PORT = VisualStudio$(VISUAL_STUDIO)-64b
+    NETPLATFORM = x64
+  else
+    PORT = VisualStudio$(VISUAL_STUDIO)-32b
+    NETPLATFORM = x86
+  endif
+  CXX = cl
+  # We can't use `where` since it's return all matching pathnames
+  # so we ship which.exe and use it
+  CXX_BIN := $(shell $(WHICH) $(CXX) 2> NUL)
+  DEBUG = /O2 -DNDEBUG
+  CXXFLAGS = /EHsc /MD /nologo /D_SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS -nologo $(DEBUG) \
+    /D__WIN32__ /DGFLAGS_DLL_DECL= /DGFLAGS_DLL_DECLARE_FLAG= /DGFLAGS_DLL_DEFINE_FLAG= \
+    /I$(INC_DIR)\\src\\windows /I$(INC_DIR) /I. \
+    -DUSE_CBC -DUSE_CLP -DUSE_BOP -DUSE_GLOP
+  LDFLAGS = psapi.lib ws2_32.lib
+  LIB_PREFIX =
+  OR_TOOLS_LNK = lib\\ortools.lib
+  CVRPTW_LNK = lib\\cvrptw_lib.lib lib\\ortools.lib
+  DIMACS_LNK = lib\\dimacs.lib lib\\ortools.lib
+  FAP_LNK = lib\\fap.lib lib\\ortools.lib
+  OBJ_OUT = /Fo
+  EXE_OUT = /Fe
+  O = .obj
+  L = .lib
+  J = .jar
+  D = .dll
+  E = .exe
+# Java
+  JAVAC_BIN := $(shell $(WHICH) javac 2> NUL)
+  JAR_BIN := $(shell $(WHICH) jar 2> NUL)
+  JAVA_BIN := $(shell $(WHICH) java 2> NUL)
+  JAVAFLAGS = -Djava.library.path=$(LIB_DIR)
+  CPSEP = ;
+# .Net
+  DOTNET = dotnet
+  DOTNET_BIN := $(shell $(WHICH) $(DOTNET) 2> NUL)
+# Makefile
+  S = \\
+  DEL = del
+  DEL_REC = rd /S /Q
+  MKDIR = md
+endif # SYSTEM == win
+
+OR_TOOLS_LIBS = $(LIB_DIR)/$(LIB_PREFIX)ortools$L
+CVRPTW_LIBS = $(LIB_DIR)/$(LIB_PREFIX)cvrptw_lib$L
+DIMACS_LIBS = $(LIB_DIR)/$(LIB_PREFIX)dimacs$L
+FAP_LIBS = $(LIB_DIR)/$(LIB_PREFIX)fap$L
+CLR_DLL_NAME ?= Google.OrTools
+
+.PHONY: all
+all: detect cc java dotnet test
+
+.PHONY: detect
+detect: detect_port detect_cc detect_java detect_dotnet
+
+.PHONY: test
+test: test_cc test_java test_dotnet
+
+.PHONY: clean
+clean:
+	-$(DEL) $(EXE)
+	-$(DEL_REC) $(OBJ_DIR)
+	-$(DEL_REC) $(CLASS_DIR)
+
+.PHONY: detect_port
+detect_port:
+	@echo SHELL = $(SHELL)
+	@echo SYSTEM = $(SYSTEM)
+	@echo PORT = $(PORT)
+	@echo OS = $(OS)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif
+
+###########
+##  C++  ##
+###########
+EXE = \
+$(BIN_DIR)/costas_array$E \
+$(BIN_DIR)/cryptarithm$E \
+$(BIN_DIR)/cvrp_disjoint_tw$E \
+$(BIN_DIR)/cvrptw$E \
+$(BIN_DIR)/cvrptw_with_breaks$E \
+$(BIN_DIR)/cvrptw_with_refueling$E \
+$(BIN_DIR)/cvrptw_with_resources$E \
+$(BIN_DIR)/cvrptw_with_stop_times_and_resources$E \
+$(BIN_DIR)/dimacs_assignment$E \
+$(BIN_DIR)/dobble_ls$E \
+$(BIN_DIR)/flexible_jobshop$E \
+$(BIN_DIR)/flow_api$E \
+$(BIN_DIR)/frequency_assignment_problem$E \
+$(BIN_DIR)/golomb$E \
+$(BIN_DIR)/integer_programming$E \
+$(BIN_DIR)/jobshop$E \
+$(BIN_DIR)/jobshop_earlytardy$E \
+$(BIN_DIR)/jobshop_ls$E \
+$(BIN_DIR)/jobshop_sat$E \
+$(BIN_DIR)/linear_assignment_api$E \
+$(BIN_DIR)/linear_programming$E \
+$(BIN_DIR)/linear_solver_protocol_buffers$E \
+$(BIN_DIR)/ls_api$E \
+$(BIN_DIR)/magic_square$E \
+$(BIN_DIR)/model_util$E \
+$(BIN_DIR)/mps_driver$E \
+$(BIN_DIR)/multidim_knapsack$E \
+$(BIN_DIR)/network_routing$E \
+$(BIN_DIR)/nqueens$E \
+$(BIN_DIR)/pdptw$E \
+$(BIN_DIR)/shift_minimization_sat$E \
+$(BIN_DIR)/solve$E \
+$(BIN_DIR)/sports_scheduling$E \
+$(BIN_DIR)/strawberry_fields_with_column_generation$E \
+$(BIN_DIR)/tsp$E \
+$(BIN_DIR)/weighted_tardiness_sat$E
+
+.PHONY: cc test_cc ccc rcc
+ifndef CXX_BIN
+cc test_cc ccc rcc:
+	@echo the $(CXX) command was not found in your PATH
+	exit 127
+else
+cc: $(EXE)
+
+test_cc: detect_cc
+	$(MAKE) rcc_nqueens
+	$(MAKE) rcc_golomb
+	$(MAKE) rcc_tsp
+	$(MAKE) rcc_cvrptw
+
+# C++ generic running command
+ifeq ($(EX),)
+ccc rcc:
+	@echo No C++ file was provided, the $@ target must be used like so: \
+	make $@ EX=examples/cpp/example.cc
+	exit 2
+else # ifeq ($(EX),)
+EX_NAME = $(basename $(notdir $(EX)))
+
+ccc: $(BIN_DIR)/$(EX_NAME)$E
+
+rcc: $(BIN_DIR)/$(EX_NAME)$E
+	@echo running $<
+	$(BIN_DIR)$S$(EX_NAME)$E $(ARGS)
+endif # ifeq ($(EX),)
+endif # ifndef CXX_BIN
+
+$(OBJ_DIR):
+	$(MKDIR) $(OBJ_DIR)
+
+$(OBJ_DIR)/%$O: $(CPP_EX_DIR)/%.cc | $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) -c $(CPP_EX_PATH)$S$*.cc $(OBJ_OUT)$(OBJ_DIR)$S$*$O
+
+$(BIN_DIR)/%$E: $(OBJ_DIR)/%$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$S$*$O $(OR_TOOLS_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$S$*$E
+
+$(BIN_DIR)/cvrp_disjoint_tw$E: $(OBJ_DIR)/cvrp_disjoint_tw$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Scvrp_disjoint_tw$O $(CVRPTW_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Scvrp_disjoint_tw$E
+
+$(BIN_DIR)/cvrptw$E: $(OBJ_DIR)/cvrptw$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Scvrptw$O $(CVRPTW_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Scvrptw$E
+
+$(BIN_DIR)/cvrptw_with_breaks$E: $(OBJ_DIR)/cvrptw_with_breaks$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Scvrptw_with_breaks$O $(CVRPTW_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Scvrptw_with_breaks$E
+
+$(BIN_DIR)/cvrptw_with_refueling$E: $(OBJ_DIR)/cvrptw_with_refueling$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Scvrptw_with_refueling$O $(CVRPTW_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Scvrptw_with_refueling$E
+
+$(BIN_DIR)/cvrptw_with_resources$E: $(OBJ_DIR)/cvrptw_with_resources$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Scvrptw_with_resources$O $(CVRPTW_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Scvrptw_with_resources$E
+
+$(BIN_DIR)/cvrptw_with_stop_times_and_resources$E: $(OBJ_DIR)/cvrptw_with_stop_times_and_resources$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Scvrptw_with_stop_times_and_resources$O $(CVRPTW_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Scvrptw_with_stop_times_and_resources$E
+
+$(BIN_DIR)/dimacs_assignment$E: $(OBJ_DIR)/dimacs_assignment$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Sdimacs_assignment$O $(DIMACS_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Sdimacs_assignment$E
+
+$(BIN_DIR)/frequency_assignment_problem$E: $(OBJ_DIR)/frequency_assignment_problem$O
+	$(CXX) $(CXXFLAGS) $(OBJ_DIR)$Sfrequency_assignment_problem$O $(FAP_LNK) $(LDFLAGS) $(EXE_OUT)$(BIN_DIR)$Sfrequency_assignment_problem$E
+
+rcc_%: $(BIN_DIR)/%$E
+	$(BIN_DIR)$S$*$E $(ARGS)
+
+.PHONY: detect_cc
+detect_cc:
+	@echo CXX = $(CXX)
+	@echo CXX_BIN = $(CXX_BIN)
+	@echo CXXFLAGS = $(CXXFLAGS)
+	@echo LDFLAGS = $(LDFLAGS)
+	@echo OR_TOOLS_LNK = $(OR_TOOLS_LNK)
+	@echo CVRPTW_LNK = $(CVRPTW_LNK)
+	@echo DIMACS_LNK = $(DIMACS_LNK)
+	@echo FAP_LNK = $(FAP_LNK)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif
+
+############
+##  JAVA  ##
+############
+JAR = \
+$(LIB_DIR)/AllDifferentExcept0$J \
+$(LIB_DIR)/AllInterval$J \
+$(LIB_DIR)/CapacitatedVehicleRoutingProblemWithTimeWindows$J \
+$(LIB_DIR)/Circuit$J \
+$(LIB_DIR)/CoinsGrid$J \
+$(LIB_DIR)/CoinsGridMIP$J \
+$(LIB_DIR)/ColoringMIP$J \
+$(LIB_DIR)/CoveringOpl$J \
+$(LIB_DIR)/Crossword$J \
+$(LIB_DIR)/DeBruijn$J \
+$(LIB_DIR)/Diet$J \
+$(LIB_DIR)/DietMIP$J \
+$(LIB_DIR)/DivisibleBy9Through1$J \
+$(LIB_DIR)/FlowExample$J \
+$(LIB_DIR)/GolombRuler$J \
+$(LIB_DIR)/IntegerProgramming$J \
+$(LIB_DIR)/Issue173$J \
+$(LIB_DIR)/Knapsack$J \
+$(LIB_DIR)/KnapsackMIP$J \
+$(LIB_DIR)/LeastDiff$J \
+$(LIB_DIR)/LinearAssignmentAPI$J \
+$(LIB_DIR)/LinearProgramming$J \
+$(LIB_DIR)/LsApi$J \
+$(LIB_DIR)/MagicSquare$J \
+$(LIB_DIR)/Map2$J \
+$(LIB_DIR)/Map$J \
+$(LIB_DIR)/Minesweeper$J \
+$(LIB_DIR)/MultiThreadTest$J \
+$(LIB_DIR)/NQueens2$J \
+$(LIB_DIR)/NQueens$J \
+$(LIB_DIR)/Partition$J \
+$(LIB_DIR)/QuasigroupCompletion$J \
+$(LIB_DIR)/RabbitsPheasants$J \
+$(LIB_DIR)/SendMoreMoney2$J \
+$(LIB_DIR)/SendMoreMoney$J \
+$(LIB_DIR)/SendMostMoney$J \
+$(LIB_DIR)/Seseman$J \
+$(LIB_DIR)/SetCovering2$J \
+$(LIB_DIR)/SetCovering3$J \
+$(LIB_DIR)/SetCovering4$J \
+$(LIB_DIR)/SetCoveringDeployment$J \
+$(LIB_DIR)/SetCovering$J \
+$(LIB_DIR)/SimpleRoutingTest$J \
+$(LIB_DIR)/StableMarriage$J \
+$(LIB_DIR)/StiglerMIP$J \
+$(LIB_DIR)/Strimko2$J \
+$(LIB_DIR)/Sudoku$J \
+$(LIB_DIR)/SurvoPuzzle$J \
+$(LIB_DIR)/ToNum$J \
+$(LIB_DIR)/Tsp$J \
+$(LIB_DIR)/WhoKilledAgatha$J \
+$(LIB_DIR)/Xkcd$J \
+$(LIB_DIR)/YoungTableaux$J
+
+HAS_JAVA = true
+ifndef JAVAC_BIN
+HAS_JAVA =
+endif
+ifndef JAR_BIN
+HAS_JAVA =
+endif
+ifndef JAVA_BIN
+HAS_JAVA =
+endif
+
+ifndef HAS_JAVA
+java test_java rjava cjava:
+	@echo the command 'java', 'javac' or 'jar' was not found in your PATH
+	exit 127
+else
+java: $(JAR)
+
+test_java: detect_java
+	$(MAKE) rjava_LinearProgramming
+	$(MAKE) rjava_IntegerProgramming
+	$(MAKE) rjava_StiglerMIP
+	$(MAKE) rjava_Sudoku
+	$(MAKE) rjava_NQueens
+	$(MAKE) rjava_Tsp
+
+# Java generic compilation command.
+.PHONY: cjava rjava
+ifeq ($(EX),)
+rjava cjava:
+	@echo No Java file was provided, the $@ target must be used like so: \
+	make $@ EX=examples/java/example.java
+	exit 2
+else # ifeq ($(EX),)
+EX_NAME = $(basename $(notdir $(EX)))
+
+cjava: $(CLASS_DIR)/$(EX_NAME)
+
+rjava: $(LIB_DIR)/$(EX_NAME)$J
+	@echo running $<
+	"$(JAVA_BIN)" -Xss2048k $(JAVAFLAGS) \
+ -cp $(LIB_DIR)$S$(EX_NAME)$J$(CPSEP)$(LIB_DIR)$Scom.google.ortools$J$(CPSEP)$(LIB_DIR)$Sprotobuf$J \
+ $(EX_NAME) $(ARGS)
+endif # ifeq ($(EX),)
+endif # ifndef HAS_JAVA
+
+$(CLASS_DIR):
+	-$(MKDIR) $(CLASS_DIR)
+
+$(CLASS_DIR)/%: $(JAVA_EX_DIR)/%.java | $(CLASS_DIR)
+	-$(MKDIR) $(CLASS_DIR)$S$*
+	"$(JAVAC_BIN)" -d $(CLASS_DIR)$S$* \
+ -cp $(LIB_DIR)$Scom.google.ortools$J$(CPSEP)$(LIB_DIR)$Sprotobuf$J \
+ $(JAVA_EX_PATH)$S$*.java
+
+$(LIB_DIR)/%$J: $(CLASS_DIR)/% | $(LIB_DIR)
+	"$(JAR_BIN)" cvf $(LIB_DIR)$S$*$J -C $(CLASS_DIR)$S$* .
+
+rjava_%: $(LIB_DIR)/%$J
+	"$(JAVA_BIN)" -Xss2048k $(JAVAFLAGS) \
+ -cp $(LIB_DIR)$S$*.jar$(CPSEP)$(LIB_DIR)$Scom.google.ortools.jar$(CPSEP)$(LIB_DIR)$Sprotobuf.jar \
+ $* $(ARGS)
+
+.PHONY: detect_java
+detect_java:
+	@echo JAVA_HOME = $(JAVA_HOME)
+	@echo JAVAC_BIN = $(JAVAC_BIN)
+	@echo CLASS_DIR = $(CLASS_DIR)
+	@echo JAR_BIN = $(JAR_BIN)
+	@echo JAVA_BIN = $(JAVA_BIN)
+	@echo JAVAFLAGS = $(JAVAFLAGS)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif
+
+##############
+##  DOTNET  ##
+##############
+.PHONY: dotnet test_dotnet cdotnet rdotnet
+ifndef DOTNET_BIN
+dotnet test_dotnet cdotnet rdotnet:
+	@echo the command 'dotnet' was not found in your PATH
+	exit 127
+else
+dotnet:
+	$(MAKE) rdotnet_3_jugs_regular
+	$(MAKE) rdotnet_alldifferent_except_0
+	$(MAKE) rdotnet_all_interval
+	$(MAKE) rdotnet_a_puzzle
+	$(MAKE) rdotnet_a_round_of_golf
+	$(MAKE) rdotnet_assignment
+	$(MAKE) rdotnet_broken_weights
+	$(MAKE) rdotnet_bus_schedule
+	$(MAKE) rdotnet_circuit2
+	$(MAKE) rdotnet_circuit
+	$(MAKE) rdotnet_coins3
+	$(MAKE) rdotnet_coins_grid ARGS="5 2"
+	$(MAKE) rdotnet_combinatorial_auction2
+	$(MAKE) rdotnet_contiguity_regular
+	$(MAKE) rdotnet_contiguity_transition
+	$(MAKE) rdotnet_costas_array
+	$(MAKE) rdotnet_covering_opl
+	$(MAKE) rdotnet_crew
+	$(MAKE) rdotnet_crossword
+	$(MAKE) rdotnet_crypta
+	$(MAKE) rdotnet_crypto
+	$(MAKE) rdotnet_cscvrptw
+	$(MAKE) rdotnet_csflow
+	$(MAKE) rdotnet_csintegerprogramming
+	$(MAKE) rdotnet_csjobshop
+	$(MAKE) rdotnet_csknapsack
+	$(MAKE) rdotnet_cslinearprogramming
+	$(MAKE) rdotnet_csls_api
+	$(MAKE) rdotnet_csrabbitspheasants
+	$(MAKE) rdotnet_cstsp
+	$(MAKE) rdotnet_curious_set_of_integers
+	$(MAKE) rdotnet_debruijn
+	$(MAKE) rdotnet_csdiet
+	$(MAKE) rdotnet_discrete_tomography
+	$(MAKE) rdotnet_divisible_by_9_through_1
+	$(MAKE) rdotnet_dudeney
+	$(MAKE) rdotnet_einav_puzzle2
+	$(MAKE) rdotnet_eq10
+	$(MAKE) rdotnet_eq20
+	$(MAKE) rdotnet_fill_a_pix
+	$(MAKE) rdotnet_furniture_moving
+	$(MAKE) rdotnet_furniture_moving_intervals
+	$(MAKE) rdotnet_futoshiki
+	$(MAKE) rdotnet_gate_scheduling_sat
+	$(MAKE) rdotnet_golomb_ruler
+	$(MAKE) rdotnet_grocery
+	$(MAKE) rdotnet_hidato_table
+	$(MAKE) rdotnet_jobshop_ft06_sat
+	$(MAKE) rdotnet_just_forgotten
+	$(MAKE) rdotnet_kakuro
+	$(MAKE) rdotnet_kenken2
+	$(MAKE) rdotnet_killer_sudoku
+	$(MAKE) rdotnet_labeled_dice
+	$(MAKE) rdotnet_langford
+	$(MAKE) rdotnet_least_diff
+	$(MAKE) rdotnet_lectures
+	$(MAKE) rdotnet_magic_sequence
+	$(MAKE) rdotnet_magic_square_and_cards
+	$(MAKE) rdotnet_magic_square
+	$(MAKE) rdotnet_map2
+	$(MAKE) rdotnet_map
+	$(MAKE) rdotnet_marathon2
+	$(MAKE) rdotnet_max_flow_taha
+	$(MAKE) rdotnet_max_flow_winston1
+	$(MAKE) rdotnet_minesweeper
+	$(MAKE) rdotnet_mr_smith
+#	$(MAKE) rdotnet_nontransitive_dice # too long
+	$(MAKE) rdotnet_nqueens
+	$(MAKE) rdotnet_nurse_rostering_regular
+	$(MAKE) rdotnet_nurse_rostering_transition
+	$(MAKE) rdotnet_nurses_sat
+	$(MAKE) rdotnet_olympic
+	$(MAKE) rdotnet_organize_day
+	$(MAKE) rdotnet_organize_day_intervals
+	$(MAKE) rdotnet_pandigital_numbers
+#	$(MAKE) rdotnet_partition # too long
+	$(MAKE) rdotnet_perfect_square_sequence
+	$(MAKE) rdotnet_photo_problem
+	$(MAKE) rdotnet_place_number_puzzle
+	$(MAKE) rdotnet_p_median
+	$(MAKE) rdotnet_post_office_problem2
+	$(MAKE) rdotnet_quasigroup_completion
+	$(MAKE) rdotnet_regex
+	$(MAKE) rdotnet_rogo2
+	$(MAKE) rdotnet_scheduling_speakers
+	$(MAKE) rdotnet_secret_santa2
+#	$(MAKE) rdotnet_secret_santa # too long
+	$(MAKE) rdotnet_send_more_money2
+	$(MAKE) rdotnet_send_more_money
+	$(MAKE) rdotnet_send_most_money
+	$(MAKE) rdotnet_seseman
+	$(MAKE) rdotnet_set_covering2
+	$(MAKE) rdotnet_set_covering3
+	$(MAKE) rdotnet_set_covering4
+	$(MAKE) rdotnet_set_covering
+	$(MAKE) rdotnet_set_covering_deployment
+	$(MAKE) rdotnet_set_covering_skiena
+	$(MAKE) rdotnet_set_partition
+	$(MAKE) rdotnet_sicherman_dice
+	$(MAKE) rdotnet_ski_assignment
+	$(MAKE) rdotnet_slow_scheduling
+	$(MAKE) rdotnet_stable_marriage
+	$(MAKE) rdotnet_strimko2
+	$(MAKE) rdotnet_subset_sum
+	$(MAKE) rdotnet_sudoku
+	$(MAKE) rdotnet_survo_puzzle
+	$(MAKE) rdotnet_TaskScheduling
+	$(MAKE) rdotnet_techtalk_scheduling
+	$(MAKE) rdotnet_to_num
+	$(MAKE) rdotnet_traffic_lights
+	$(MAKE) rdotnet_tsp
+	$(MAKE) rdotnet_volsay
+	$(MAKE) rdotnet_volsay2
+	$(MAKE) rdotnet_volsay3
+	$(MAKE) rdotnet_wedding_optimal_chart
+	$(MAKE) rdotnet_who_killed_agatha
+	$(MAKE) rdotnet_xkcd
+	$(MAKE) rdotnet_young_tableaux
+	$(MAKE) rdotnet_zebra
+	$(MAKE) rdotnet_fsintegerprogramming
+	$(MAKE) rdotnet_fslinearprogramming
+	$(MAKE) rdotnet_fsdiet
+	$(MAKE) rdotnet_fsequality
+	$(MAKE) rdotnet_fsequality-inequality
+	$(MAKE) rdotnet_fsinteger-linear-program
+	$(MAKE) rdotnet_fsknapsack
+	$(MAKE) rdotnet_fsnetwork-max-flow
+	$(MAKE) rdotnet_fsnetwork-max-flow-lpSolve
+	$(MAKE) rdotnet_fsnetwork-min-cost-flow
+	$(MAKE) rdotnet_fsProgram
+	$(MAKE) rdotnet_fsrabbit-pheasant
+	$(MAKE) rdotnet_fsvolsay3
+	$(MAKE) rdotnet_fsvolsay3-lpSolve
+	$(MAKE) rdotnet_fsvolsay
+#	$(MAKE) rdotnet_word_square # depends on /usr/share/dict/words
+
+test_dotnet: detect_dotnet
+	$(MAKE) rdotnet_a_puzzle
+	$(MAKE) rdotnet_fsProgram
+
+# .NET generic compilation command.
+ifeq ($(EX),)
+cdotnet rdotnet:
+	@echo No CSharp file was provided, the $@ target must be used like so: \
+	make $@ EX=example/dotnet/example.cs
+	exit 2
+else # ifeq ($(EX),)
+EX_NAME = $(basename $(notdir $(EX)))
+
+cdotnet: $(BIN_DIR)/$(EX_NAME)$D
+
+rdotnet: $(BIN_DIR)/$(EX_NAME)$D
+	@echo running $<
+	"$(DOTNET_BIN)" $(BIN_DIR)$S$(EX_NAME)$D
+endif # ifeq ($(EX),)
+endif # ifndef DOTNET_BIN
+
+$(BIN_DIR)/%$D: \
+ $(DOTNET_EX_DIR)/%.cs \
+ $(DOTNET_EX_DIR)/%.csproj \
+ | $(BIN_DIR)
+	"$(DOTNET_BIN)" build -o "..$S..$S$(BIN_DIR)" $(DOTNET_EX_PATH)$S$*.csproj
+
+$(BIN_DIR)/%$D: \
+ $(DOTNET_EX_DIR)/%.fs \
+ $(DOTNET_EX_DIR)/%.fsproj \
+ | $(BIN_DIR)
+	"$(DOTNET_BIN)" build -o "..$S..$S$(BIN_DIR)" $(DOTNET_EX_PATH)$S$*.fsproj
+
+rdotnet_%: \
+ $(DOTNET_EX_DIR)/%.cs \
+ $(DOTNET_EX_DIR)/%.csproj
+	"$(DOTNET_BIN)" build $(DOTNET_EX_PATH)$S$*.csproj
+	"$(DOTNET_BIN)" run --no-build --project $(DOTNET_EX_PATH)$S$*.csproj -- $(ARGS)
+
+rdotnet_%: \
+ $(DOTNET_EX_DIR)/%.fs \
+ $(DOTNET_EX_DIR)/%.fsproj
+	"$(DOTNET_BIN)" build $(DOTNET_EX_PATH)$S$*.fsproj
+	"$(DOTNET_BIN)" run --no-build --project $(DOTNET_EX_PATH)$S$*.fsproj -- $(ARGS)
+
+.PHONY: detect_dotnet
+detect_dotnet:
+	@echo DOTNET_BIN = $(DOTNET_BIN)
+	@echo CLR_DLL_NAME = $(CLR_DLL_NAME)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif
+
+############
+##  MISC  ##
+############
+# Include user makefile
+-include Makefile.user
+
+print-%	: ; @echo $* = $($*)

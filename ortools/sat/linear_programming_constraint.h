@@ -42,11 +42,11 @@ struct LinearConstraint {
   std::string DebugString() const {
     std::string result;
     const double kInfinity = std::numeric_limits<double>::infinity();
-    if (lb != -kInfinity) StrAppend(&result, lb, " <= ");
+    if (lb != -kInfinity) absl::StrAppend(&result, lb, " <= ");
     for (int i = 0; i < vars.size(); ++i) {
-      StrAppend(&result, coeffs[i], "*[", vars[i].value(), "] ");
+      absl::StrAppend(&result, coeffs[i], "*[", vars[i].value(), "] ");
     }
-    if (ub != kInfinity) StrAppend(&result, "<= ", ub);
+    if (ub != kInfinity) absl::StrAppend(&result, "<= ", ub);
     return result;
   }
 };
@@ -58,8 +58,13 @@ struct LinearConstraint {
 // duplicates might be more efficient. Change if required.
 class LinearConstraintBuilder {
  public:
-  LinearConstraintBuilder(double lb, double ub) : lb_(lb), ub_(ub) {}
+  LinearConstraintBuilder(const Model* model, double lb, double ub)
+      : assignment_(model->Get<Trail>()->Assignment()),
+        encoder_(*model->Get<IntegerEncoder>()),
+        lb_(lb),
+        ub_(ub) {}
 
+  int size() const { return terms_.size(); }
   bool IsEmpty() const { return terms_.empty(); }
 
   // Adds var * coeff to the constraint.
@@ -78,18 +83,26 @@ class LinearConstraintBuilder {
 
   // Add literal * coeff to the constaint. Returns false and do nothing if the
   // given literal didn't have an integer view.
-  bool AddLiteralTerm(Literal lit, double coeff,
-                      const IntegerEncoder& encoder) MUST_USE_RESULT {
-    bool has_direct_view = encoder.GetLiteralView(lit) != kNoIntegerVariable;
+  bool AddLiteralTerm(Literal lit, double coeff) MUST_USE_RESULT {
+    if (assignment_.LiteralIsTrue(lit)) {
+      lb_ -= coeff;
+      ub_ -= coeff;
+      return true;
+    }
+    if (assignment_.LiteralIsFalse(lit)) {
+      return true;
+    }
+
+    bool has_direct_view = encoder_.GetLiteralView(lit) != kNoIntegerVariable;
     bool has_opposite_view =
-        encoder.GetLiteralView(lit.Negated()) != kNoIntegerVariable;
+        encoder_.GetLiteralView(lit.Negated()) != kNoIntegerVariable;
 
     // If a literal has both views, we want to always keep the same
     // representative: the smallest IntegerVariable. Note that AddTerm() will
     // also make sure to use the associated positive variable.
     if (has_direct_view && has_opposite_view) {
-      if (encoder.GetLiteralView(lit) <=
-          encoder.GetLiteralView(lit.Negated())) {
+      if (encoder_.GetLiteralView(lit) <=
+          encoder_.GetLiteralView(lit.Negated())) {
         has_direct_view = true;
         has_opposite_view = false;
       } else {
@@ -98,11 +111,11 @@ class LinearConstraintBuilder {
       }
     }
     if (has_direct_view) {
-      AddTerm(encoder.GetLiteralView(lit), coeff);
+      AddTerm(encoder_.GetLiteralView(lit), coeff);
       return true;
     }
     if (has_opposite_view) {
-      AddTerm(encoder.GetLiteralView(lit.Negated()), -coeff);
+      AddTerm(encoder_.GetLiteralView(lit.Negated()), -coeff);
       lb_ -= coeff;
       ub_ -= coeff;
       return true;
@@ -122,6 +135,8 @@ class LinearConstraintBuilder {
   }
 
  private:
+  const VariablesAssignment& assignment_;
+  const IntegerEncoder& encoder_;
   double lb_;
   double ub_;
   double offset_;
@@ -365,8 +380,7 @@ class LinearProgrammingConstraint : public PropagatorInterface,
 //
 // Important: only positive variable do appear here.
 class LinearProgrammingDispatcher
-    : public std::unordered_map<IntegerVariable,
-                                 LinearProgrammingConstraint*> {
+    : public std::unordered_map<IntegerVariable, LinearProgrammingConstraint*> {
  public:
   explicit LinearProgrammingDispatcher(Model* model) {}
 };

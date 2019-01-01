@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "ortools/glop/revised_simplex.h"
 
 #include <algorithm>
@@ -24,9 +23,8 @@
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
-#include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/base/join.h"
+#include "ortools/base/logging.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/glop/initial_basis.h"
 #include "ortools/glop/parameters.pb.h"
@@ -292,8 +290,8 @@ Status RevisedSimplex::Solve(const LinearProgram& lp, TimeLimit* time_limit) {
       if (reduced_costs_.ComputeMaximumDualResidual() > tolerance ||
           variable_values_.ComputeMaximumPrimalResidual() > tolerance ||
           reduced_costs_.ComputeMaximumDualInfeasibility() > tolerance) {
-        LOG(WARNING) << "DUAL_UNBOUNDED was reported, but the residual and/or"
-                     << "dual infeasibility is above the tolerance";
+        VLOG(1) << "DUAL_UNBOUNDED was reported, but the residual and/or"
+                << "dual infeasibility is above the tolerance";
       }
       break;
     }
@@ -306,9 +304,9 @@ Status RevisedSimplex::Solve(const LinearProgram& lp, TimeLimit* time_limit) {
       if (variable_values_.ComputeMaximumPrimalResidual() >
               solution_tolerance ||
           reduced_costs_.ComputeMaximumDualResidual() > solution_tolerance) {
-        LOG(WARNING) << "OPTIMAL was reported, yet one of the residuals is "
-                        "above the solution feasibility tolerance after the "
-                        "shift/perturbation are removed.";
+        VLOG(1) << "OPTIMAL was reported, yet one of the residuals is "
+                   "above the solution feasibility tolerance after the "
+                   "shift/perturbation are removed.";
         problem_status_ = ProblemStatus::IMPRECISE;
       } else {
         // We use the "precise" tolerances here to try to report the best
@@ -323,9 +321,9 @@ Status RevisedSimplex::Solve(const LinearProgram& lp, TimeLimit* time_limit) {
             reduced_costs_.ComputeMaximumDualInfeasibility();
         if (primal_infeasibility > primal_tolerance &&
             dual_infeasibility > dual_tolerance) {
-          LOG(WARNING) << "OPTIMAL was reported, yet both of the infeasibility "
-                          "are above the tolerance after the "
-                          "shift/perturbation are removed.";
+          VLOG(1) << "OPTIMAL was reported, yet both of the infeasibility "
+                     "are above the tolerance after the "
+                     "shift/perturbation are removed.";
           problem_status_ = ProblemStatus::IMPRECISE;
         } else if (primal_infeasibility > primal_tolerance) {
           VLOG(1) << "Re-optimizing with dual simplex ... ";
@@ -467,11 +465,11 @@ void RevisedSimplex::SetVariableNames() {
   variable_name_.resize(num_cols_, "");
   for (ColIndex col(0); col < first_slack_col_; ++col) {
     const ColIndex var_index = col + 1;
-    variable_name_[col] = StringPrintf("x%d", ColToIntIndex(var_index));
+    variable_name_[col] = absl::StrFormat("x%d", ColToIntIndex(var_index));
   }
   for (ColIndex col(first_slack_col_); col < num_cols_; ++col) {
     const ColIndex var_index = col - first_slack_col_ + 1;
-    variable_name_[col] = StringPrintf("s%d", ColToIntIndex(var_index));
+    variable_name_[col] = absl::StrFormat("s%d", ColToIntIndex(var_index));
   }
 }
 
@@ -483,20 +481,6 @@ VariableStatus RevisedSimplex::ComputeDefaultVariableStatus(
   }
   if (lower_bound_[col] == -kInfinity && upper_bound_[col] == kInfinity) {
     return VariableStatus::FREE;
-  }
-
-  // Special case for singleton column so UseSingletonColumnInInitialBasis()
-  // works better. We set the initial value of a boxed variable to its bound
-  // that minimizes the cost.
-  if (parameters_.exploit_singleton_column_in_initial_basis() &&
-      matrix_with_slack_.column(col).num_entries() == 1) {
-    const Fractional objective = objective_[col];
-    if (objective > 0 && IsFinite(lower_bound_[col])) {
-      return VariableStatus::AT_LOWER_BOUND;
-    }
-    if (objective < 0 && IsFinite(upper_bound_[col])) {
-      return VariableStatus::AT_UPPER_BOUND;
-    }
   }
 
   // Returns the bound with the lowest magnitude. Note that it must be finite
@@ -925,7 +909,7 @@ void RevisedSimplex::InitializeVariableStatusesForWarmStart(
   }
 }
 
-// This implementation starts with an initial matrix B equal to the the identity
+// This implementation starts with an initial matrix B equal to the identity
 // matrix (modulo a column permutation). For that it uses either the slack
 // variables or the singleton columns present in the problem. Afterwards, the
 // fixed slacks in the basis are exchanged with normal columns of A if possible
@@ -954,7 +938,27 @@ Status RevisedSimplex::CreateInitialBasis() {
 
   // If possible, for the primal simplex we replace some slack variables with
   // some singleton columns present in the problem.
-  if (!parameters_.use_dual_simplex()) {
+  if (!parameters_.use_dual_simplex() &&
+      parameters_.initial_basis() != GlopParameters::MAROS &&
+      parameters_.exploit_singleton_column_in_initial_basis()) {
+    // For UseSingletonColumnInInitialBasis() to work better, we change
+    // the value of the boxed singleton column with a non-zero cost to the best
+    // of their two bounds.
+    for (ColIndex col(0); col < num_cols_; ++col) {
+      if (matrix_with_slack_.column(col).num_entries() != 1) continue;
+      const VariableStatus status = variables_info_.GetStatusRow()[col];
+      const Fractional objective = objective_[col];
+      if (objective > 0 && IsFinite(lower_bound_[col]) &&
+          status == VariableStatus::AT_UPPER_BOUND) {
+        SetNonBasicVariableStatusAndDeriveValue(col,
+                                                VariableStatus::AT_LOWER_BOUND);
+      } else if (objective < 0 && IsFinite(upper_bound_[col]) &&
+                 status == VariableStatus::AT_LOWER_BOUND) {
+        SetNonBasicVariableStatusAndDeriveValue(col,
+                                                VariableStatus::AT_UPPER_BOUND);
+      }
+    }
+
     // Compute the primal infeasibility of the initial variable values in
     // error_.
     ComputeVariableValuesError();
@@ -965,21 +969,40 @@ Status RevisedSimplex::CreateInitialBasis() {
     // - At the end of phase I, restore the slack variable bounds and perform
     //   the same algorithm to start with feasible and "optimal" values of the
     //   singleton columns.
-    if (parameters_.exploit_singleton_column_in_initial_basis()) {
-      basis.assign(num_rows_, kInvalidCol);
-      UseSingletonColumnInInitialBasis(&basis);
+    basis.assign(num_rows_, kInvalidCol);
+    UseSingletonColumnInInitialBasis(&basis);
 
-      // Eventually complete the basis with fixed slack columns.
-      for (RowIndex row(0); row < num_rows_; ++row) {
-        if (basis[row] == kInvalidCol) {
-          basis[row] = SlackColIndex(row);
-        }
+    // Eventually complete the basis with fixed slack columns.
+    for (RowIndex row(0); row < num_rows_; ++row) {
+      if (basis[row] == kInvalidCol) {
+        basis[row] = SlackColIndex(row);
       }
     }
   }
 
   // Use an advanced initial basis to remove the fixed variables from the basis.
-  if (parameters_.initial_basis() != GlopParameters::NONE) {
+  if (parameters_.initial_basis() == GlopParameters::NONE) {
+    return InitializeFirstBasis(basis);
+  }
+  if (parameters_.initial_basis() == GlopParameters::MAROS) {
+    InitialBasis initial_basis(matrix_with_slack_, objective_, lower_bound_,
+                               upper_bound_, variables_info_.GetTypeRow());
+    if (parameters_.use_dual_simplex()) {
+      // This dual version only uses zero-cost columns to complete the
+      // basis.
+      initial_basis.GetDualMarosBasis(num_cols_, &basis);
+    } else {
+      initial_basis.GetPrimalMarosBasis(num_cols_, &basis);
+    }
+    int number_changed = 0;
+    for (RowIndex row(0); row < num_rows_; ++row) {
+      if (basis[row] != SlackColIndex(row)) {
+        number_changed++;
+      }
+    }
+    VLOG(1) << "Number of Maros basis changes: " << number_changed;
+  } else if (parameters_.initial_basis() == GlopParameters::BIXBY ||
+             parameters_.initial_basis() == GlopParameters::TRIANGULAR) {
     // First unassign the fixed variables from basis.
     int num_fixed_variables = 0;
     for (RowIndex row(0); row < basis.size(); ++row) {
@@ -990,40 +1013,59 @@ Status RevisedSimplex::CreateInitialBasis() {
       }
     }
 
-    if (num_fixed_variables > 0) {
+    if (num_fixed_variables == 0) {
+      VLOG(1) << "Crash is set to " << parameters_.initial_basis()
+              << " but there is no equality rows to remove from initial all "
+                 "slack basis.";
+    } else {
       // Then complete the basis with an advanced initial basis algorithm.
       VLOG(1) << "Trying to remove " << num_fixed_variables
               << " fixed variables from the initial basis.";
       InitialBasis initial_basis(matrix_with_slack_, objective_, lower_bound_,
                                  upper_bound_, variables_info_.GetTypeRow());
 
-      if (parameters_.use_dual_simplex()) {
-        // This dual version only uses zero-cost columns to complete the basis.
-        initial_basis.CompleteTriangularDualBasis(num_cols_, &basis);
-      } else if (parameters_.initial_basis() == GlopParameters::BIXBY) {
+      if (parameters_.initial_basis() == GlopParameters::BIXBY) {
         if (parameters_.use_scaling()) {
           initial_basis.CompleteBixbyBasis(first_slack_col_, &basis);
         } else {
-          LOG(WARNING) << "Bixby initial basis algorithm requires the problem "
-                       << "to be scaled. Skipping Bixby's algorithm.";
+          VLOG(1) << "Bixby initial basis algorithm requires the problem "
+                  << "to be scaled. Skipping Bixby's algorithm.";
         }
       } else if (parameters_.initial_basis() == GlopParameters::TRIANGULAR) {
+        const RowToColMapping basis_copy = basis;
+
         // Note the use of num_cols_ here because this algorithm
         // benefits from treating fixed slack columns like any other column.
-        RowToColMapping basis_copy = basis;
-        if (!initial_basis.CompleteTriangularPrimalBasis(num_cols_, &basis)) {
-          LOG(WARNING) << "Reverting to Bixby's initial basis algorithm.";
-          basis = basis_copy;
-          if (parameters_.use_scaling()) {
-            initial_basis.CompleteBixbyBasis(first_slack_col_, &basis);
-          }
+        if (parameters_.use_dual_simplex()) {
+          // This dual version only uses zero-cost columns to complete the
+          // basis.
+          initial_basis.CompleteTriangularDualBasis(num_cols_, &basis);
+        } else {
+          initial_basis.CompleteTriangularPrimalBasis(num_cols_, &basis);
         }
-      } else {
-        LOG(WARNING) << "Unsupported initial_basis parameters: "
-                     << parameters_.initial_basis();
+
+        const Status status = InitializeFirstBasis(basis);
+
+        // Check that the upper bound on the condition number of LU is below
+        // 1e50. We have chosen an arbitrarily high threshold, because the
+        // purpose of this code is to just revert to the "safe" basis on large
+        // problematic problem when we observed an "infinity" condition number
+        // (on cond11.mps).
+        if (status.ok() &&
+            basis_factorization_
+                    .ComputeInfinityNormConditionNumberUpperBound() < 1e50) {
+          return status;
+        } else {
+          VLOG(1) << "Reverting to all slack basis.";
+          basis = basis_copy;
+        }
       }
     }
+  } else {
+    LOG(WARNING) << "Unsupported initial_basis parameters: "
+                 << parameters_.initial_basis();
   }
+
   return InitializeFirstBasis(basis);
 }
 
@@ -1039,6 +1081,7 @@ Status RevisedSimplex::InitializeFirstBasis(const RowToColMapping& basis) {
     }
     variables_info_.Update(basis_[row], VariableStatus::BASIC);
   }
+
   GLOP_RETURN_IF_ERROR(basis_factorization_.Initialize());
   PermuteBasis();
   DCHECK(BasisIsConsistent());
@@ -1129,8 +1172,8 @@ Status RevisedSimplex::Initialize(const LinearProgram& lp) {
         reduced_costs_.ClearAndRemoveCostShifts();
         solve_from_scratch = false;
       } else {
-        LOG(WARNING) << "RevisedSimplex is not using the externally provided "
-                        "basis because it is not factorizable.";
+        VLOG(1) << "RevisedSimplex is not using the externally provided "
+                   "basis because it is not factorizable.";
       }
     } else if (!parameters_.use_dual_simplex()) {
       // With primal simplex, always clear dual norms and dual pricing.
@@ -1372,17 +1415,6 @@ Fractional RevisedSimplex::ComputeDirectionError(ColIndex col) {
   return InfinityNorm(error_);
 }
 
-void RevisedSimplex::SkipVariableForRatioTest(RowIndex row) {
-  // Setting direction_[row] to 0.0 is an effective way to ignore the row
-  // during the ratio test. The direction vector will be restored later from
-  // the information in direction_ignored_position_.
-  IF_STATS_ENABLED(
-      ratio_test_stats_.abs_skipped_pivot.Add(std::abs(direction_[row])));
-  VLOG(1) << "Skipping leaving variable with coefficient " << direction_[row];
-  direction_ignored_position_.SetCoefficient(row, direction_[row]);
-  direction_[row] = 0.0;
-}
-
 template <bool is_entering_reduced_cost_positive>
 Fractional RevisedSimplex::GetRatio(RowIndex row) const {
   const ColIndex col = basis_[row];
@@ -1420,10 +1452,18 @@ Fractional RevisedSimplex::ComputeHarrisRatioAndLeavingCandidates(
   // bound-flip over such leaving variable.
   Fractional harris_ratio = bound_flip_ratio;
   leaving_candidates->Clear();
-  const Fractional threshold = parameters_.ratio_test_zero_threshold();
+
+  // If the basis is refactorized, then we should have everything with a good
+  // precision, so we only consider "acceptable" pivots. Otherwise we consider
+  // all the entries, and if the algorithm return a pivot that is too small, we
+  // will refactorize and recompute the relevant quantities.
+  const Fractional threshold = basis_factorization_.IsRefactorized()
+                                   ? parameters_.minimum_acceptable_pivot()
+                                   : parameters_.ratio_test_zero_threshold();
+
   for (const RowIndex row : direction_.non_zeros) {
     const Fractional magnitude = std::abs(direction_[row]);
-    if (magnitude < threshold) continue;
+    if (magnitude <= threshold) continue;
     Fractional ratio = GetRatio<is_entering_reduced_cost_positive>(row);
     // TODO(user): The perturbation is currently disabled, so no need to test
     // anything here.
@@ -1485,7 +1525,6 @@ Status RevisedSimplex::ChooseLeavingVariableRow(
   DCHECK_NE(0.0, reduced_cost);
 
   // A few cases will cause the test to be recomputed from the beginning.
-  direction_ignored_position_.Clear();
   int stats_num_leaving_choices = 0;
   equivalent_leaving_choices_.clear();
   while (true) {
@@ -1596,41 +1635,31 @@ Status RevisedSimplex::ChooseLeavingVariableRow(
     // TODO(user): We may have to choose another entering column if
     // we cannot prevent pivoting by a small pivot.
     // (Chvatal, p.115, about epsilon2.)
-    //
-    // Note(user): As of May 2013, just checking the pivot size is not
-    // preventing the algorithm to run into a singular basis in some rare cases.
-    // One way to be more precise is to also take into account the norm of the
-    // direction.
     if (pivot_magnitude <
         parameters_.small_pivot_threshold() * direction_infinity_norm_) {
-      VLOG(1) << "Trying not to pivot by " << direction_[*leaving_row]
-              << " direction_infinity_norm_ = " << direction_infinity_norm_;
-
       // The first countermeasure is to recompute everything to the best
       // precision we can in the hope of avoiding such a choice. Note that this
       // helps a lot on the Netlib problems.
       if (!basis_factorization_.IsRefactorized()) {
+        VLOG(1) << "Refactorizing to avoid pivoting by "
+                << direction_[*leaving_row]
+                << " direction_infinity_norm_ = " << direction_infinity_norm_
+                << " reduced cost = " << reduced_cost;
         *refactorize = true;
         return Status::OK();
       }
 
-      // Note(user): This reduces quite a bit the number of iterations.
-      // What is its impact? Is it dangerous?
-      if (std::abs(direction_[*leaving_row]) <
-          parameters_.minimum_acceptable_pivot()) {
-        SkipVariableForRatioTest(*leaving_row);
-        continue;
-      }
-
-      // TODO(user): in almost all cases, testing the pivot is not useful
-      // because the two countermeasures above will be enough. Investigate
-      // more. The false makes sure that this will just be compiled away.
-      if (/* DISABLES CODE */ (false) &&
-          /* DISABLES CODE */ (!TestPivot(entering_col, *leaving_row))) {
-        SkipVariableForRatioTest(*leaving_row);
-        continue;
-      }
-
+      // Because of the "threshold" in ComputeHarrisRatioAndLeavingCandidates()
+      // we kwnow that this pivot will still have an acceptable magnitude.
+      //
+      // TODO(user): An issue left to fix is that if there is no such pivot at
+      // all, then we will report unbounded even if this is not really the case.
+      // As of 2018/07/18, this happens on l30.mps.
+      VLOG(1) << "Couldn't avoid pivoting by " << direction_[*leaving_row]
+              << " direction_infinity_norm_ = " << direction_infinity_norm_
+              << " reduced cost = " << reduced_cost;
+      DCHECK_GE(std::abs(direction_[*leaving_row]),
+                parameters_.minimum_acceptable_pivot());
       IF_STATS_ENABLED(ratio_test_stats_.abs_tested_pivot.Add(pivot_magnitude));
     }
     break;
@@ -1643,12 +1672,6 @@ Status RevisedSimplex::ChooseLeavingVariableRow(
     *target_bound = (is_reduced_cost_positive == is_leaving_coeff_positive)
                         ? upper_bound_[basis_[*leaving_row]]
                         : lower_bound_[basis_[*leaving_row]];
-  }
-
-  // Revert the temporary modification to direction_.
-  // This is important! Otherwise we would propagate some artificial errors.
-  for (const SparseColumn::Entry e : direction_ignored_position_) {
-    direction_[e.row()] = e.coefficient();
   }
 
   // Stats.
@@ -2220,8 +2243,21 @@ Status RevisedSimplex::UpdateAndPivot(ColIndex entering_col,
                                       target_bound);
   }
   UpdateBasis(entering_col, leaving_row, leaving_variable_status);
-  GLOP_RETURN_IF_ERROR(
-      basis_factorization_.Update(entering_col, leaving_row, direction_));
+
+  const Fractional pivot_from_direction = direction_[leaving_row];
+  const Fractional pivot_from_update_row =
+      update_row_.GetCoefficient(entering_col);
+  const Fractional diff =
+      std::abs(pivot_from_update_row - pivot_from_direction);
+  if (diff > parameters_.refactorization_threshold() *
+                 (1 + std::abs(pivot_from_direction))) {
+    VLOG(1) << "Refactorizing: imprecise pivot " << pivot_from_direction
+            << " diff = " << diff;
+    GLOP_RETURN_IF_ERROR(basis_factorization_.ForceRefactorization());
+  } else {
+    GLOP_RETURN_IF_ERROR(
+        basis_factorization_.Update(entering_col, leaving_row, direction_));
+  }
   if (basis_factorization_.IsRefactorized()) {
     PermuteBasis();
   }
@@ -2428,8 +2464,7 @@ Status RevisedSimplex::Minimize(TimeLimit* time_limit) {
       // practice. Note that the final returned solution will have the property
       // that all non-basic variables are at their exact bound, so it is nice
       // that we do not report ProblemStatus::PRIMAL_FEASIBLE if a solution with
-      // this property
-      // cannot be found.
+      // this property cannot be found.
       step = ComputeStepToMoveBasicVariableToBound(leaving_row, target_bound);
     }
 
@@ -2546,7 +2581,6 @@ Status RevisedSimplex::DualMinimize(TimeLimit* time_limit) {
 
   // Entering variable.
   ColIndex entering_col;
-  Fractional entering_coeff;
   Fractional ratio;
 
   while (true) {
@@ -2663,11 +2697,11 @@ Status RevisedSimplex::DualMinimize(TimeLimit* time_limit) {
     update_row_.ComputeUpdateRow(leaving_row);
     if (feasibility_phase_) {
       GLOP_RETURN_IF_ERROR(entering_variable_.DualPhaseIChooseEnteringColumn(
-          update_row_, cost_variation, &entering_col, &entering_coeff, &ratio));
+          update_row_, cost_variation, &entering_col, &ratio));
     } else {
       GLOP_RETURN_IF_ERROR(entering_variable_.DualChooseEnteringColumn(
           update_row_, cost_variation, &bound_flip_candidates, &entering_col,
-          &entering_coeff, &ratio));
+          &ratio));
     }
 
     // No entering_col: Unbounded problem / Infeasible problem.
@@ -2701,6 +2735,7 @@ Status RevisedSimplex::DualMinimize(TimeLimit* time_limit) {
     }
 
     // If the coefficient is too small, we recompute the reduced costs.
+    const Fractional entering_coeff = update_row_.GetCoefficient(entering_col);
     if (std::abs(entering_coeff) < parameters_.dual_small_pivot_threshold() &&
         !reduced_costs_.AreReducedCostsPrecise()) {
       VLOG(1) << "Trying not to pivot by " << entering_coeff;
@@ -2827,7 +2862,7 @@ Fractional RevisedSimplex::ComputeInitialProblemObjectiveValue() const {
 
 void RevisedSimplex::SetParameters(const GlopParameters& parameters) {
   SCOPED_TIME_STAT(&function_stats_);
-  random_.seed(parameters_.random_seed());
+  random_.seed(parameters.random_seed());
   initial_parameters_ = parameters;
   parameters_ = parameters;
   PropagateParameters();
@@ -2862,7 +2897,7 @@ void RevisedSimplex::DisplayIterationInfo() const {
                    : variable_values_.ComputeSumOfPrimalInfeasibilities());
     VLOG(1) << (feasibility_phase_ ? "Feasibility" : "Optimization")
             << " phase, iteration # " << iter
-            << ", objective = " << StringPrintf("%.15E", objective);
+            << ", objective = " << absl::StrFormat("%.15E", objective);
   }
 }
 
@@ -2881,12 +2916,14 @@ void RevisedSimplex::DisplayErrors() const {
 
 namespace {
 
-std::string StringifyMonomialWithFlags(const Fractional a, const std::string& x) {
+std::string StringifyMonomialWithFlags(const Fractional a,
+                                       const std::string& x) {
   return StringifyMonomial(a, x, FLAGS_simplex_display_numbers_as_fractions);
 }
 
-// Returns a std::string representing the rational approximation of x or a decimal
-// approximation of x according to FLAGS_simplex_display_numbers_as_fractions.
+// Returns a std::string representing the rational approximation of x or a
+// decimal approximation of x according to
+// FLAGS_simplex_display_numbers_as_fractions.
 std::string StringifyWithFlags(const Fractional x) {
   return Stringify(x, FLAGS_simplex_display_numbers_as_fractions);
 }
@@ -2897,7 +2934,7 @@ std::string RevisedSimplex::SimpleVariableInfo(ColIndex col) const {
   std::string output;
   VariableType variable_type = variables_info_.GetTypeRow()[col];
   VariableStatus variable_status = variables_info_.GetStatusRow()[col];
-  StringAppendF(&output, "%d (%s) = %s, %s, %s, [%s,%s]", col.value(),
+  absl::StrAppendFormat(&output, "%d (%s) = %s, %s, %s, [%s,%s]", col.value(),
                 variable_name_[col].c_str(),
                 StringifyWithFlags(variable_values_.Get(col)).c_str(),
                 GetVariableStatusString(variable_status).c_str(),
@@ -2947,18 +2984,17 @@ void RevisedSimplex::DisplayVariableBounds() {
           VLOG(3) << variable_name_[col] << " = "
                   << StringifyWithFlags(lower_bound_[col]) << ";";
           break;
-        default:                           // This should never happen.
-          LOG(DFATAL) << "Column " << col
-                      << " has no meaningful status.";
+        default:  // This should never happen.
+          LOG(DFATAL) << "Column " << col << " has no meaningful status.";
           break;
       }
     }
   }
 }
 
-ITIVector<RowIndex, SparseRow> RevisedSimplex::ComputeDictionary(
+gtl::ITIVector<RowIndex, SparseRow> RevisedSimplex::ComputeDictionary(
     const DenseRow* column_scales) {
-  ITIVector<RowIndex, SparseRow> dictionary(num_rows_.value());
+  gtl::ITIVector<RowIndex, SparseRow> dictionary(num_rows_.value());
   for (ColIndex col(0); col < num_cols_; ++col) {
     ComputeDirection(col);
     for (const RowIndex row : direction_.non_zeros) {
@@ -2976,6 +3012,17 @@ ITIVector<RowIndex, SparseRow> RevisedSimplex::ComputeDictionary(
     }
   }
   return dictionary;
+}
+
+void RevisedSimplex::ComputeBasicVariablesForState(
+    const LinearProgram& linear_program, const BasisState& state) {
+  LoadStateForNextSolve(state);
+  Status status = Initialize(linear_program);
+  if (status.ok()) {
+    variable_values_.RecomputeBasicVariableValues();
+    variable_values_.ResetPrimalInfeasibilityInformation();
+    solution_objective_value_ = ComputeInitialProblemObjectiveValue();
+  }
 }
 
 void RevisedSimplex::DisplayRevisedSimplexDebugInfo() {

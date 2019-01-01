@@ -20,30 +20,29 @@
 #define OR_TOOLS_SAT_SAT_SOLVER_H_
 
 #include <functional>
-#include <unordered_map>
 #include <limits>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "ortools/base/hash.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/timer.h"
 #include "ortools/base/span.h"
-#include "ortools/base/int_type.h"
-#include "ortools/base/int_type_indexed_vector.h"
-#include "ortools/base/hash.h"
+#include "ortools/base/timer.h"
 #include "ortools/sat/clause.h"
-#include "ortools/sat/drat.h"
+#include "ortools/sat/drat_proof_handler.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/pb_constraint.h"
 #include "ortools/sat/restart.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_decision.h"
 #include "ortools/sat/sat_parameters.pb.h"
-#include "ortools/util/random_engine.h"
 #include "ortools/util/stats.h"
 #include "ortools/util/time_limit.h"
 
@@ -132,7 +131,7 @@ class SatSolver {
   bool IsModelUnsat() const { return is_model_unsat_; }
 
   // Adds and registers the given propagator with the sat solver. Note that
-  // during propagation, they will be called in the order they where added.
+  // during propagation, they will be called in the order they were added.
   void AddPropagator(SatPropagator* propagator);
   void AddLastPropagator(SatPropagator* propagator);
   void TakePropagatorOwnership(std::unique_ptr<SatPropagator> propagator) {
@@ -175,8 +174,8 @@ class SatSolver {
   // the start of this function.
   enum Status {
     ASSUMPTIONS_UNSAT,
-    MODEL_UNSAT,
-    MODEL_SAT,
+    INFEASIBLE,
+    FEASIBLE,
     LIMIT_REACHED,
   };
   Status Solve();
@@ -196,7 +195,7 @@ class SatSolver {
   // Solve().
   //
   // If, given these assumptions, the model is UNSAT, this returns the
-  // ASSUMPTIONS_UNSAT status. MODEL_UNSAT is reserved for the case where the
+  // ASSUMPTIONS_UNSAT status. INFEASIBLE is reserved for the case where the
   // model is proven to be unsat without any assumptions.
   //
   // If ASSUMPTIONS_UNSAT is returned, it is possible to get a "core" of unsat
@@ -244,7 +243,7 @@ class SatSolver {
 
   // This function starts by calling EnqueueDecisionAndBackjumpOnConflict(). If
   // there is no conflict, it stops there. Otherwise, it tries to reapply all
-  // the decisions that where backjumped over until the first one that can't be
+  // the decisions that were backjumped over until the first one that can't be
   // taken because it is incompatible. Note that during this process, more
   // conflicts may happen and the trail may be backtracked even further.
   //
@@ -277,8 +276,30 @@ class SatSolver {
   // or re-enqueue any assumptions that may have been backtracked over due to
   // conflits resolution. In both cases, the propagation is finished.
   //
-  // Note that this may prove the model to be UNSAT (check IsModelUnsat()).
-  void RestoreSolverToAssumptionLevel();
+  // Note that this may prove the model to be UNSAT or ASSUMPTION_UNSAT in which
+  // case it will return false.
+  bool RestoreSolverToAssumptionLevel();
+
+  // Advanced usage. Finish the progation if it was interupted. Note that this
+  // might run into conflict and will propagate again until a fixed point is
+  // reached or the model was proven UNSAT. Returns IsModelUnsat().
+  bool FinishPropagation();
+
+  // Changes the assumptions level and the current solver assumptions. Returns
+  // false if the model is UNSAT or ASSUMPTION_UNSAT, true otherwise.
+  bool ResetWithGivenAssumptions(const std::vector<Literal>& assumptions);
+
+  // Advanced usage. If the decision level is smaller than the assumption level,
+  // this will try to reapply all assumptions. Returns true if this was doable,
+  // otherwise returns false in which case the model is either UNSAT or
+  // ASSUMPTION_UNSAT.
+  bool ReapplyAssumptionsIfNeeded();
+
+  // Helper functions to get the correct status when one of the functions above
+  // returns false.
+  Status UnsatStatus() const {
+    return IsModelUnsat() ? INFEASIBLE : ASSUMPTIONS_UNSAT;
+  }
 
   // Extract the current problem clauses. The Output type must support the two
   // functions:
@@ -350,9 +371,9 @@ class SatSolver {
   // Returns true iff the loaded problem only contains clauses.
   bool ProblemIsPureSat() const { return problem_is_pure_sat_; }
 
-  void SetDratWriter(DratWriter* drat_writer) {
-    drat_writer_ = drat_writer;
-    clauses_propagator_.SetDratWriter(drat_writer);
+  void SetDratProofHandler(DratProofHandler* drat_proof_handler) {
+    drat_proof_handler_ = drat_proof_handler;
+    clauses_propagator_.SetDratProofHandler(drat_proof_handler_);
   }
 
   // This function is here to deal with the case where a SAT/CP model is found
@@ -407,7 +428,7 @@ class SatSolver {
 
   // See SaveDebugAssignment(). Note that these functions only consider the
   // variables at the time the debug_assignment_ was saved. If new variables
-  // where added since that time, they will be considered unassigned.
+  // were added since that time, they will be considered unassigned.
   bool ClauseIsValidUnderDebugAssignement(
       const std::vector<Literal>& clause) const;
   bool PBConstraintIsValidUnderDebugAssignment(
@@ -430,12 +451,12 @@ class SatSolver {
   // backjumps. In this case, we will simply keep reapplying decisions from the
   // last one backtracked over and so on.
   //
-  // Returns MODEL_STAT if no conflict occurred, MODEL_UNSAT if the model was
+  // Returns FEASIBLE if no conflict occurred, INFEASIBLE if the model was
   // proven unsat and ASSUMPTION_UNSAT otherwise. In the last case the first non
   // taken old decision will be propagated to false by the ones before.
   //
   // first_propagation_index will be filled with the trail index of the first
-  // newly propagated literal, or with -1 if MODEL_UNSAT is returned.
+  // newly propagated literal, or with -1 if INFEASIBLE is returned.
   Status ReapplyDecisionsUpTo(int level, int* first_propagation_index);
 
   // Returns false if the thread memory is over the limit.
@@ -476,7 +497,7 @@ class SatSolver {
   // Returns true iff the clause is the reason for an assigned variable.
   //
   // TODO(user): With our current data structures, we could also return true
-  // for clauses that where just used as a reason (like just before an untrail).
+  // for clauses that were just used as a reason (like just before an untrail).
   // This may be beneficial, but should properly be defined so that we can
   // have the same behavior if we change the implementation.
   bool ClauseIsUsedAsReason(SatClause* clause) const {
@@ -503,7 +524,7 @@ class SatSolver {
   //
   // Returns the LBD of the clause.
   int AddLearnedClauseAndEnqueueUnitPropagation(
-      const std::vector<Literal>& literals, bool must_be_kept);
+      const std::vector<Literal>& literals, bool is_redundant);
 
   // Creates a new decision which corresponds to setting the given literal to
   // True and Enqueue() this change.
@@ -524,6 +545,9 @@ class SatSolver {
 
   // Simplifies the problem when new variables are assigned at level 0.
   void ProcessNewlyFixedVariables();
+
+  // Output to the DRAT proof handler any newly fixed variables.
+  void ProcessNewlyFixedVariablesForDratProof();
 
   // Returns the maximum trail_index of the literals in the given clause.
   // All the literals must be assigned. Returns -1 if the clause is empty.
@@ -694,6 +718,9 @@ class SatSolver {
   int num_processed_fixed_variables_;
   double deterministic_time_of_last_fixed_variables_cleanup_;
 
+  // Used in ProcessNewlyFixedVariablesForDratProof().
+  int drat_num_processed_fixed_variables_ = 0;
+
   // Tracks various information about the solver progress.
   struct Counters {
     int64 num_branches = 0;
@@ -768,9 +795,6 @@ class SatSolver {
   // analysis.
   VariableWithSameReasonIdentifier same_reason_identifier_;
 
-  // A random number generator.
-  mutable random_engine_t random_;
-
   // Temporary vector used by AddProblemClause().
   std::vector<LiteralWithCoeff> tmp_pb_constraint_;
 
@@ -788,7 +812,7 @@ class SatSolver {
   // This is true iff the loaded problem only contains clauses.
   bool problem_is_pure_sat_;
 
-  DratWriter* drat_writer_;
+  DratProofHandler* drat_proof_handler_;
 
   mutable StatsGroup stats_;
   DISALLOW_COPY_AND_ASSIGN(SatSolver);

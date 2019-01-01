@@ -33,11 +33,10 @@
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
-#include "ortools/base/commandlineflags.h"
-#include "ortools/base/logging.h"
-#include "ortools/base/strtoint.h"
 #include "ortools/base/filelineiter.h"
+#include "ortools/base/logging.h"
 #include "ortools/base/split.h"
+#include "ortools/base/strtoint.h"
 #include "ortools/sat/cp_constraints.h"
 #include "ortools/sat/cp_model_solver.h"
 #include "ortools/sat/integer_expr.h"
@@ -259,7 +258,7 @@ void LoadAndSolve(const std::string& file_name) {
     }
 
     // Check that we have not already visited this exact set of candidate jobs.
-    if (ContainsKey(visited_job_lists, intersecting_jobs)) continue;
+    if (gtl::ContainsKey(visited_job_lists, intersecting_jobs)) continue;
     visited_job_lists.insert(intersecting_jobs);
 
     // Collect the relevant literals, and regroup them per worker.
@@ -275,7 +274,7 @@ void LoadAndSolve(const std::string& file_name) {
     std::vector<Literal> active_worker_literals;
     for (const auto& it : active_literals_per_workers) {
       Literal active;
-      if (ContainsKey(active_literal_cache, it.second)) {
+      if (gtl::ContainsKey(active_literal_cache, it.second)) {
         active = active_literal_cache[it.second];
         num_reused_literals++;
       } else {
@@ -331,7 +330,7 @@ void LoadAndSolve(const std::string& file_name) {
 
 int main(int argc, char** argv) {
   base::SetFlag(&FLAGS_logtostderr, true);
-  gflags::ParseCommandLineFlags( &argc, &argv, true);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (FLAGS_input.empty()) {
     LOG(FATAL) << "Please supply a data file with --input=";
   }

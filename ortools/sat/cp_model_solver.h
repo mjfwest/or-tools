@@ -43,21 +43,36 @@ std::string CpSolverResponseStats(const CpSolverResponse& response);
 CpSolverResponse SolveCpModel(const CpModelProto& model_proto, Model* model);
 
 // Allows to register a solution "observer" with the model with
-//   model.Add(NewFeasibleSolutionObserver([](values){...}));
-// The given function will be called on each feasible solution found during the
-// search. The values will be in one to one correspondence with the variables
-// in the model_proto.
-//
-// Hack: For the non-fully instantiated variables, the value will be the
-// propagated lower bound. Note that this will be fixed with the TODO below.
+//   model.Add(NewFeasibleSolutionObserver([](response){...}));
+// The given function will be called on each "improving" feasible solution found
+// during the search. For a non-optimization problem, if the option to find all
+// solution was set, then this will be called on each new solution.
 std::function<void(Model*)> NewFeasibleSolutionObserver(
     const std::function<void(const CpSolverResponse& response)>& observer);
+
+// If set, the underlying solver will call this function "regularly" in a
+// deterministic way. It will then wait until this function returns with the
+// current "best" information about the current problem.
+//
+// This is meant to be used in a multi-threaded environment with many parallel
+// solving process. If the returned current "best" response only uses
+// informations derived at a lower deterministic time (possibly with offset)
+// than the deterministic time of the current thread, then the whole process can
+// be made deterministic.
+void SetSynchronizationFunction(std::function<CpSolverResponse()> f,
+                                Model* model);
+
+// Wait until this function returns with the objective value of the current
+// best solution.
+void SetObjectiveSynchronizationFunction(std::function<double()> f,
+                                         Model* model);
 
 // Allows to change the default parameters with
 //   model->Add(NewSatParameters(parameters_as_string_or_proto))
 // before calling SolveCpModel().
 #if !defined(__PORTABLE_PLATFORM__)
-std::function<SatParameters(Model*)> NewSatParameters(const std::string& params);
+std::function<SatParameters(Model*)> NewSatParameters(
+    const std::string& params);
 #endif  // !__PORTABLE_PLATFORM__
 std::function<SatParameters(Model*)> NewSatParameters(
     const SatParameters& parameters);

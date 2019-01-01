@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "ortools/glop/initial_basis.h"
 #include <queue>
 
@@ -96,18 +95,28 @@ void InitialBasis::CompleteBixbyBasis(ColIndex num_cols,
   }
 }
 
-bool InitialBasis::CompleteTriangularPrimalBasis(ColIndex num_cols,
+void InitialBasis::GetPrimalMarosBasis(ColIndex num_cols,
+                                       RowToColMapping* basis) {
+  return GetMarosBasis<false>(num_cols, basis);
+}
+
+void InitialBasis::GetDualMarosBasis(ColIndex num_cols,
+                                     RowToColMapping* basis) {
+  return GetMarosBasis<true>(num_cols, basis);
+}
+
+void InitialBasis::CompleteTriangularPrimalBasis(ColIndex num_cols,
                                                  RowToColMapping* basis) {
   return CompleteTriangularBasis<false>(num_cols, basis);
 }
 
-bool InitialBasis::CompleteTriangularDualBasis(ColIndex num_cols,
+void InitialBasis::CompleteTriangularDualBasis(ColIndex num_cols,
                                                RowToColMapping* basis) {
   return CompleteTriangularBasis<true>(num_cols, basis);
 }
 
 template <bool only_allow_zero_cost_column>
-bool InitialBasis::CompleteTriangularBasis(ColIndex num_cols,
+void InitialBasis::CompleteTriangularBasis(ColIndex num_cols,
                                            RowToColMapping* basis) {
   // Initialize can_be_replaced.
   const RowIndex num_rows = matrix_.num_rows();
@@ -147,17 +156,9 @@ bool InitialBasis::CompleteTriangularBasis(ColIndex num_cols,
   max_scaled_abs_cost_ =
       (max_scaled_abs_cost_ == 0.0) ? 1.0 : kBixbyWeight * max_scaled_abs_cost_;
   std::priority_queue<ColIndex, std::vector<ColIndex>,
-                 InitialBasis::TriangularColumnComparator>
+                      InitialBasis::TriangularColumnComparator>
       queue(residual_singleton_column.begin(), residual_singleton_column.end(),
             triangular_column_comparator_);
-
-  // If the the product magnitude of the diagonal coefficients become smaller
-  // than a given threshold, we will assume that this method returns an instable
-  // first basis. The threshold is somewhat arbitrary and is mainly here to
-  // avoid an infinite inverse product which will trigger floating point
-  // exceptions in other part of the code.
-  const double kMinimumProductMagnitude = 1e-100;
-  double partial_diagonal_product = 1.0;
 
   // Process the residual singleton columns by priority and add them to the
   // basis if their "diagonal" coefficient is not too small.
@@ -183,14 +184,6 @@ bool InitialBasis::CompleteTriangularBasis(ColIndex num_cols,
     if (std::abs(coeff) < kStabilityThreshold * max_magnitude) continue;
     DCHECK_NE(kInvalidRow, row);
 
-    partial_diagonal_product *= coeff;
-    if (std::abs(partial_diagonal_product) < kMinimumProductMagnitude) {
-      VLOG(1) << "Numerical difficulties detected. The product of the "
-              << "diagonal coefficients is currently equal to "
-              << partial_diagonal_product;
-      break;
-    }
-
     // Use this candidate column in the basis.
     (*basis)[row] = candidate;
     can_be_replaced[row] = false;
@@ -203,8 +196,156 @@ bool InitialBasis::CompleteTriangularBasis(ColIndex num_cols,
       }
     }
   }
+}
 
-  return std::abs(partial_diagonal_product) >= kMinimumProductMagnitude;
+int InitialBasis::GetMarosPriority(ColIndex col) const {
+  // Priority values for columns as defined in Maros's book.
+  switch (variable_type_[col]) {
+    case VariableType::UNCONSTRAINED:
+      return 3;
+    case VariableType::LOWER_BOUNDED:
+      return 2;
+    case VariableType::UPPER_BOUNDED:
+      return 2;
+    case VariableType::UPPER_AND_LOWER_BOUNDED:
+      return 1;
+    case VariableType::FIXED_VARIABLE:
+      return 0;
+  }
+}
+
+int InitialBasis::GetMarosPriority(RowIndex row) const {
+  // Priority values for rows are equal to
+  // 3 - row priority values as defined in Maros's book
+  ColIndex slack_index(RowToColIndex(row) + matrix_.num_cols() -
+                       RowToColIndex(matrix_.num_rows()));
+
+  return GetMarosPriority(slack_index);
+}
+
+template <bool only_allow_zero_cost_column>
+void InitialBasis::GetMarosBasis(ColIndex num_cols, RowToColMapping* basis) {
+  VLOG(1) << "Starting Maros crash procedure.";
+
+  // Initialize basis to the all-slack basis.
+  const RowIndex num_rows = matrix_.num_rows();
+  const ColIndex first_slack = num_cols - RowToColIndex(num_rows);
+  DCHECK_EQ(num_rows, basis->size());
+  basis->resize(num_rows);
+  for (RowIndex row(0); row < num_rows; row++) {
+    (*basis)[row] = first_slack + RowToColIndex(row);
+  }
+
+  // Initialize the set of available rows and columns.
+  DenseBooleanRow available(num_cols, true);
+  for (ColIndex col(0); col < first_slack; ++col) {
+    if (variable_type_[col] == VariableType::FIXED_VARIABLE ||
+        (only_allow_zero_cost_column && objective_[col] != 0.0)) {
+      available[col] = false;
+    }
+  }
+  for (ColIndex col = first_slack; col < num_cols; ++col) {
+    if (variable_type_[col] == VariableType::UNCONSTRAINED) {
+      available[col] = false;
+    }
+  }
+
+  // Initialize the residual non-zero pattern for the active part of the matrix.
+  MatrixNonZeroPattern residual_pattern;
+  residual_pattern.Reset(num_rows, num_cols);
+  for (ColIndex col(0); col < first_slack; ++col) {
+    for (const SparseColumn::Entry e : matrix_.column(col)) {
+      if (available[RowToColIndex(e.row())] && available[col]) {
+        residual_pattern.AddEntry(e.row(), col);
+      }
+    }
+  }
+
+  // Go over residual pattern and mark rows as unavailable.
+  for (RowIndex row(0); row < num_rows; row++) {
+    if (residual_pattern.RowDegree(row) == 0) {
+      available[RowToColIndex(row) + first_slack] = false;
+    }
+  }
+
+  for (;;) {
+    // Make row selection by the Row Priority Function (RPF) from Maros's
+    // book.
+    int max_row_priority_function = std::numeric_limits<int>::min();
+    RowIndex max_rpf_row = kInvalidRow;
+    for (RowIndex row(0); row < num_rows; row++) {
+      if (available[RowToColIndex(row) + first_slack]) {
+        const int rpf =
+            10 * (3 - GetMarosPriority(row)) - residual_pattern.RowDegree(row);
+        if (rpf > max_row_priority_function) {
+          max_row_priority_function = rpf;
+          max_rpf_row = row;
+        }
+      }
+    }
+    if (max_rpf_row == kInvalidRow) break;
+
+    // Trace row for nonzero entries and pick one with best Column Priority
+    // Function (cpf).
+    const Fractional kStabilityThreshold = 1e-3;
+    ColIndex max_cpf_col(kInvalidCol);
+    int max_col_priority_function(std::numeric_limits<int>::min());
+    Fractional pivot_absolute_value = 0.0;
+    for (const ColIndex col : residual_pattern.RowNonZero(max_rpf_row)) {
+      if (!available[col]) continue;
+      const int cpf =
+          10 * GetMarosPriority(col) - residual_pattern.ColDegree(col);
+      if (cpf > max_col_priority_function) {
+        // Make sure that the pivotal entry is not too small in magnitude.
+        Fractional max_magnitude = 0;
+        pivot_absolute_value = 0.0;
+        const SparseColumn& column_values = matrix_.column(col);
+        for (const SparseColumn::Entry e : column_values) {
+          const Fractional absolute_value = std::fabs(e.coefficient());
+          if (e.row() == max_rpf_row) pivot_absolute_value = absolute_value;
+          max_magnitude = std::max(max_magnitude, absolute_value);
+        }
+        if (pivot_absolute_value >= kStabilityThreshold * max_magnitude) {
+          max_col_priority_function = cpf;
+          max_cpf_col = col;
+        }
+      }
+    }
+
+    if (max_cpf_col == kInvalidCol) {
+      available[RowToColIndex(max_rpf_row) + first_slack] = false;
+      continue;
+    }
+
+    // Ensure that the row leaving the basis has a lower priority than the
+    // column entering the basis. If the best column is not good enough mark
+    // row as unavailable and choose another one.
+    const int row_priority = GetMarosPriority(max_rpf_row);
+    const int column_priority = GetMarosPriority(max_cpf_col);
+    if (row_priority >= column_priority) {
+      available[RowToColIndex(max_rpf_row) + first_slack] = false;
+      continue;
+    }
+
+    // Use this candidate column in the basis. Update residual pattern and row
+    // counts list.
+    (*basis)[max_rpf_row] = max_cpf_col;
+
+    VLOG(2) << "Slack variable " << max_rpf_row << " replaced by column "
+            << max_cpf_col
+            << ". Pivot coefficient magnitude: " << pivot_absolute_value << ".";
+
+    available[max_cpf_col] = false;
+    available[first_slack + RowToColIndex(max_rpf_row)] = false;
+
+    // Maintain the invariant that all the still available columns will have
+    // zeros on the rows we already replaced. This ensures the lower-triangular
+    // nature (after permutation) of the returned basis.
+    residual_pattern.DeleteRowAndColumn(max_rpf_row, max_cpf_col);
+    for (const ColIndex col : residual_pattern.RowNonZero(max_rpf_row)) {
+      available[col] = false;
+    }
+  }
 }
 
 void InitialBasis::ComputeCandidates(ColIndex num_cols,
@@ -239,10 +380,6 @@ int InitialBasis::GetColumnCategory(ColIndex col) const {
       return 4;
     case VariableType::FIXED_VARIABLE:
       return 5;
-    default:
-      LOG(DFATAL) << "Column " << col
-                  << " has no meaningful type.";
-      return 6;
   }
 }
 

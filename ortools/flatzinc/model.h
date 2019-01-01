@@ -77,7 +77,7 @@ struct Domain {
 
   // Various inclusion tests on a domain.
   bool Contains(int64 value) const;
-  bool OverlapsIntList(const std::vector<int64>& values) const;
+  bool OverlapsIntList(const std::vector<int64>& vec) const;
   bool OverlapsIntInterval(int64 lb, int64 ub) const;
   bool OverlapsDomain(const Domain& other) const;
 
@@ -141,7 +141,8 @@ struct IntegerVariable {
  private:
   friend class Model;
 
-  IntegerVariable(const std::string& name_, const Domain& domain_, bool temporary_);
+  IntegerVariable(const std::string& name_, const Domain& domain_,
+                  bool temporary_);
 };
 
 // An argument is either an integer value, an integer domain, a
@@ -175,7 +176,7 @@ struct Argument {
   bool HasOneValue() const;
   // Returns the value of the argument. Does DCHECK(HasOneValue()).
   int64 Value() const;
-  // Returns true if if it an integer list, or an array of integer
+  // Returns true if it an integer list, or an array of integer
   // variables (or domain) each having only one value.
   bool IsArrayOfValues() const;
   // Returns true if the argument is an integer value, an integer
@@ -200,8 +201,8 @@ struct Argument {
 // A constraint has a type, some arguments, and a few tags. Typically, a
 // Constraint is on the heap, and owned by the global Model object.
 struct Constraint {
-  Constraint(const std::string& t, std::vector<Argument> args, bool strong_propag,
-             IntegerVariable* target)
+  Constraint(const std::string& t, std::vector<Argument> args,
+             bool strong_propag, IntegerVariable* target)
       : type(t),
         arguments(std::move(args)),
         target_variable(target),
@@ -270,7 +271,7 @@ struct Annotation {
   static Annotation Interval(int64 interval_min, int64 interval_max);
   static Annotation IntegerValue(int64 value);
   static Annotation Variable(IntegerVariable* const var);
-  static Annotation VariableList(std::vector<IntegerVariable*> vars);
+  static Annotation VariableList(std::vector<IntegerVariable*> variables);
   static Annotation String(const std::string& str);
 
   std::string DebugString() const;
@@ -337,14 +338,12 @@ class Model {
   // The objects returned by AddVariable(), AddConstant(),  and AddConstraint()
   // are owned by the model and will remain live for its lifetime.
   IntegerVariable* AddVariable(const std::string& name, const Domain& domain,
-                               bool temporary);
+                               bool defined);
   IntegerVariable* AddConstant(int64 value);
   // Creates and add a constraint to the model.
-  // The parameter strong is an indication from the model that prefers stronger
-  // (and more expensive version of the propagator).
-  void AddConstraint(const std::string& type, std::vector<Argument> arguments,
-                     bool strong, IntegerVariable* target_variable);
-  void AddConstraint(const std::string& type, std::vector<Argument> arguments);
+  void AddConstraint(const std::string& id, std::vector<Argument> arguments,
+                     bool is_domain, IntegerVariable* defines);
+  void AddConstraint(const std::string& id, std::vector<Argument> arguments);
   void AddOutput(SolutionOutputSpecs output);
 
   // Set the search annotations and the objective: either simply satisfy the

@@ -16,8 +16,8 @@
 #include <map>
 
 #include <unordered_map>
-#include "ortools/base/map_util.h"
 #include "ortools/base/hash.h"
+#include "ortools/base/map_util.h"
 #include "ortools/sat/cp_model.pb.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/util/saturated_arithmetic.h"
@@ -30,6 +30,7 @@ struct ExpansionHelper {
   CpModelProto expanded_proto;
   std::unordered_map<std::pair<int, int>, int> precedence_cache;
   std::map<std::string, int> statistics;
+  static const int kAlwaysTrue = kint32min;
 
   // a => b.
   void AddImplication(int a, int b) {
@@ -48,42 +49,42 @@ struct ExpansionHelper {
     imply->mutable_linear()->add_domain(ub);
   }
 
-  int AddBoolVar() {
+  int AddIntVar(int64 lb, int64 ub) {
     IntegerVariableProto* const var = expanded_proto.add_variables();
-    var->add_domain(0);
-    var->add_domain(1);
+    var->add_domain(lb);
+    var->add_domain(ub);
     return expanded_proto.variables_size() - 1;
   }
 
-  int VariableIsOptional(int index) const {
-    return expanded_proto.variables(index).enforcement_literal_size() > 0;
+  int AddBoolVar() { return AddIntVar(0, 1); }
+
+  void AddBoolOr(const std::vector<int>& literals) {
+    BoolArgumentProto* const bool_or =
+        expanded_proto.add_constraints()->mutable_bool_or();
+    for (const int lit : literals) {
+      bool_or->add_literals(lit);
+    }
   }
 
-  int VariableEnforcementLiteral(int index) const {
-    DCHECK(VariableIsOptional(index));
-    return expanded_proto.variables(index).enforcement_literal(0);
-  }
-
-  // lesseq_0 <=> (x <= 0 && x performed).
-  void AddReifiedLesssOrEqualThanZero(int lesseq_0, int x) {
+  // lesseq_0 <=> (x <= 0 && lit is true).
+  void AddReifiedLessOrEqualThanZero(int lesseq_0, int x, int lit) {
     AddImplyInDomain(lesseq_0, x, kint64min, 0);
-    AddImplyInDomain(NegatedRef(lesseq_0), x, 1, kint64max);
-    if (VariableIsOptional(x)) {
-      AddImplication(lesseq_0, VariableEnforcementLiteral(x));
+    if (lit == kAlwaysTrue) {
+      AddImplyInDomain(NegatedRef(lesseq_0), x, 1, kint64max);
+    } else {
+      // conjunction <=> lit && not(lesseq_0).
+      const int conjunction = AddBoolVar();
+      AddImplication(conjunction, lit);
+      AddImplication(conjunction, NegatedRef(lesseq_0));
+      AddBoolOr({NegatedRef(lit), lesseq_0, conjunction});
+
+      AddImplyInDomain(conjunction, x, 1, kint64max);
     }
   }
 
-  // x_lesseq_y <=> (x <= y && x enforced && y enforced).
-  void AddReifiedPrecedence(int x_lesseq_y, int x, int y) {
-    // x_lesseq_y => x enforced && y enforced
-    if (VariableIsOptional(x)) {
-      AddImplication(x_lesseq_y, VariableEnforcementLiteral(x));
-    }
-    if (VariableIsOptional(y)) {
-      AddImplication(x_lesseq_y, VariableEnforcementLiteral(y));
-    }
-
-    // x_lesseq_y => (x <= y)
+  // x_lesseq_y <=> (x <= y && l_x is true && l_y is true).
+  void AddReifiedPrecedence(int x_lesseq_y, int x, int y, int l_x, int l_y) {
+    // x_lesseq_y => (x <= y) && l_x is true && l_y is true.
     ConstraintProto* const lesseq = expanded_proto.add_constraints();
     lesseq->add_enforcement_literal(x_lesseq_y);
     lesseq->mutable_linear()->add_vars(x);
@@ -92,16 +93,41 @@ struct ExpansionHelper {
     lesseq->mutable_linear()->add_coeffs(1);
     lesseq->mutable_linear()->add_domain(0);
     lesseq->mutable_linear()->add_domain(kint64max);
+    if (l_x != kAlwaysTrue) {
+      AddImplication(x_lesseq_y, l_x);
+    }
+    if (l_y != kAlwaysTrue) {
+      AddImplication(x_lesseq_y, l_y);
+    }
 
-    // Not(x_lesseq_y) => (x > y)
+    // Not(x_lesseq_y) && l_x && l_y => (x > y)
     ConstraintProto* const greater = expanded_proto.add_constraints();
-    greater->add_enforcement_literal(NegatedRef(x_lesseq_y));
     greater->mutable_linear()->add_vars(x);
     greater->mutable_linear()->add_vars(y);
     greater->mutable_linear()->add_coeffs(-1);
     greater->mutable_linear()->add_coeffs(1);
     greater->mutable_linear()->add_domain(kint64min);
     greater->mutable_linear()->add_domain(-1);
+    // Manages enforcement literal.
+    if (l_x == kAlwaysTrue && l_y == kAlwaysTrue) {
+      greater->add_enforcement_literal(NegatedRef(x_lesseq_y));
+    } else {
+      // conjunction <=> l_x && l_y && not(x_lesseq_y).
+      const int conjunction = AddBoolVar();
+      std::vector<int> literals = {conjunction, x_lesseq_y};
+      AddImplication(conjunction, NegatedRef(x_lesseq_y));
+      if (l_x != kAlwaysTrue) {
+        AddImplication(conjunction, l_x);
+        literals.push_back(NegatedRef(l_x));
+      }
+      if (l_y != kAlwaysTrue) {
+        AddImplication(conjunction, l_y);
+        literals.push_back(NegatedRef(l_y));
+      }
+      AddBoolOr(literals);
+
+      greater->add_enforcement_literal(conjunction);
+    }
   }
 };
 
@@ -109,6 +135,19 @@ void ExpandReservoir(ConstraintProto* ct, ExpansionHelper* helper) {
   const ReservoirConstraintProto& reservoir = ct->reservoir();
   const int num_variables = reservoir.times_size();
   CpModelProto& expanded_proto = helper->expanded_proto;
+
+  auto is_optional = [&expanded_proto, &reservoir](int index) {
+    if (reservoir.actives_size() == 0) return false;
+    const int literal = reservoir.actives(index);
+    const int ref = PositiveRef(literal);
+    const IntegerVariableProto& var_proto = expanded_proto.variables(ref);
+    return var_proto.domain_size() != 2 ||
+           var_proto.domain(0) != var_proto.domain(1);
+  };
+  auto active = [&reservoir, &helper](int index) {
+    if (reservoir.actives_size() == 0) return helper->kAlwaysTrue;
+    return reservoir.actives(index);
+  };
 
   int num_positives = 0;
   int num_negatives = 0;
@@ -128,27 +167,27 @@ void ExpandReservoir(ConstraintProto* ct, ExpansionHelper* helper) {
         const int time_j = reservoir.times(j);
         const std::pair<int, int> p = std::make_pair(time_i, time_j);
         const std::pair<int, int> rev_p = std::make_pair(time_j, time_i);
-        if (ContainsKey(helper->precedence_cache, p)) continue;
+        if (gtl::ContainsKey(helper->precedence_cache, p)) continue;
 
         const int i_lesseq_j = helper->AddBoolVar();
         helper->precedence_cache[p] = i_lesseq_j;
         const int j_lesseq_i = helper->AddBoolVar();
         helper->precedence_cache[rev_p] = j_lesseq_i;
-        helper->AddReifiedPrecedence(i_lesseq_j, time_i, time_j);
-        helper->AddReifiedPrecedence(j_lesseq_i, time_j, time_i);
+        helper->AddReifiedPrecedence(i_lesseq_j, time_i, time_j, active(i),
+                                     active(j));
+        helper->AddReifiedPrecedence(j_lesseq_i, time_j, time_i, active(j),
+                                     active(i));
 
         // Consistency. This is redundant but should improves performance.
         auto* const bool_or =
             expanded_proto.add_constraints()->mutable_bool_or();
         bool_or->add_literals(i_lesseq_j);
         bool_or->add_literals(j_lesseq_i);
-        if (helper->VariableIsOptional(time_i)) {
-          bool_or->add_literals(
-              NegatedRef(helper->VariableEnforcementLiteral(time_i)));
+        if (is_optional(i)) {
+          bool_or->add_literals(NegatedRef(reservoir.actives(i)));
         }
-        if (helper->VariableIsOptional(time_j)) {
-          bool_or->add_literals(
-              NegatedRef(helper->VariableEnforcementLiteral(time_j)));
+        if (is_optional(j)) {
+          bool_or->add_literals(NegatedRef(reservoir.actives(j)));
         }
       }
     }
@@ -164,7 +203,7 @@ void ExpandReservoir(ConstraintProto* ct, ExpansionHelper* helper) {
       for (int j = 0; j < num_variables; ++j) {
         if (i == j) continue;
         const int time_j = reservoir.times(j);
-        level->mutable_linear()->add_vars(FindOrDieNoPrint(
+        level->mutable_linear()->add_vars(gtl::FindOrDieNoPrint(
             helper->precedence_cache, std::make_pair(time_j, time_i)));
         level->mutable_linear()->add_coeffs(reservoir.demands(j));
       }
@@ -174,9 +213,8 @@ void ExpandReservoir(ConstraintProto* ct, ExpansionHelper* helper) {
           CapSub(reservoir.min_level(), demand_i));
       level->mutable_linear()->add_domain(
           CapSub(reservoir.max_level(), demand_i));
-      if (helper->VariableIsOptional(time_i)) {
-        level->add_enforcement_literal(
-            helper->VariableEnforcementLiteral(time_i));
+      if (is_optional(i)) {
+        level->add_enforcement_literal(reservoir.actives(i));
       }
     }
   } else {
@@ -185,11 +223,10 @@ void ExpandReservoir(ConstraintProto* ct, ExpansionHelper* helper) {
     int64 fixed_demand = 0;
     auto* const sum = expanded_proto.add_constraints()->mutable_linear();
     for (int i = 0; i < num_variables; ++i) {
-      const int time = reservoir.times(i);
       const int64 demand = reservoir.demands(i);
       if (demand == 0) continue;
-      if (helper->VariableIsOptional(time)) {
-        sum->add_vars(helper->VariableEnforcementLiteral(time));
+      if (is_optional(i)) {
+        sum->add_vars(reservoir.actives(i));
         sum->add_coeffs(demand);
       } else {
         fixed_demand += demand;
@@ -207,7 +244,7 @@ void ExpandReservoir(ConstraintProto* ct, ExpansionHelper* helper) {
     for (int i = 0; i < num_variables; ++i) {
       const int time_i = reservoir.times(i);
       const int lesseq_0 = helper->AddBoolVar();
-      helper->AddReifiedLesssOrEqualThanZero(lesseq_0, time_i);
+      helper->AddReifiedLessOrEqualThanZero(lesseq_0, time_i, active(i));
       initial_ct->add_vars(lesseq_0);
       initial_ct->add_coeffs(reservoir.demands(i));
     }
@@ -217,6 +254,131 @@ void ExpandReservoir(ConstraintProto* ct, ExpansionHelper* helper) {
 
   ct->Clear();
   helper->statistics["kReservoir"]++;
+}
+
+void ExpandIntMod(ConstraintProto* ct, ExpansionHelper* helper) {
+  const IntegerArgumentProto& int_mod = ct->int_mod();
+  const IntegerVariableProto& var_proto =
+      helper->expanded_proto.variables(int_mod.vars(0));
+  const IntegerVariableProto& mod_proto =
+      helper->expanded_proto.variables(int_mod.vars(1));
+  const int target_var = int_mod.target();
+
+  const int64 mod_lb = mod_proto.domain(0);
+  CHECK_GE(mod_lb, 1);
+  const int64 mod_ub = mod_proto.domain(mod_proto.domain_size() - 1);
+
+  const int64 var_lb = var_proto.domain(0);
+  const int64 var_ub = var_proto.domain(var_proto.domain_size() - 1);
+
+  // Compute domains of var / mod_proto.
+  const int div_var = helper->AddIntVar(var_lb / mod_ub, var_ub / mod_lb);
+
+  auto add_enforcement_literal_if_needed = [&]() {
+    if (ct->enforcement_literal_size() == 0) return;
+    const int literal = ct->enforcement_literal(0);
+    ConstraintProto* const last = helper->expanded_proto.mutable_constraints(
+        helper->expanded_proto.constraints_size() - 1);
+    last->add_enforcement_literal(literal);
+  };
+
+  // div = var / mod.
+  IntegerArgumentProto* const div_proto =
+      helper->expanded_proto.add_constraints()->mutable_int_div();
+  div_proto->set_target(div_var);
+  div_proto->add_vars(int_mod.vars(0));
+  div_proto->add_vars(int_mod.vars(1));
+  add_enforcement_literal_if_needed();
+
+  // Checks if mod is constant.
+  if (mod_lb == mod_ub) {
+    // var - div_var * mod = target.
+    LinearConstraintProto* const lin =
+        helper->expanded_proto.add_constraints()->mutable_linear();
+    lin->add_vars(int_mod.vars(0));
+    lin->add_coeffs(1);
+    lin->add_vars(div_var);
+    lin->add_coeffs(-mod_lb);
+    lin->add_vars(target_var);
+    lin->add_coeffs(-1);
+    lin->add_domain(0);
+    lin->add_domain(0);
+    add_enforcement_literal_if_needed();
+  } else {
+    // Create prod_var = div_var * mod.
+    const int mod_var = int_mod.vars(1);
+    const int prod_var =
+        helper->AddIntVar(var_lb * mod_lb / mod_ub, var_ub * mod_ub / mod_lb);
+    IntegerArgumentProto* const int_prod =
+        helper->expanded_proto.add_constraints()->mutable_int_prod();
+    int_prod->set_target(prod_var);
+    int_prod->add_vars(div_var);
+    int_prod->add_vars(mod_var);
+    add_enforcement_literal_if_needed();
+
+    // var - prod_var = target.
+    LinearConstraintProto* const lin =
+        helper->expanded_proto.add_constraints()->mutable_linear();
+    lin->add_vars(int_mod.vars(0));
+    lin->add_coeffs(1);
+    lin->add_vars(prod_var);
+    lin->add_coeffs(-1);
+    lin->add_vars(target_var);
+    lin->add_coeffs(-1);
+    lin->add_domain(0);
+    lin->add_domain(0);
+    add_enforcement_literal_if_needed();
+  }
+
+  ct->Clear();
+  helper->statistics["kIntMod"]++;
+}
+
+void ExpandIntProdWithBoolean(int bool_ref, int int_ref, int product_ref,
+                              ExpansionHelper* helper) {
+  ConstraintProto* const one = helper->expanded_proto.add_constraints();
+  one->add_enforcement_literal(bool_ref);
+  one->mutable_linear()->add_vars(int_ref);
+  one->mutable_linear()->add_coeffs(1);
+  one->mutable_linear()->add_vars(product_ref);
+  one->mutable_linear()->add_coeffs(-1);
+  one->mutable_linear()->add_domain(0);
+  one->mutable_linear()->add_domain(0);
+
+  ConstraintProto* const zero = helper->expanded_proto.add_constraints();
+  zero->add_enforcement_literal(NegatedRef(bool_ref));
+  zero->mutable_linear()->add_vars(product_ref);
+  zero->mutable_linear()->add_coeffs(1);
+  zero->mutable_linear()->add_domain(0);
+  zero->mutable_linear()->add_domain(0);
+}
+
+void ExpandIntProd(ConstraintProto* ct, ExpansionHelper* helper) {
+  const IntegerArgumentProto& int_prod = ct->int_prod();
+  if (int_prod.vars_size() != 2) return;
+  const int a = int_prod.vars(0);
+  const int b = int_prod.vars(1);
+  const IntegerVariableProto& a_proto =
+      helper->expanded_proto.variables(PositiveRef(a));
+  const IntegerVariableProto& b_proto =
+      helper->expanded_proto.variables(PositiveRef(b));
+  const int p = int_prod.target();
+  const bool a_is_boolean = RefIsPositive(a) && a_proto.domain_size() == 2 &&
+                            a_proto.domain(0) == 0 && a_proto.domain(1) == 1;
+  const bool b_is_boolean = RefIsPositive(b) && b_proto.domain_size() == 2 &&
+                            b_proto.domain(0) == 0 && b_proto.domain(1) == 1;
+
+  // We expand if exactly one of {a, b} is Boolean. If both are Boolean, it
+  // will be presolved into a better version.
+  if (a_is_boolean && !b_is_boolean) {
+    ExpandIntProdWithBoolean(a, b, p, helper);
+    ct->Clear();
+    helper->statistics["kIntProd"]++;
+  } else if (b_is_boolean && !a_is_boolean) {
+    ExpandIntProdWithBoolean(b, a, p, helper);
+    ct->Clear();
+    helper->statistics["kIntProd"]++;
+  }
 }
 
 }  // namespace
@@ -230,6 +392,12 @@ CpModelProto ExpandCpModel(const CpModelProto& initial_model) {
     switch (ct->constraint_case()) {
       case ConstraintProto::ConstraintCase::kReservoir:
         ExpandReservoir(ct, &helper);
+        break;
+      case ConstraintProto::ConstraintCase::kIntMod:
+        ExpandIntMod(ct, &helper);
+        break;
+      case ConstraintProto::ConstraintCase::kIntProd:
+        ExpandIntProd(ct, &helper);
         break;
       default:
         break;

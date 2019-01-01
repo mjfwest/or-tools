@@ -51,14 +51,13 @@
 #include <utility>
 #include <vector>
 
-#include "ortools/base/commandlineflags.h"
+#include "examples/cpp/fap_model_printer.h"
+#include "examples/cpp/fap_parser.h"
+#include "examples/cpp/fap_utilities.h"
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/map_util.h"
 #include "ortools/constraint_solver/constraint_solver.h"
-#include "examples/cpp/fap_model_printer.h"
-#include "examples/cpp/fap_parser.h"
-#include "examples/cpp/fap_utilities.h"
 
 DEFINE_string(directory, "", "Specifies the directory of the data.");
 DEFINE_string(value_evaluator, "",
@@ -194,8 +193,8 @@ class OrderingBuilder : public DecisionBuilder {
   Decision* Next(Solver* const s) override {
     if (iter_ < size_) {
       FapConstraint constraint = data_constraints_[iter_];
-      const int index1 = FindOrDie(index_from_key_, constraint.variable1);
-      const int index2 = FindOrDie(index_from_key_, constraint.variable2);
+      const int index1 = gtl::FindOrDie(index_from_key_, constraint.variable1);
+      const int index2 = gtl::FindOrDie(index_from_key_, constraint.variable2);
       IntVar* variable1 = variables_[index1];
       IntVar* variable2 = variables_[index2];
 
@@ -272,8 +271,8 @@ class OrderingBuilder : public DecisionBuilder {
   Order Hint(const FapConstraint& constraint) {
     const int id1 = constraint.variable1;
     const int id2 = constraint.variable2;
-    const int variable1 = FindOrDie(index_from_key_, id1);
-    const int variable2 = FindOrDie(index_from_key_, id2);
+    const int variable1 = gtl::FindOrDie(index_from_key_, id1);
+    const int variable2 = gtl::FindOrDie(index_from_key_, id2);
     const int value = constraint.value;
     CHECK_LT(variable1, variable_state_.size());
     CHECK_LT(variable2, variable_state_.size());
@@ -333,7 +332,7 @@ bool ConstraintImpactComparator(FapConstraint constraint1,
 int64 ValueEvaluator(
     std::unordered_map<int64, std::pair<int64, int64>>* value_evaluator_map,
     int64 variable_index, int64 value) {
-  CHECK_NOTNULL(value_evaluator_map);
+  CHECK(value_evaluator_map != nullptr);
   // Evaluate the choice. Smaller ranking denotes a better choice.
   int64 ranking = -1;
   for (const auto& it : *value_evaluator_map) {
@@ -361,7 +360,7 @@ int64 ValueEvaluator(
   }
   std::pair<int64, int64> new_value_ranking =
       std::make_pair(new_value, new_ranking);
-  InsertOrUpdate(value_evaluator_map, variable_index, new_value_ranking);
+  gtl::InsertOrUpdate(value_evaluator_map, variable_index, new_value_ranking);
 
   return new_ranking;
 }
@@ -372,7 +371,7 @@ int64 VariableEvaluator(const std::vector<int>& key_from_index,
                         const std::map<int, FapVariable>& data_variables,
                         int64 variable_index) {
   FapVariable variable =
-      FindOrDie(data_variables, key_from_index[variable_index]);
+      gtl::FindOrDie(data_variables, key_from_index[variable_index]);
   int64 result = -(variable.degree * 100 / variable.domain_size);
   return result;
 }
@@ -382,10 +381,10 @@ void CreateModelVariables(const std::map<int, FapVariable>& data_variables,
                           Solver* solver, std::vector<IntVar*>* model_variables,
                           std::map<int, int>* index_from_key,
                           std::vector<int>* key_from_index) {
-  CHECK_NOTNULL(solver);
-  CHECK_NOTNULL(model_variables);
-  CHECK_NOTNULL(index_from_key);
-  CHECK_NOTNULL(key_from_index);
+  CHECK(solver != nullptr);
+  CHECK(model_variables != nullptr);
+  CHECK(index_from_key != nullptr);
+  CHECK(key_from_index != nullptr);
 
   const int number_of_variables = static_cast<int>(data_variables.size());
   model_variables->resize(number_of_variables);
@@ -395,7 +394,7 @@ void CreateModelVariables(const std::map<int, FapVariable>& data_variables,
   for (const auto& it : data_variables) {
     CHECK_LT(index, model_variables->size());
     (*model_variables)[index] = solver->MakeIntVar(it.second.domain);
-    InsertOrUpdate(index_from_key, it.first, index);
+    gtl::InsertOrUpdate(index_from_key, it.first, index);
     (*key_from_index)[index] = it.first;
 
     if ((it.second.initial_position != -1) && (it.second.hard)) {
@@ -412,11 +411,11 @@ void CreateModelConstraints(const std::vector<FapConstraint>& data_constraints,
                             const std::vector<IntVar*>& variables,
                             const std::map<int, int>& index_from_key,
                             Solver* solver) {
-  CHECK_NOTNULL(solver);
+  CHECK(solver != nullptr);
 
   for (const FapConstraint& ct : data_constraints) {
-    const int index1 = FindOrDie(index_from_key, ct.variable1);
-    const int index2 = FindOrDie(index_from_key, ct.variable2);
+    const int index1 = gtl::FindOrDie(index_from_key, ct.variable1);
+    const int index2 = gtl::FindOrDie(index_from_key, ct.variable2);
     CHECK_LT(index1, variables.size());
     CHECK_LT(index2, variables.size());
     IntVar* var1 = variables[index1];
@@ -438,7 +437,7 @@ void CreateModelConstraints(const std::vector<FapConstraint>& data_constraints,
 // According to the value of a command line flag, chooses the strategy which
 // determines the selection of the variable to be assigned next.
 void ChooseVariableStrategy(Solver::IntVarStrategy* variable_strategy) {
-  CHECK_NOTNULL(variable_strategy);
+  CHECK(variable_strategy != nullptr);
 
   switch (FLAGS_choose_next_variable_strategy) {
     case 1: {
@@ -476,8 +475,8 @@ void ChooseVariableStrategy(Solver::IntVarStrategy* variable_strategy) {
 // for the search of the Solver.
 void CreateAdditionalMonitors(OptimizeVar* const objective, Solver* solver,
                               std::vector<SearchMonitor*>* monitors) {
-  CHECK_NOTNULL(solver);
-  CHECK_NOTNULL(monitors);
+  CHECK(solver != nullptr);
+  CHECK(monitors != nullptr);
 
   // Search Log
   if (FLAGS_log_search) {
@@ -630,10 +629,10 @@ void SplitVariablesHardSoft(const std::map<int, FapVariable>& data_variables,
     if (it.second.initial_position != -1) {
       if (it.second.hard) {
         CHECK_LT(it.second.mobility_cost, 0);
-        InsertOrUpdate(hard_variables, it.first, it.second);
+        gtl::InsertOrUpdate(hard_variables, it.first, it.second);
       } else {
         CHECK_GE(it.second.mobility_cost, 0);
-        InsertOrUpdate(soft_variables, it.first, it.second);
+        gtl::InsertOrUpdate(soft_variables, it.first, it.second);
       }
     }
   }
@@ -662,7 +661,7 @@ void PenalizeVariablesViolation(
     const std::vector<IntVar*>& variables, std::vector<IntVar*>* cost,
     Solver* solver) {
   for (const auto& it : soft_variables) {
-    const int index = FindOrDie(index_from_key, it.first);
+    const int index = gtl::FindOrDie(index_from_key, it.first);
     CHECK_LT(index, variables.size());
     IntVar* const displaced = solver->MakeIsDifferentCstVar(
         variables[index], it.second.initial_position);
@@ -692,8 +691,8 @@ void PenalizeConstraintsViolation(
   }
 
   for (const FapConstraint& ct : soft_constraints) {
-    const int index1 = FindOrDie(index_from_key, ct.variable1);
-    const int index2 = FindOrDie(index_from_key, ct.variable2);
+    const int index1 = gtl::FindOrDie(index_from_key, ct.variable1);
+    const int index2 = gtl::FindOrDie(index_from_key, ct.variable2);
     CHECK_LT(index1, variables.size());
     CHECK_LT(index2, variables.size());
     IntVar* const absolute_difference =
@@ -854,7 +853,7 @@ void SolveProblem(const std::map<int, FapVariable>& variables,
 }  // namespace operations_research
 
 int main(int argc, char** argv) {
-  gflags::ParseCommandLineFlags( &argc, &argv, true);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   CHECK(!FLAGS_directory.empty()) << "Requires --directory=<directory name>";
 

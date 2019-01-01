@@ -25,7 +25,7 @@
 //
 // TODO(user): unit test all the APIs that are currently marked with 'no test'.
 
-%include ortools/base/base.i
+%include "ortools/base/base.i"
 
 %include "enums.swg"  // For native Java enum support.
 
@@ -133,6 +133,7 @@ import java.lang.reflect.*;
 %unignore operations_research::MPSolver::CBC_MIXED_INTEGER_PROGRAMMING;
 %unignore operations_research::MPSolver::GLPK_MIXED_INTEGER_PROGRAMMING;
 %unignore operations_research::MPSolver::BOP_INTEGER_PROGRAMMING;
+%unignore operations_research::MPSolver::SAT_INTEGER_PROGRAMMING;
 // These aren't unit tested, as they only run on machines with a Gurobi license.
 %unignore operations_research::MPSolver::GUROBI_LINEAR_PROGRAMMING;
 %unignore operations_research::MPSolver::GUROBI_MIXED_INTEGER_PROGRAMMING;
@@ -175,6 +176,7 @@ import java.lang.reflect.*;
 %rename (supportsProblemType) operations_research::MPSolver::SupportsProblemType;  // no test
 %rename (setSolverSpecificParametersAsString)
     operations_research::MPSolver::SetSolverSpecificParametersAsString;  // no test
+%rename (interruptSolve) operations_research::MPSolver::InterruptSolve;
 %rename (wallTime) operations_research::MPSolver::wall_time;
 %rename (clear) operations_research::MPSolver::Clear;  // no test
 %rename (numVariables) operations_research::MPSolver::NumVariables;
@@ -235,7 +237,6 @@ import java.lang.reflect.*;
 %rename (setOptimizationDirection) operations_research::MPObjective::SetOptimizationDirection;
 %rename (clear) operations_research::MPObjective::Clear;  // no test
 %rename (setOffset) operations_research::MPObjective::SetOffset;
-%rename (addOffset) operations_research::MPObjective::AddOffset;  // no test
 
 // MPObjective: reader API.
 %rename (value) operations_research::MPObjective::Value;
@@ -247,17 +248,52 @@ import java.lang.reflect.*;
 
 // MPSolverParameters API. For expert users only.
 // TODO(user): unit test all of it.
+
 %unignore operations_research::MPSolverParameters;  // no test
 %unignore operations_research::MPSolverParameters::MPSolverParameters;  // no test
+
+// Expose the MPSolverParameters::DoubleParam enum.
 %unignore operations_research::MPSolverParameters::DoubleParam;  // no test
 %unignore operations_research::MPSolverParameters::RELATIVE_MIP_GAP;  // no test
+%unignore operations_research::MPSolverParameters::PRIMAL_TOLERANCE;  // no test
+%unignore operations_research::MPSolverParameters::DUAL_TOLERANCE;  // no test
 %rename (getDoubleParam) operations_research::MPSolverParameters::GetDoubleParam;  // no test
 %rename (setDoubleParam) operations_research::MPSolverParameters::SetDoubleParam;  // no test
+%unignore operations_research::MPSolverParameters::kDefaultRelativeMipGap;  // no test
 %unignore operations_research::MPSolverParameters::kDefaultPrimalTolerance;  // no test
+%unignore operations_research::MPSolverParameters::kDefaultDualTolerance;  // no test
 
-// We want to ignore the CoeffMap class; but since it inherits from some
-// std::unordered_map<>, swig complains about an undefined base class. Silence it.
-%warnfilter(401) CoeffMap;
+// Expose the MPSolverParameters::IntegerParam enum.
+%unignore operations_research::MPSolverParameters::IntegerParam;  // no test
+%unignore operations_research::MPSolverParameters::PRESOLVE;  // no test
+%unignore operations_research::MPSolverParameters::LP_ALGORITHM;  // no test
+%unignore operations_research::MPSolverParameters::INCREMENTALITY;  // no test
+%unignore operations_research::MPSolverParameters::SCALING;  // no test
+%rename (getIntegerParam) operations_research::MPSolverParameters::GetIntegerParam;  // no test
+%rename (setIntegerParam) operations_research::MPSolverParameters::SetIntegerParam;  // no test
+
+// Expose the MPSolverParameters::PresolveValues enum.
+%unignore operations_research::MPSolverParameters::PresolveValues;  // no test
+%unignore operations_research::MPSolverParameters::PRESOLVE_OFF;  // no test
+%unignore operations_research::MPSolverParameters::PRESOLVE_ON;  // no test
+%unignore operations_research::MPSolverParameters::kDefaultPresolve;  // no test
+
+// Expose the MPSolverParameters::LpAlgorithmValues enum.
+%unignore operations_research::MPSolverParameters::LpAlgorithmValues;  // no test
+%unignore operations_research::MPSolverParameters::DUAL;  // no test
+%unignore operations_research::MPSolverParameters::PRIMAL;  // no test
+%unignore operations_research::MPSolverParameters::BARRIER;  // no test
+
+// Expose the MPSolverParameters::IncrementalityValues enum.
+%unignore operations_research::MPSolverParameters::IncrementalityValues;  // no test
+%unignore operations_research::MPSolverParameters::INCREMENTALITY_OFF;  // no test
+%unignore operations_research::MPSolverParameters::INCREMENTALITY_ON;  // no test
+%unignore operations_research::MPSolverParameters::kDefaultIncrementality;  // no test
+
+// Expose the MPSolverParameters::ScalingValues enum.
+%unignore operations_research::MPSolverParameters::ScalingValues;  // no test
+%unignore operations_research::MPSolverParameters::SCALING_OFF;  // no test
+%unignore operations_research::MPSolverParameters::SCALING_ON;  // no test
 
 %include "ortools/linear_solver/linear_solver.h"
 

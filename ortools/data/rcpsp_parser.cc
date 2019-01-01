@@ -13,12 +13,12 @@
 
 #include "ortools/data/rcpsp_parser.h"
 
-#include "ortools/base/strtoint.h"
+#include "ortools/base/filelineiter.h"
 #include "ortools/base/numbers.h"
 #include "ortools/base/split.h"
 #include "ortools/base/stringpiece_utils.h"
+#include "ortools/base/strtoint.h"
 #include "ortools/data/rcpsp.pb.h"
-#include "ortools/base/filelineiter.h"
 
 using ::absl::delimiter::AnyOf;
 
@@ -59,6 +59,10 @@ bool RcpspParser::ParseFile(const std::string& file_name) {
       return false;
     }
   }
+  VLOG(1) << "Read file: " << file_name << ", max = " << is_rcpsp_max
+          << ", patterson = " << is_patterson << ", with "
+          << rcpsp_.tasks_size() << " tasks, and " << rcpsp_.resources_size()
+          << " resources.";
   // Count the extra start and end tasks.
   return num_declared_tasks_ + 2 == rcpsp_.tasks_size() &&
          load_status_ == PARSING_FINISHED;

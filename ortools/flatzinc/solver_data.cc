@@ -55,7 +55,7 @@ std::vector<IntVar*> SolverData::GetOrCreateVariableArray(const Argument& arg) {
 }
 
 IntExpr* SolverData::Extract(IntegerVariable* var) {
-  IntExpr* result = FindPtrOrNull(extracted_map_, var);
+  IntExpr* result = gtl::FindPtrOrNull(extracted_map_, var);
   if (result != nullptr) {
     return result;
   }
@@ -77,7 +77,7 @@ IntExpr* SolverData::Extract(IntegerVariable* var) {
 }
 
 void SolverData::SetExtracted(IntegerVariable* fz_var, IntExpr* expr) {
-  CHECK(!ContainsKey(extracted_map_, fz_var));
+  CHECK(!gtl::ContainsKey(extracted_map_, fz_var));
   if (!expr->IsVar() && !fz_var->domain.is_interval) {
     FZVLOG << "  - lift to var" << FZENDL;
     expr = expr->Var();
@@ -96,7 +96,7 @@ void SolverData::StoreAllDifferent(std::vector<IntegerVariable*> diffs) {
 
 bool SolverData::IsAllDifferent(std::vector<IntegerVariable*> diffs) const {
   std::sort(diffs.begin(), diffs.end());
-  return ContainsKey(alldiffs_, diffs);
+  return gtl::ContainsKey(alldiffs_, diffs);
 }
 
 void SolverData::CreateSatPropagatorAndAddToSolver() {

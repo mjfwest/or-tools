@@ -11,33 +11,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include <algorithm>
-#include <unordered_map>
-#include <unordered_set>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <numeric>
 #include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "ortools/base/callback.h"
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
+#include "ortools/base/join.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
 #include "ortools/base/map_util.h"
-#include "ortools/base/hash.h"
+#include "ortools/base/random.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/graph/hamiltonian_path.h"
 #include "ortools/util/saturated_arithmetic.h"
-#include "ortools/base/random.h"
 
 DEFINE_int32(cp_local_search_sync_frequency, 16,
              "Frequency of checks for better solutions in the solution pool.");
@@ -587,7 +586,7 @@ void PathOperator::InitializePathStarts() {
         new_index = index;
       }
       for (int j = 0; j < base_nodes_.size(); ++j) {
-        if (base_paths_[j] == i && !ContainsKey(found_bases, j)) {
+        if (base_paths_[j] == i && !gtl::ContainsKey(found_bases, j)) {
           found_bases.insert(j);
           base_paths_[j] = new_index;
           // If the current position of the base node is a removed empty path,
@@ -1029,7 +1028,9 @@ class RelocateAndMakeActiveOperator : public BaseInactiveNodeToPathOperator {
            MakeActive(GetInactiveNode(), before_node_to_move);
   }
 
-  std::string DebugString() const override { return "RelocateAndMakeActiveOpertor"; }
+  std::string DebugString() const override {
+    return "RelocateAndMakeActiveOpertor";
+  }
 };
 
 // ----- MakeActiveAndRelocate -----
@@ -1144,7 +1145,9 @@ class MakeChainInactiveOperator : public PathOperator {
     return MakeChainInactive(BaseNode(0), BaseNode(1));
   }
 
-  std::string DebugString() const override { return "MakeChainInactiveOperator"; }
+  std::string DebugString() const override {
+    return "MakeChainInactiveOperator";
+  }
 
  protected:
   bool OnSamePathAsPreviousBase(int64 base_index) override {
@@ -1216,7 +1219,9 @@ class ExtendedSwapActiveOperator : public BaseInactiveNodeToPathOperator {
   ~ExtendedSwapActiveOperator() override {}
   bool MakeNeighbor() override;
 
-  std::string DebugString() const override { return "ExtendedSwapActiveOperator"; }
+  std::string DebugString() const override {
+    return "ExtendedSwapActiveOperator";
+  }
 };
 
 bool ExtendedSwapActiveOperator::MakeNeighbor() {
@@ -1376,7 +1381,7 @@ bool TSPLns::MakeNeighbor() {
   breaks_set.insert(base_node);
   while (breaks_set.size() < tsp_size_) {
     const int64 one_break = nodes[rand_.Uniform(nodes.size())];
-    if (!ContainsKey(breaks_set, one_break)) {
+    if (!gtl::ContainsKey(breaks_set, one_break)) {
       breaks_set.insert(one_break);
     }
   }
@@ -1392,7 +1397,7 @@ bool TSPLns::MakeNeighbor() {
   int64 node_path = Path(node);
   while (!IsPathEnd(node)) {
     int64 next = Next(node);
-    if (ContainsKey(breaks_set, node)) {
+    if (gtl::ContainsKey(breaks_set, node)) {
       breaks.push_back(node);
       meta_node_costs.push_back(cost);
       cost = 0;
@@ -1960,8 +1965,8 @@ LocalSearchOperator* MakeLocalSearchOperator(
 #define MAKE_LOCAL_SEARCH_OPERATOR(OperatorClass)                  \
   template <>                                                      \
   LocalSearchOperator* MakeLocalSearchOperator<OperatorClass>(     \
-      Solver * solver, const std::vector<IntVar*>& vars,                \
-      const std::vector<IntVar*>& secondary_vars,                       \
+      Solver * solver, const std::vector<IntVar*>& vars,           \
+      const std::vector<IntVar*>& secondary_vars,                  \
       std::function<int(int64)> start_empty_path_class) {          \
     return solver->RevAlloc(new OperatorClass(                     \
         vars, secondary_vars, std::move(start_empty_path_class))); \
@@ -2981,7 +2986,9 @@ class LocalSearchPhaseParameters : public BaseObject {
         limit_(limit),
         filters_(filters) {}
   ~LocalSearchPhaseParameters() override {}
-  std::string DebugString() const override { return "LocalSearchPhaseParameters"; }
+  std::string DebugString() const override {
+    return "LocalSearchPhaseParameters";
+  }
 
   SolutionPool* solution_pool() const { return solution_pool_; }
   LocalSearchOperator* ls_operator() const { return ls_operator_; }

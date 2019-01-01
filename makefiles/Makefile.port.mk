@@ -4,6 +4,9 @@ BACKSLASH_SPACE := $(empty)\ $(empty)
 
 # Let's discover something about where we run
 ifeq ($(OS),Windows_NT)
+OS = Windows
+endif
+ifeq ($(OS),Windows)
   SYSTEM = win
 else
   SYSTEM = unix
@@ -14,14 +17,13 @@ ifeq ($(SYSTEM),unix)
   OR_TOOLS_TOP ?= $(shell pwd)
   OS = $(shell uname -s)
   ifeq ($(UNIX_PYTHON_VER),)
-    DETECTED_PYTHON_VERSION := $(shell python -c "from sys import version_info as v; print (str(v[0]) + '.' + str(v[1]))")
+    ifeq ($(shell which python3),)
+      DETECTED_PYTHON_VERSION := $(shell python -c "from sys import version_info as v; print (str(v[0]) + '.' + str(v[1]))")
+    else
+      DETECTED_PYTHON_VERSION := $(shell python3 -c "from sys import version_info as v; print (str(v[0]) + '.' + str(v[1]))")
+    endif
   else
     DETECTED_PYTHON_VERSION := $(UNIX_PYTHON_VER)
-  endif
-  # Detect the .net core sdk folder
-  DOTNET_INSTALL_PATH = /usr/local/share/dotnet/sdk
-  ifneq ($(wildcard $(DOTNET_INSTALL_PATH)\dotnet.exe),)
-    DOTNET_INSTALL_PATH = \# DOTNET install path not found
   endif
 
   ifeq ($(OS),Linux)
@@ -37,17 +39,21 @@ ifeq ($(SYSTEM),unix)
       PTRLENGTH = 64
       GUROBI_PLATFORM=linux64
       CANDIDATE_JDK_ROOTS = \
-        /usr/local/buildtools/java/jdk-64 \
-        /usr/lib/jvm/java-1.7.0-openjdk.x86_64 \
-        /usr/lib/jvm/java-1.8.0-openjdk \
-        /usr/lib/jvm/java-1.7.0-openjdk \
-        /usr/lib64/jvm/java-1.6.0-openjdk-1.6.0 \
-        /usr/lib64/jvm/java-6-sun-1.6.0.26 \
-        /usr/lib/jvm/java-1.6.0-openjdk-1.6.0.0.x86_64 \
-        /usr/lib/jvm/java-6-openjdk-amd64 \
-        /usr/lib/jvm/java-7-openjdk-amd64 \
+        /usr/lib/jvm/default-java \
+        /usr/lib/jvm/java-11-openjdk-amd64 \
+        /usr/lib/jvm/java-1.11.0-openjdk-amd64 \
+        /usr/lib/jvm/java-9-openjdk-amd64 \
         /usr/lib/jvm/java-8-openjdk-amd64 \
-        /usr/lib/jvm/java-9-openjdk-amd64
+        /usr/lib/jvm/java-1.8.0-openjdk-amd64 \
+        /usr/lib/jvm/java-1.8.0-openjdk \
+        /usr/lib/jvm/java-7-openjdk-amd64 \
+        /usr/lib/jvm/java-1.7.0-openjdk.x86_64 \
+        /usr/lib/jvm/java-1.7.0-openjdk \
+        /usr/lib/jvm/java-6-openjdk-amd64 \
+        /usr/lib/jvm/java-1.6.0-openjdk-1.6.0.0.x86_64 \
+        /usr/lib64/jvm/java-6-sun-1.6.0.26 \
+        /usr/lib64/jvm/java-1.6.0-openjdk-1.6.0 \
+        /usr/local/buildtools/java/jdk-64
     else
       NETPLATFORM = x86
       PORT = $(DISTRIBUTION)-32bit
@@ -55,6 +61,9 @@ ifeq ($(SYSTEM),unix)
       GUROBI_PLATFORM=linux32
       CANDIDATE_JDK_ROOTS = \
         /usr/local/buildtools/java/jdk-32 \
+        /usr/lib/jvm/java-1.11.0-openjdk-i386 \
+        /usr/lib/jvm/java-1.9.0-openjdk-i386 \
+        /usr/lib/jvm/java-1.8.0-openjdk-i386 \
         /usr/lib/jvm/java-1.7.0-openjdk-i386 \
         /usr/lib/jvm/java-1.6.0-openjdk-1.6.0 \
         /usr/lib/jvm/java-6-sun-1.6.0.26 \
@@ -65,7 +74,7 @@ ifeq ($(SYSTEM),unix)
     endif
     JAVA_HOME ?= $(firstword $(wildcard $(CANDIDATE_JDK_ROOTS)))
   endif # ($(OS),Linux)
-  ifeq ($(OS),Darwin) # Assume Mac Os X
+  ifeq ($(OS),Darwin) # Assume Mac OS X
     PLATFORM = MACOSX
     OS_VERSION = $(shell sw_vers -productVersion)
     PORT = MacOsX-$(OS_VERSION)
@@ -80,29 +89,12 @@ ifeq ($(SYSTEM),unix)
     endif
     MAC_MIN_VERSION = 10.9
   endif # ($(OS),Darwin)
-
-  # Look at mono compiler.
-  REAL_MCS = $(shell which mcs)
-  MINIMUM_REQUIRED_MCS_VERSION = 4.2
-  ifneq ($(REAL_MCS),)
-    ifeq ($(PLATFORM),LINUX)
-      MCS_VERSION = $(shell $(REAL_MCS) --version | grep -P '\d\.\d' -o | head -1)
-    else # Mac OS X
-      MCS_VERSION = $(shell $(REAL_MCS) --Version | grep -E '\d\.\d' -o | head -1)
-    endif
-    ifneq ("$(MINIMUM_REQUIRED_MCS_VERSION)", "$(word 1,$(sort $(MINIMUM_REQUIRED_MCS_VERSION) $(MCS_VERSION)))")
-      DETECTED_MCS_BINARY := \\\# The detected mcs version is $(MCS_VERSION) \
-      while the minimum required version is $(MINIMUM_REQUIRED_MCS_VERSION).
-    else
-      DETECTED_MCS_BINARY := $(REAL_MCS)
-    endif
-  endif
 endif # ($(SYSTEM),unix)
 
 # Windows specific part.
 ifeq ($(SYSTEM),win)
   # Detect 32/64bit
-  ifeq ("$(Platform)", "X64")  # Visual Studio 2015/2017 64 bit
+  ifeq ("$(Platform)","X64")  # Visual Studio 2015/2017 64 bit
     PLATFORM = WIN64
     PTRLENGTH = 64
     CMAKE_SUFFIX = Win64
@@ -110,7 +102,7 @@ ifeq ($(SYSTEM),win)
     GLPK_PLATFORM = w64
     NETPLATFORM = x64
   else
-     ifeq ("$(Platform)", "x64")  # Visual studio 2013 64 bit
+     ifeq ("$(Platform)","x64")  # Visual studio 2013 64 bit
       PLATFORM = WIN64
       PTRLENGTH = 64
       CMAKE_SUFFIX = Win64
@@ -128,17 +120,17 @@ ifeq ($(SYSTEM),win)
   endif
 
   # Detect visual studio version
-  ifeq ("$(VisualStudioVersion)", "12.0")
+  ifeq ("$(VisualStudioVersion)","12.0")
     VISUAL_STUDIO_YEAR = 2013
     VISUAL_STUDIO_MAJOR = 12
     VS_RELEASE = v120
   else
-    ifeq ("$(VisualStudioVersion)", "14.0")
+    ifeq ("$(VisualStudioVersion)","14.0")
       VISUAL_STUDIO_YEAR = 2015
       VISUAL_STUDIO_MAJOR = 14
       VS_RELEASE = v140
     else
-      ifeq ("$(VisualStudioVersion)", "15.0")
+      ifeq ("$(VisualStudioVersion)","15.0")
         VISUAL_STUDIO_YEAR = 2017
         VISUAL_STUDIO_MAJOR = 15
         VS_RELEASE = v141
@@ -147,19 +139,10 @@ ifeq ($(SYSTEM),win)
       endif
     endif
   endif
-
-  # Detect the .net core sdk folder
-  DOTNET_INSTALL_PATH = $(ProgramW6432)\dotnet
-  ifneq ($(wildcard $(DOTNET_INSTALL_PATH)\dotnet.exe),)
-    DOTNET_INSTALL_PATH = \# DOTNET install path not found
-  endif
-
-  # Set common windows variables
-
   # OS Specific
   OS = Windows
   OR_TOOLS_TOP_AUX = $(shell cd)
-  OR_TOOLS_TOP = $(shell echo $(OR_TOOLS_TOP_AUX) | tools\\sed.exe -e "s/\\/\\\\/g" | tools\\sed.exe -e "s/ //g")
+  OR_TOOLS_TOP = $(shell echo $(OR_TOOLS_TOP_AUX) | tools\\win\\sed.exe -e "s/\\/\\\\/g" | tools\\win\\sed.exe -e "s/ //g")
   CODEPORT = OpSys-Windows
 
   # Compiler specific
@@ -198,18 +181,6 @@ ifeq ($(SYSTEM),win)
   ifneq ($(WINDOWS_PATH_TO_PYTHON),)
     WINDOWS_PYTHON_VERSION = $(shell "$(WINDOWS_PATH_TO_PYTHON)\python" -c "from sys import version_info as v; print (str(v[0]) + str(v[1]))")
   endif
-
-  #Detect csc
-  ifeq ($(PATH_TO_CSHARP_COMPILER),)
-    DETECTED_CSC_BINARY := $(shell tools\\which.exe csc 2>nul)
-    ifeq ($(DETECTED_CSC_BINARY),)
-      SELECTED_CSC_BINARY = PATH_TO_CSHARP_COMPILER =\# csc was not found. Set this variable to the path of csc to build the chsarp files. (ex: PATH_TO_CSHARP_COMPILER = C:\Program Files (x86)\MSBuild\14.0\Bin\amd64\csc.exe)
-    else
-      SELECTED_CSC_BINARY =\#PATH_TO_CSHARP_COMPILER = $(DETECTED_CSC_BINARY)
-    endif
-  else
-    SELECTED_CSC_BINARY = PATH_TO_CSHARP_COMPILER = $(PATH_TO_CSHARP_COMPILER)
-  endif
 endif # ($(SYSTEM),win)
 
 # Get github revision level
@@ -224,6 +195,7 @@ OR_TOOLS_VERSION := $(OR_TOOLS_MAJOR).$(OR_TOOLS_MINOR).$(GIT_REVISION)
 OR_TOOLS_SHORT_VERSION := $(OR_TOOLS_MAJOR).$(OR_TOOLS_MINOR)
 INSTALL_DIR = or-tools_$(PORT)_v$(OR_TOOLS_VERSION)
 FZ_INSTALL_DIR = or-tools_flatzinc_$(PORT)_v$(OR_TOOLS_VERSION)
+DATA_INSTALL_DIR = or-tools_data_v$(OR_TOOLS_VERSION)
 
 .PHONY: detect_port # Show variables used to build OR-Tools.
 detect_port:

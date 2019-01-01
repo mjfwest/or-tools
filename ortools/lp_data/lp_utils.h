@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // Basic utility functions on Fractional or row/column of Fractional.
 
 #ifndef OR_TOOLS_LP_DATA_LP_UTILS_H_
@@ -124,12 +123,27 @@ Fractional PreciseScalarProduct(const DenseRowOrColumn& u,
   return sum.Value();
 }
 
+// Computes a scalar product for entries with index not greater than max_index.
+template <class DenseRowOrColumn>
+Fractional PartialScalarProduct(const DenseRowOrColumn& u,
+                                const SparseColumn& v, int max_index) {
+  Fractional sum(0.0);
+  for (const SparseColumn::Entry e : v) {
+    if (e.row().value() >= max_index) {
+      return sum;
+    }
+    sum += u[typename DenseRowOrColumn::IndexType(e.row().value())] *
+           e.coefficient();
+  }
+  return sum;
+}
+
 // Returns the norm^2 (sum of the square of the entries) of the given column.
 // The precise version uses KahanSum and are about two times slower.
 Fractional SquaredNorm(const SparseColumn& v);
-Fractional SquaredNorm(const DenseColumn& v);
+Fractional SquaredNorm(const DenseColumn& column);
 Fractional PreciseSquaredNorm(const SparseColumn& v);
-Fractional PreciseSquaredNorm(const DenseColumn& v);
+Fractional PreciseSquaredNorm(const DenseColumn& column);
 Fractional PreciseSquaredNorm(const ScatteredColumn& v);
 
 // Returns the maximum of the |coefficients| of 'v'.

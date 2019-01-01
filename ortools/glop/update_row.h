@@ -114,6 +114,9 @@ class UpdateRow {
   // gives the value of the right inverse of 'a' on the 'leaving_row'.
   ScatteredRow unit_row_left_inverse_;
 
+  // The non-zeros of unit_row_left_inverse_ above the drop tolerance.
+  std::vector<ColIndex> unit_row_left_inverse_filtered_non_zeros_;
+
   // Holds the current update row data.
   // TODO(user): Introduce a ScatteredSparseRow class?
   ColIndexVector non_zero_position_list_;
@@ -121,8 +124,8 @@ class UpdateRow {
   DenseRow coefficient_;
 
   // Boolean used to avoid recomputing many times the same thing.
-  bool compute_unit_row_left_inverse_;
   bool compute_update_row_;
+  RowIndex update_row_computed_for_;
 
   // Statistics about this class.
   struct Stats : public StatsGroup {

@@ -15,6 +15,7 @@
 #define OR_TOOLS_UTIL_TIME_LIMIT_H_
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <limits>
 #include <memory>
@@ -26,9 +27,10 @@
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
+#include "ortools/base/memory.h"
 #include "ortools/base/port.h"
-#include "ortools/base/timer.h"
 #include "ortools/base/time_support.h"
+#include "ortools/base/timer.h"
 #include "ortools/util/running_stat.h"
 #ifdef HAS_PERF_SUBSYSTEM
 #include "exegesis/exegesis/itineraries/perf_subsystem.h"
@@ -69,13 +71,14 @@ namespace operations_research {
 // small, without aborting too early.
 //
 // The deterministic time limit can be logged at a more granular level: the
-// method TimeLimit::AdvanceDeterministicTime takes an optional std::string argument:
-// the name of a counter. In debug mode, the time limit object computes also the
-// elapsed time for each named counter separately, and these values can be used
-// to determine the coefficients for computing the deterministic duration from
-// the number of operations. The values of the counters can be printed using
-// TimeLimit::DebugString(). There is no API to access the values of the
-// counters directly, because they do not exist in optimized mode.
+// method TimeLimit::AdvanceDeterministicTime takes an optional std::string
+// argument: the name of a counter. In debug mode, the time limit object
+// computes also the elapsed time for each named counter separately, and these
+// values can be used to determine the coefficients for computing the
+// deterministic duration from the number of operations. The values of the
+// counters can be printed using TimeLimit::DebugString(). There is no API to
+// access the values of the counters directly, because they do not exist in
+// optimized mode.
 //
 // The basic steps for determining coefficients for the deterministic time are:
 // 1. Run the code in debug mode to collect the values of the deterministic time
@@ -121,18 +124,18 @@ class TimeLimit {
   // Creates a time limit object that uses infinite time for wall time,
   // deterministic time and instruction count limit.
   static std::unique_ptr<TimeLimit> Infinite() {
-    return std::unique_ptr<TimeLimit>(
-        new TimeLimit(std::numeric_limits<double>::infinity(),
-                      std::numeric_limits<double>::infinity(),
-                      std::numeric_limits<double>::infinity()));
+    return absl::make_unique<TimeLimit>(
+        std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::infinity());
   }
 
   // Creates a time limit object that puts limit only on the deterministic time.
   static std::unique_ptr<TimeLimit> FromDeterministicTime(
       double deterministic_limit) {
-    return std::unique_ptr<TimeLimit>(new TimeLimit(
+    return absl::make_unique<TimeLimit>(
         std::numeric_limits<double>::infinity(), deterministic_limit,
-        std::numeric_limits<double>::infinity()));
+        std::numeric_limits<double>::infinity());
   }
 
   // Creates a time limit object initialized from an object that provides
@@ -143,9 +146,9 @@ class TimeLimit {
   template <typename Parameters>
   static std::unique_ptr<TimeLimit> FromParameters(
       const Parameters& parameters) {
-    return std::unique_ptr<TimeLimit>(new TimeLimit(
+    return absl::make_unique<TimeLimit>(
         parameters.max_time_in_seconds(), parameters.max_deterministic_time(),
-        std::numeric_limits<double>::infinity()));
+        std::numeric_limits<double>::infinity());
   }
 
   // Sets the instruction limit. We need this method since the static
@@ -239,8 +242,14 @@ class TimeLimit {
   // the check of the limit.
   //
   // Note that ResetLimitFromParameters() will set this Boolean to false.
-  void RegisterExternalBooleanAsLimit(bool* external_boolean_as_limit) {
+  void RegisterExternalBooleanAsLimit(
+      std::atomic<bool>* external_boolean_as_limit) {
     external_boolean_as_limit_ = external_boolean_as_limit;
+  }
+
+  // Returns the current external Boolean limit.
+  std::atomic<bool>* ExternalBooleanAsLimit() const {
+    return external_boolean_as_limit_;
   }
 
   // Sets new time limits. Note that this do not reset the running max nor
@@ -273,7 +282,7 @@ class TimeLimit {
   double deterministic_limit_;
   double elapsed_deterministic_time_;
 
-  bool* external_boolean_as_limit_;
+  std::atomic<bool>* external_boolean_as_limit_;
 
 #ifdef HAS_PERF_SUBSYSTEM
   // PMU counter to help count the instructions.
@@ -334,9 +343,9 @@ class NestedTimeLimit {
   template <typename Parameters>
   static std::unique_ptr<NestedTimeLimit> FromBaseTimeLimitAndParameters(
       TimeLimit* time_limit, const Parameters& parameters) {
-    return std::unique_ptr<NestedTimeLimit>(
-        new NestedTimeLimit(time_limit, parameters.max_time_in_seconds(),
-                            parameters.max_deterministic_time()));
+    return absl::make_unique<NestedTimeLimit>(
+        time_limit, parameters.max_time_in_seconds(),
+        parameters.max_deterministic_time());
   }
 
   // Returns a time limit object that represents the combination of the overall
@@ -351,7 +360,6 @@ class NestedTimeLimit {
 
   DISALLOW_COPY_AND_ASSIGN(NestedTimeLimit);
 };
-
 
 // ################## Implementations below #####################
 
@@ -409,7 +417,8 @@ inline double TimeLimit::ReadInstructionCounter() {
 }
 
 inline bool TimeLimit::LimitReached() {
-  if (external_boolean_as_limit_ != nullptr && *external_boolean_as_limit_) {
+  if (external_boolean_as_limit_ != nullptr &&
+      external_boolean_as_limit_->load()) {
     return true;
   }
 

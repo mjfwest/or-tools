@@ -11,21 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include <stddef.h>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-#include "ortools/base/integral_types.h"
-#include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
 #include "ortools/base/file.h"
-#include "ortools/base/recordio.h"
-#include "ortools/base/join.h"
-#include "ortools/base/join.h"
-#include "ortools/base/map_util.h"
 #include "ortools/base/hash.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/join.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/map_util.h"
+#include "ortools/base/recordio.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/assignment.pb.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 
@@ -383,19 +381,19 @@ void SequenceVarElement::SetUnperformed(const std::vector<int>& unperformed) {
 bool SequenceVarElement::CheckClassInvariants() {
   std::unordered_set<int> visited;
   for (const int forward_sequence : forward_sequence_) {
-    if (ContainsKey(visited, forward_sequence)) {
+    if (gtl::ContainsKey(visited, forward_sequence)) {
       return false;
     }
     visited.insert(forward_sequence);
   }
   for (const int backward_sequence : backward_sequence_) {
-    if (ContainsKey(visited, backward_sequence)) {
+    if (gtl::ContainsKey(visited, backward_sequence)) {
       return false;
     }
     visited.insert(backward_sequence);
   }
   for (const int unperformed : unperformed_) {
-    if (ContainsKey(visited, unperformed)) {
+    if (gtl::ContainsKey(visited, unperformed)) {
       return false;
     }
     visited.insert(unperformed);
@@ -455,7 +453,7 @@ void IdToElementMap(AssignmentContainer<V, E>* container,
     if (name.empty()) {
       LOG(INFO) << "Cannot save/load variables with empty name"
                 << "; variable will be ignored";
-    } else if (ContainsKey(*id_to_element_map, name)) {
+    } else if (gtl::ContainsKey(*id_to_element_map, name)) {
       LOG(INFO) << "Cannot save/load variables with duplicate names: " << name
                 << "; variable will be ignored";
     } else {
@@ -470,7 +468,7 @@ void LoadElement(const std::unordered_map<std::string, E*>& id_to_element_map,
   const std::string& var_id = proto.var_id();
   CHECK(!var_id.empty());
   E* element = nullptr;
-  if (FindCopy(id_to_element_map, var_id, &element)) {
+  if (gtl::FindCopy(id_to_element_map, var_id, &element)) {
     element->LoadFromProto(proto);
   } else {
     LOG(INFO) << "Variable " << var_id
@@ -505,7 +503,7 @@ template <class Var, class Element, class Proto, class Container>
 void RealLoad(const AssignmentProto& assignment_proto,
               Container* const container,
               int (AssignmentProto::*GetSize)() const,
-              const Proto& (AssignmentProto::*GetElem)(int) const) {
+              const Proto& (AssignmentProto::*GetElem)(int)const) {
   bool fast_load = (container->Size() == (assignment_proto.*GetSize)());
   for (int i = 0; fast_load && i < (assignment_proto.*GetSize)(); ++i) {
     Element* const element = container->MutableElement(i);
@@ -848,20 +846,20 @@ void Assignment::SetSequence(const SequenceVar* const var,
                              const std::vector<int>& forward_sequence,
                              const std::vector<int>& backward_sequence,
                              const std::vector<int>& unperformed) {
-  sequence_var_container_.MutableElement(var)
-      ->SetSequence(forward_sequence, backward_sequence, unperformed);
+  sequence_var_container_.MutableElement(var)->SetSequence(
+      forward_sequence, backward_sequence, unperformed);
 }
 
 void Assignment::SetForwardSequence(const SequenceVar* const var,
                                     const std::vector<int>& forward_sequence) {
-  sequence_var_container_.MutableElement(var)
-      ->SetForwardSequence(forward_sequence);
+  sequence_var_container_.MutableElement(var)->SetForwardSequence(
+      forward_sequence);
 }
 
 void Assignment::SetBackwardSequence(
     const SequenceVar* const var, const std::vector<int>& backward_sequence) {
-  sequence_var_container_.MutableElement(var)
-      ->SetBackwardSequence(backward_sequence);
+  sequence_var_container_.MutableElement(var)->SetBackwardSequence(
+      backward_sequence);
 }
 
 void Assignment::SetUnperformed(const SequenceVar* const var,

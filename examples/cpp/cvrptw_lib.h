@@ -18,8 +18,8 @@
 
 #include <memory>
 
-#include "ortools/constraint_solver/routing.h"
 #include "ortools/base/random.h"
+#include "ortools/constraint_solver/routing.h"
 
 namespace operations_research {
 
@@ -64,7 +64,7 @@ class LocationContainer {
 
   MTRandom randomizer_;
   const int64 speed_;
-  ITIVector<operations_research::RoutingModel::NodeIndex, Location> locations_;
+  gtl::ITIVector<operations_research::RoutingModel::NodeIndex, Location> locations_;
 };
 
 // Random demand.

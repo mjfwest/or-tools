@@ -11,18 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <atomic>
+#include <fstream>
 #include <string>
 #include <vector>
-#include <fstream>
 
+#include "google/protobuf/text_format.h"
 #include "ortools/base/commandlineflags.h"
+#include "ortools/base/file.h"
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/file.h"
-#include "google/protobuf/text_format.h"
 #include "ortools/base/port.h"
-#include "ortools/base/hash.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/bop/bop_parameters.pb.h"
 #include "ortools/bop/integral_solver.h"
 #include "ortools/linear_solver/linear_solver.h"
@@ -103,7 +104,8 @@ class BopInterface : public MPSolverInterface {
   void SetPresolveMode(int value) override;
   void SetScalingMode(int value) override;
   void SetLpAlgorithm(int value) override;
-  bool SetSolverSpecificParametersAsString(const std::string& parameters) override;
+  bool SetSolverSpecificParametersAsString(
+      const std::string& parameters) override;
 
  private:
   void NonIncrementalChange();
@@ -114,7 +116,7 @@ class BopInterface : public MPSolverInterface {
   std::vector<MPSolver::BasisStatus> row_status_;
   bop::BopParameters parameters_;
   double best_objective_bound_;
-  bool interrupt_solver_;
+  std::atomic<bool> interrupt_solver_;
 };
 
 BopInterface::BopInterface(MPSolver* const solver)
@@ -303,8 +305,7 @@ void BopInterface::ExtractNewVariables() {
   const glop::ColIndex num_cols(solver_->variables_.size());
   for (glop::ColIndex col(last_variable_index_); col < num_cols; ++col) {
     MPVariable* const var = solver_->variables_[col.value()];
-    const glop::ColIndex new_col =
-        linear_program_.FindOrCreateVariable(var->name());
+    const glop::ColIndex new_col = linear_program_.CreateNewVariable();
     DCHECK_EQ(new_col, col);
     set_variable_as_extracted(col.value(), true);
     linear_program_.SetVariableBounds(col, var->lb(), var->ub());
@@ -326,12 +327,11 @@ void BopInterface::ExtractNewConstraints() {
 
     const double lb = ct->lb();
     const double ub = ct->ub();
-    const glop::RowIndex new_row =
-        linear_program_.FindOrCreateConstraint(ct->name());
+    const glop::RowIndex new_row = linear_program_.CreateNewConstraint();
     DCHECK_EQ(new_row, row);
     linear_program_.SetConstraintBounds(row, lb, ub);
 
-    for (CoeffEntry entry : ct->coefficients_) {
+    for (const auto& entry : ct->coefficients_) {
       const int var_index = entry.first->index();
       DCHECK(variable_is_extracted(var_index));
       const glop::ColIndex col(var_index);
@@ -344,7 +344,7 @@ void BopInterface::ExtractNewConstraints() {
 // TODO(user): remove duplication with GlopInterface.
 void BopInterface::ExtractObjective() {
   linear_program_.SetObjectiveOffset(solver_->Objective().offset());
-  for (CoeffEntry entry : solver_->objective_->coefficients_) {
+  for (const auto& entry : solver_->objective_->coefficients_) {
     const int var_index = entry.first->index();
     const glop::ColIndex col(var_index);
     const double coeff = entry.second;
@@ -381,7 +381,8 @@ void BopInterface::SetPresolveMode(int value) {
 
 bool BopInterface::SetSolverSpecificParametersAsString(
     const std::string& parameters) {
-  const bool ok = google::protobuf::TextFormat::MergeFromString(parameters, &parameters_);
+  const bool ok =
+      google::protobuf::TextFormat::MergeFromString(parameters, &parameters_);
   bop_solver_.SetParameters(parameters_);
   return ok;
 }
@@ -395,7 +396,6 @@ void BopInterface::NonIncrementalChange() {
 MPSolverInterface* BuildBopInterface(MPSolver* const solver) {
   return new BopInterface(solver);
 }
-
 
 }  // namespace operations_research
 #endif  //  #if defined(USE_BOP)

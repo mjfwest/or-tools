@@ -86,7 +86,7 @@ class PortfolioOptimizer : public BopOptimizerBase {
   int64 state_update_stamp_;
   BopConstraintTerms objective_terms_;
   std::unique_ptr<OptimizerSelector> selector_;
-  ITIVector<OptimizerIndex, BopOptimizerBase*> optimizers_;
+  gtl::ITIVector<OptimizerIndex, BopOptimizerBase*> optimizers_;
   sat::SatSolver sat_propagator_;
   BopParameters parameters_;
   double lower_bound_;
@@ -99,9 +99,9 @@ class PortfolioOptimizer : public BopOptimizerBase {
 class OptimizerSelector {
  public:
   // Note that the list of optimizers is only used to get the names for
-  // debug purposes, the ownership of the optimizers is not transfered.
+  // debug purposes, the ownership of the optimizers is not transferred.
   explicit OptimizerSelector(
-      const ITIVector<OptimizerIndex, BopOptimizerBase*>& optimizers);
+      const gtl::ITIVector<OptimizerIndex, BopOptimizerBase*>& optimizers);
 
   // Selects the next optimizer to run based on the user defined order and
   // history of success. Returns kInvalidOptimizerIndex if no optimizer is
@@ -145,7 +145,7 @@ class OptimizerSelector {
   // TODO(user): Maybe we should simply have the notion of selectability here
   // and let the client handle the logic to decide what optimizer are selectable
   // or not.
-  void SetOptimizerRunnability(OptimizerIndex optimizer_index, bool runable);
+  void SetOptimizerRunnability(OptimizerIndex optimizer_index, bool runnable);
 
   // Returns statistics about the given optimizer.
   std::string PrintStats(OptimizerIndex optimizer_index) const;
@@ -193,7 +193,7 @@ class OptimizerSelector {
   };
 
   std::vector<RunInfo> run_infos_;
-  ITIVector<OptimizerIndex, int> info_positions_;
+  gtl::ITIVector<OptimizerIndex, int> info_positions_;
   int selected_index_;
 };
 

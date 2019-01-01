@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "ortools/base/mutex.h"
 #include "ortools/sat/boolean_problem.h"
 
 namespace operations_research {
@@ -25,8 +26,7 @@ namespace bop {
 using ::operations_research::LinearBooleanProblem;
 
 BopOptimizerBase::BopOptimizerBase(const std::string& name)
-    : name_(name),
-      stats_(name) {
+    : name_(name), stats_(name) {
   SCOPED_TIME_STAT(&stats_);
 }
 

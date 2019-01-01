@@ -13,39 +13,14 @@
 
 #include "ortools/sat/util.h"
 
-#if !defined(__PORTABLE_PLATFORM__)
-#include "google/protobuf/descriptor.h"
-#endif  // __PORTABLE_PLATFORM__
-
 namespace operations_research {
 namespace sat {
-
-void RandomizeDecisionHeuristic(MTRandom* random, SatParameters* parameters) {
-#if !defined(__PORTABLE_PLATFORM__)
-  // Random preferred variable order.
-  const google::protobuf::EnumDescriptor* order_d =
-      SatParameters::VariableOrder_descriptor();
-  parameters->set_preferred_variable_order(
-      static_cast<SatParameters::VariableOrder>(
-          order_d->value(random->Uniform(order_d->value_count()))->number()));
-
-  // Random polarity initial value.
-  const google::protobuf::EnumDescriptor* polarity_d =
-      SatParameters::Polarity_descriptor();
-  parameters->set_initial_polarity(static_cast<SatParameters::Polarity>(
-      polarity_d->value(random->Uniform(polarity_d->value_count()))->number()));
-#endif  // __PORTABLE_PLATFORM__
-  // Other random parameters.
-  parameters->set_use_phase_saving(random->OneIn(2));
-  parameters->set_random_polarity_ratio(random->OneIn(2) ? 0.01 : 0.0);
-  parameters->set_random_branches_ratio(random->OneIn(2) ? 0.01 : 0.0);
-}
 
 int MoveOneUnprocessedLiteralLast(const std::set<LiteralIndex>& processed,
                                   int relevant_prefix_size,
                                   std::vector<Literal>* literals) {
   if (literals->empty()) return -1;
-  if (!ContainsKey(processed, literals->back().Index())) {
+  if (!gtl::ContainsKey(processed, literals->back().Index())) {
     return std::min<int>(relevant_prefix_size, literals->size());
   }
 
@@ -60,7 +35,7 @@ int MoveOneUnprocessedLiteralLast(const std::set<LiteralIndex>& processed,
   int num_not_processed = 0;
   int target_prefix_size = literals->size() - 1;
   for (int i = literals->size() - 1; i >= 0; i--) {
-    if (ContainsKey(processed, (*literals)[i].Index())) {
+    if (gtl::ContainsKey(processed, (*literals)[i].Index())) {
       ++num_processed;
     } else {
       ++num_not_processed;
@@ -73,9 +48,10 @@ int MoveOneUnprocessedLiteralLast(const std::set<LiteralIndex>& processed,
 
   // Once a prefix size has been decided, it is always better to
   // enqueue the literal already processed first.
-  std::stable_partition(
-      literals->begin() + target_prefix_size, literals->end(),
-      [&processed](Literal l) { return ContainsKey(processed, l.Index()); });
+  std::stable_partition(literals->begin() + target_prefix_size, literals->end(),
+                        [&processed](Literal l) {
+                          return gtl::ContainsKey(processed, l.Index());
+                        });
   return target_prefix_size;
 }
 

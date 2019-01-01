@@ -24,17 +24,17 @@
 #include <set>
 #include <vector>
 
+#include "ortools/base/adjustable_priority_queue.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/macros.h"
 #include "ortools/base/span.h"
-#include "ortools/base/int_type.h"
-#include "ortools/base/int_type_indexed_vector.h"
-#include "ortools/sat/drat.h"
+#include "ortools/sat/drat_proof_handler.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/util/time_limit.h"
-#include "ortools/base/adjustable_priority_queue.h"
 
 namespace operations_research {
 namespace sat {
@@ -68,7 +68,8 @@ class SatPostsolver {
   //
   // This can be called more than once. But each call must refer to the current
   // variables set (after all the previous mapping have been applied).
-  void ApplyMapping(const ITIVector<BooleanVariable, BooleanVariable>& mapping);
+  void ApplyMapping(
+      const gtl::ITIVector<BooleanVariable, BooleanVariable>& mapping);
 
   // Extracts the current assignment of the given solver and postsolve it.
   //
@@ -109,7 +110,7 @@ class SatPostsolver {
   // All the added clauses will be mapped back to the initial variables using
   // this reverse mapping. This way, clauses_ and associated_literal_ are only
   // in term of the initial problem.
-  ITIVector<BooleanVariable, BooleanVariable> reverse_mapping_;
+  gtl::ITIVector<BooleanVariable, BooleanVariable> reverse_mapping_;
 
   // This will stores the fixed variables value and later the postsolved
   // assignment.
@@ -140,13 +141,13 @@ class SatPresolver {
   explicit SatPresolver(SatPostsolver* postsolver)
       : postsolver_(postsolver),
         num_trivial_clauses_(0),
-        drat_writer_(nullptr) {}
+        drat_proof_handler_(nullptr) {}
   void SetParameters(const SatParameters& params) { parameters_ = params; }
 
   // Registers a mapping to encode equivalent literals.
   // See ProbeAndFindEquivalentLiteral().
   void SetEquivalentLiteralMapping(
-      const ITIVector<LiteralIndex, LiteralIndex>& mapping) {
+      const gtl::ITIVector<LiteralIndex, LiteralIndex>& mapping) {
     equiv_mapping_ = mapping;
   }
 
@@ -181,7 +182,7 @@ class SatPresolver {
   // clause pointing to them. This return a mapping that maps this interval to
   // [0, new_size) such that now all variables are used. The unused variable
   // will be mapped to BooleanVariable(-1).
-  ITIVector<BooleanVariable, BooleanVariable> VariableMapping() const;
+  gtl::ITIVector<BooleanVariable, BooleanVariable> VariableMapping() const;
 
   // Loads the current presolved problem in to the given sat solver.
   // Note that the variables will be re-indexed according to the mapping given
@@ -208,7 +209,9 @@ class SatPresolver {
   // Visible for testing. Just applies the BVA step of the presolve.
   void PresolveWithBva();
 
-  void SetDratWriter(DratWriter* drat_writer) { drat_writer_ = drat_writer; }
+  void SetDratProofHandler(DratProofHandler* drat_proof_handler) {
+    drat_proof_handler_ = drat_proof_handler;
+  }
 
  private:
   // Internal function to add clauses generated during the presolve. The clause
@@ -271,14 +274,14 @@ class SatPresolver {
     BooleanVariable variable;
     double weight;
   };
-  ITIVector<BooleanVariable, PQElement> var_pq_elements_;
+  gtl::ITIVector<BooleanVariable, PQElement> var_pq_elements_;
   AdjustablePriorityQueue<PQElement> var_pq_;
 
   // Literal priority queue for BVA. The literals are ordered by descending
   // number of occurrences in clauses.
   void InitializeBvaPriorityQueue();
-  void UpdateBvaPriorityQueue(LiteralIndex var);
-  void AddToBvaPriorityQueue(LiteralIndex var);
+  void UpdateBvaPriorityQueue(LiteralIndex lit);
+  void AddToBvaPriorityQueue(LiteralIndex lit);
   struct BvaPqElement {
     BvaPqElement() : heap_index(-1), literal(-1), weight(0.0) {}
 
@@ -302,7 +305,7 @@ class SatPresolver {
   // Temporary data for SimpleBva().
   std::set<LiteralIndex> m_lit_;
   std::vector<ClauseIndex> m_cls_;
-  ITIVector<LiteralIndex, int> literal_to_p_size_;
+  gtl::ITIVector<LiteralIndex, int> literal_to_p_size_;
   std::vector<std::pair<LiteralIndex, ClauseIndex>> flattened_p_;
   std::vector<Literal> tmp_new_clause_;
 
@@ -317,21 +320,21 @@ class SatPresolver {
 
   // Occurrence list. For each literal, contains the ClauseIndex of the clause
   // that contains it (ordered by clause index).
-  ITIVector<LiteralIndex, std::vector<ClauseIndex>> literal_to_clauses_;
+  gtl::ITIVector<LiteralIndex, std::vector<ClauseIndex>> literal_to_clauses_;
 
   // Because we only lazily clean the occurrence list after clause deletions,
   // we keep the size of the occurrence list (without the deleted clause) here.
-  ITIVector<LiteralIndex, int> literal_to_clause_sizes_;
+  gtl::ITIVector<LiteralIndex, int> literal_to_clause_sizes_;
 
   // Used for postsolve.
   SatPostsolver* postsolver_;
 
   // Equivalent literal mapping.
-  ITIVector<LiteralIndex, LiteralIndex> equiv_mapping_;
+  gtl::ITIVector<LiteralIndex, LiteralIndex> equiv_mapping_;
 
   int num_trivial_clauses_;
   SatParameters parameters_;
-  DratWriter* drat_writer_;
+  DratProofHandler* drat_proof_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(SatPresolver);
 };
@@ -384,8 +387,9 @@ int ComputeResolvantSize(Literal x, const std::vector<Literal>& a,
 // only pure SAT problem, but the returned mapping do need to be applied to all
 // constraints.
 void ProbeAndFindEquivalentLiteral(
-    SatSolver* solver, SatPostsolver* postsolver, DratWriter* drat_writer,
-    ITIVector<LiteralIndex, LiteralIndex>* mapping);
+    SatSolver* solver, SatPostsolver* postsolver,
+    DratProofHandler* drat_proof_handler,
+    gtl::ITIVector<LiteralIndex, LiteralIndex>* mapping);
 
 // Given a 'solver' with a problem already loaded, this will try to simplify the
 // problem (i.e. presolve it) before calling solver->Solve(). In the process,
@@ -400,7 +404,7 @@ void ProbeAndFindEquivalentLiteral(
 SatSolver::Status SolveWithPresolve(
     std::unique_ptr<SatSolver>* solver, TimeLimit* time_limit,
     std::vector<bool>* solution /* only filled if SAT */,
-    DratWriter* drat_writer /* can be nullptr */);
+    DratProofHandler* drat_proof_handler /* can be nullptr */);
 
 }  // namespace sat
 }  // namespace operations_research

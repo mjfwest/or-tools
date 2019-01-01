@@ -40,12 +40,12 @@
 
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
+#include "ortools/base/random.h"
+#include "ortools/base/split.h"
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/strtoint.h"
-#include "ortools/base/split.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
-#include "ortools/base/random.h"
 
 namespace operations_research {
 // ----- Exchange 2 intervals on a sequence variable -----
@@ -61,7 +61,7 @@ class SwapIntervals : public SequenceVarLocalSearchOperator {
   ~SwapIntervals() override {}
 
   bool MakeNextNeighbor(Assignment* delta, Assignment* deltadelta) override {
-    CHECK_NOTNULL(delta);
+    CHECK(delta != nullptr);
     while (true) {
       RevertChanges(true);
       if (!Increment()) {
@@ -123,7 +123,7 @@ class ShuffleIntervals : public SequenceVarLocalSearchOperator {
   ~ShuffleIntervals() override {}
 
   bool MakeNextNeighbor(Assignment* delta, Assignment* deltadelta) override {
-    CHECK_NOTNULL(delta);
+    CHECK(delta != nullptr);
     while (true) {
       RevertChanges(true);
       if (!Increment()) {
@@ -198,7 +198,7 @@ class SequenceLns : public SequenceVarLocalSearchOperator {
   ~SequenceLns() override {}
 
   bool MakeNextNeighbor(Assignment* delta, Assignment* deltadelta) override {
-    CHECK_NOTNULL(delta);
+    CHECK(delta != nullptr);
     while (true) {
       RevertChanges(true);
       if (random_.Uniform(2) == 0) {

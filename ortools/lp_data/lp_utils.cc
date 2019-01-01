@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "ortools/lp_data/lp_utils.h"
 
 namespace operations_research {
@@ -112,11 +111,11 @@ void RemoveNearZeroEntries(Fractional threshold, DenseColumn* column) {
 }
 
 Fractional RestrictedInfinityNorm(const SparseColumn& column,
-                                  const DenseBooleanColumn& row_to_consider,
+                                  const DenseBooleanColumn& rows_to_consider,
                                   RowIndex* row_index) {
   Fractional infinity_norm = 0.0;
   for (const SparseColumn::Entry e : column) {
-    if (row_to_consider[e.row()] && fabs(e.coefficient()) > infinity_norm) {
+    if (rows_to_consider[e.row()] && fabs(e.coefficient()) > infinity_norm) {
       infinity_norm = fabs(e.coefficient());
       *row_index = e.row();
     }

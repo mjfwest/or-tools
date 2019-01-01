@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include "ortools/glop/basis_representation.h"
 
 #include "ortools/base/stl_util.h"
@@ -139,7 +138,7 @@ EtaFactorization::EtaFactorization() : eta_matrix_() {}
 
 EtaFactorization::~EtaFactorization() { Clear(); }
 
-void EtaFactorization::Clear() { STLDeleteElements(&eta_matrix_); }
+void EtaFactorization::Clear() { gtl::STLDeleteElements(&eta_matrix_); }
 
 void EtaFactorization::Update(ColIndex entering_col,
                               RowIndex leaving_variable_row,
@@ -289,13 +288,17 @@ Status BasisFactorization::Update(ColIndex entering_col,
                                   const ScatteredColumn& direction) {
   if (num_updates_ < max_num_updates_) {
     SCOPED_TIME_STAT(&stats_);
+
+    // Note(user): in some rare case (to investigate!) MiddleProductFormUpdate()
+    // will trigger a full refactorization. Because of this, it is important to
+    // increment num_updates_ first as this counter is used by IsRefactorized().
+    ++num_updates_;
     if (use_middle_product_form_update_) {
       GLOP_RETURN_IF_ERROR(
           MiddleProductFormUpdate(entering_col, leaving_variable_row));
     } else {
       eta_factorization_.Update(entering_col, leaving_variable_row, direction);
     }
-    ++num_updates_;
     tau_computation_can_be_optimized_ = false;
     return Status::OK();
   }
@@ -449,8 +452,8 @@ void BasisFactorization::RightSolveForProblemColumn(ColIndex col,
   d->SortNonZerosIfNeeded();
 }
 
-Fractional BasisFactorization::RightSolveSquaredNorm(const SparseColumn& a)
-    const {
+Fractional BasisFactorization::RightSolveSquaredNorm(
+    const SparseColumn& a) const {
   SCOPED_TIME_STAT(&stats_);
   DCHECK(IsRefactorized());
   BumpDeterministicTimeForSolve(a.num_entries().value());
@@ -547,6 +550,14 @@ Fractional BasisFactorization::ComputeOneNormConditionNumber() const {
 Fractional BasisFactorization::ComputeInfinityNormConditionNumber() const {
   if (IsIdentityBasis()) return 1.0;
   return ComputeInfinityNorm() * ComputeInverseInfinityNorm();
+}
+
+Fractional BasisFactorization::ComputeInfinityNormConditionNumberUpperBound()
+    const {
+  if (IsIdentityBasis()) return 1.0;
+  BumpDeterministicTimeForSolve(matrix_.num_rows().value());
+  return ComputeInfinityNorm() *
+         lu_factorization_.ComputeInverseInfinityNormUpperBound();
 }
 
 double BasisFactorization::DeterministicTime() const {

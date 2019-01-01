@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // Set of integer tuples (fixed-size arrays, all of the same size) with
 // a basic API.
 // It supports several types of integer arrays transparently, with an
@@ -39,11 +38,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
 #include "ortools/base/map_util.h"
-#include "ortools/base/hash.h"
 
 namespace operations_research {
 // ----- Main IntTupleSet class -----
@@ -133,14 +132,14 @@ class IntTupleSet {
     int index;
     IntTupleSet::Data* data;
     IndexData(int i, IntTupleSet::Data* const d) : index(i), data(d) {}
-    static bool Compare(const IndexData& tuple1, const IndexData& tuple2);
+    static bool Compare(const IndexData& a, const IndexData& b);
   };
 
   struct IndexValue {
     int index;
     int64 value;
     IndexValue(int i, int64 v) : index(i), value(v) {}
-    static bool Compare(const IndexValue& tuple1, const IndexValue& tuple2);
+    static bool Compare(const IndexValue& a, const IndexValue& b);
   };
 
   mutable Data* data_;
@@ -200,9 +199,9 @@ bool IntTupleSet::Data::Contains(const std::vector<T>& candidate) const {
     return false;
   }
   const int64 fingerprint = Fingerprint(candidate);
-  if (ContainsKey(tuple_fprint_to_index_, fingerprint)) {
+  if (gtl::ContainsKey(tuple_fprint_to_index_, fingerprint)) {
     const std::vector<int>& indices =
-        FindOrDie(tuple_fprint_to_index_, fingerprint);
+        gtl::FindOrDie(tuple_fprint_to_index_, fingerprint);
     for (int i = 0; i < indices.size(); ++i) {
       const int tuple_index = indices[i];
       for (int j = 0; j < arity_; ++j) {
@@ -276,7 +275,7 @@ inline IntTupleSet::IntTupleSet(const IntTupleSet& set) : data_(set.data_) {
 }
 
 inline IntTupleSet::~IntTupleSet() {
-  CHECK_NOTNULL(data_);
+  CHECK(data_ != nullptr);
   if (data_->RemovedSharedOwner()) {
     delete data_;
   }

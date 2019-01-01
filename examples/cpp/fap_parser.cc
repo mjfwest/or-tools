@@ -18,13 +18,14 @@
 #include <string>
 #include <vector>
 #include "ortools/base/file.h"
-#include "ortools/base/split.h"
 #include "ortools/base/map_util.h"
+#include "ortools/base/split.h"
 
 namespace operations_research {
 
-void ParseFileByLines(const std::string& filename, std::vector<std::string>* lines) {
-  CHECK_NOTNULL(lines);
+void ParseFileByLines(const std::string& filename,
+                      std::vector<std::string>* lines) {
+  CHECK(lines != nullptr);
   std::string result;
   CHECK_OK(file::GetContents(filename, &result, file::Defaults()));
   *lines = absl::StrSplit(result, '\n', absl::SkipEmpty());
@@ -40,7 +41,8 @@ void VariableParser::Parse() {
   std::vector<std::string> lines;
   ParseFileByLines(filename_, &lines);
   for (const std::string& line : lines) {
-    std::vector<std::string> tokens = absl::StrSplit(line, ' ', absl::SkipEmpty());
+    std::vector<std::string> tokens =
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
     if (tokens.empty()) {
       continue;
     }
@@ -52,7 +54,7 @@ void VariableParser::Parse() {
       variable.initial_position = atoi32(tokens[2].c_str());
       variable.mobility_index = atoi32(tokens[3].c_str());
     }
-    InsertOrUpdate(&variables_, atoi32(tokens[0].c_str()), variable);
+    gtl::InsertOrUpdate(&variables_, atoi32(tokens[0].c_str()), variable);
   }
 }
 
@@ -66,7 +68,8 @@ void DomainParser::Parse() {
   std::vector<std::string> lines;
   ParseFileByLines(filename_, &lines);
   for (const std::string& line : lines) {
-    std::vector<std::string> tokens = absl::StrSplit(line, ' ', absl::SkipEmpty());
+    std::vector<std::string> tokens =
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
     if (tokens.empty()) {
       continue;
     }
@@ -81,7 +84,7 @@ void DomainParser::Parse() {
     }
 
     if (!domain.empty()) {
-      InsertOrUpdate(&domains_, key, domain);
+      gtl::InsertOrUpdate(&domains_, key, domain);
     }
   }
 }
@@ -96,7 +99,8 @@ void ConstraintParser::Parse() {
   std::vector<std::string> lines;
   ParseFileByLines(filename_, &lines);
   for (const std::string& line : lines) {
-    std::vector<std::string> tokens = absl::StrSplit(line, ' ', absl::SkipEmpty());
+    std::vector<std::string> tokens =
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
     if (tokens.empty()) {
       continue;
     }
@@ -142,11 +146,13 @@ void ParametersParser::Parse() {
   ParseFileByLines(filename_, &lines);
   for (const std::string& line : lines) {
     if (objective) {
-      largest_token = largest_token || (line.find("largest") != std::string::npos);
+      largest_token =
+          largest_token || (line.find("largest") != std::string::npos);
       value_token = value_token || (line.find("value") != std::string::npos);
       number_token = number_token || (line.find("number") != std::string::npos);
       values_token = values_token || (line.find("values") != std::string::npos);
-      coefficient = coefficient || (line.find("coefficient") != std::string::npos);
+      coefficient =
+          coefficient || (line.find("coefficient") != std::string::npos);
     }
 
     if (coefficient) {
@@ -193,8 +199,8 @@ void FindComponents(const std::vector<FapConstraint>& constraints,
   for (const FapConstraint& constraint : constraints) {
     const int variable_id1 = constraint.variable1;
     const int variable_id2 = constraint.variable2;
-    const FapVariable& variable1 = FindOrDie(variables, variable_id1);
-    const FapVariable& variable2 = FindOrDie(variables, variable_id2);
+    const FapVariable& variable1 = gtl::FindOrDie(variables, variable_id1);
+    const FapVariable& variable2 = gtl::FindOrDie(variables, variable_id2);
     CHECK_LT(variable_id1, in_component.size());
     CHECK_LT(variable_id2, in_component.size());
     if (in_component[variable_id1] < 0 && in_component[variable_id2] < 0) {
@@ -202,20 +208,20 @@ void FindComponents(const std::vector<FapConstraint>& constraints,
       // Create a new one.
       FapComponent component;
       const int component_index = constraint_index;
-      InsertOrUpdate(&(component.variables), variable_id1, variable1);
-      InsertOrUpdate(&(component.variables), variable_id2, variable2);
+      gtl::InsertOrUpdate(&(component.variables), variable_id1, variable1);
+      gtl::InsertOrUpdate(&(component.variables), variable_id2, variable2);
       in_component[variable_id1] = component_index;
       in_component[variable_id2] = component_index;
       component.constraints.push_back(constraint);
-      InsertOrUpdate(components, component_index, component);
+      gtl::InsertOrUpdate(components, component_index, component);
     } else if (in_component[variable_id1] >= 0 &&
                in_component[variable_id2] < 0) {
       // If variable1 belongs to an existing component, variable2 should
       // also be included in the same component.
       const int component_index = in_component[variable_id1];
-      CHECK(ContainsKey(*components, component_index));
-      InsertOrUpdate(&((*components)[component_index].variables), variable_id2,
-                     variable2);
+      CHECK(gtl::ContainsKey(*components, component_index));
+      gtl::InsertOrUpdate(&((*components)[component_index].variables),
+                          variable_id2, variable2);
       in_component[variable_id2] = component_index;
       (*components)[component_index].constraints.push_back(constraint);
     } else if (in_component[variable_id1] < 0 &&
@@ -223,9 +229,9 @@ void FindComponents(const std::vector<FapConstraint>& constraints,
       // If variable2 belongs to an existing component, variable1 should
       // also be included in the same component.
       const int component_index = in_component[variable_id2];
-      CHECK(ContainsKey(*components, component_index));
-      InsertOrUpdate(&((*components)[component_index].variables), variable_id1,
-                     variable1);
+      CHECK(gtl::ContainsKey(*components, component_index));
+      gtl::InsertOrUpdate(&((*components)[component_index].variables),
+                          variable_id1, variable1);
       in_component[variable_id1] = component_index;
       (*components)[component_index].constraints.push_back(constraint);
     } else {
@@ -236,28 +242,29 @@ void FindComponents(const std::vector<FapConstraint>& constraints,
           std::min(component_index1, component_index2);
       const int max_component_index =
           std::max(component_index1, component_index2);
-      CHECK(ContainsKey(*components, min_component_index));
-      CHECK(ContainsKey(*components, max_component_index));
+      CHECK(gtl::ContainsKey(*components, min_component_index));
+      CHECK(gtl::ContainsKey(*components, max_component_index));
       if (min_component_index != max_component_index) {
         // Update the component_index of maximum indexed component's variables.
         for (const auto& variable :
-                 (*components)[max_component_index].variables) {
+             (*components)[max_component_index].variables) {
           int variable_id = variable.first;
           in_component[variable_id] = min_component_index;
         }
         // Insert all the variables of the maximum indexed component to the
         // variables of the minimum indexed component.
-        ((*components)[min_component_index]).variables.insert(
-            ((*components)[max_component_index]).variables.begin(),
-            ((*components)[max_component_index]).variables.end());
+        ((*components)[min_component_index])
+            .variables.insert(
+                ((*components)[max_component_index]).variables.begin(),
+                ((*components)[max_component_index]).variables.end());
         // Insert all the constraints of the maximum indexed component to the
         // constraints of the minimum indexed component.
-        ((*components)[min_component_index]).constraints.insert(
-            ((*components)[min_component_index]).constraints.end(),
-            ((*components)[max_component_index]).constraints.begin(),
-            ((*components)[max_component_index]).constraints.end());
-        (*components)[min_component_index]
-            .constraints.push_back(constraint);
+        ((*components)[min_component_index])
+            .constraints.insert(
+                ((*components)[min_component_index]).constraints.end(),
+                ((*components)[max_component_index]).constraints.begin(),
+                ((*components)[max_component_index]).constraints.end());
+        (*components)[min_component_index].constraints.push_back(constraint);
         // Delete the maximum indexed component from the components set.
         components->erase(max_component_index);
       } else {
@@ -272,8 +279,10 @@ void FindComponents(const std::vector<FapConstraint>& constraints,
 int EvaluateConstraintImpact(const std::map<int, FapVariable>& variables,
                              const int max_weight_cost,
                              const FapConstraint constraint) {
-  const FapVariable& variable1 = FindOrDie(variables, constraint.variable1);
-  const FapVariable& variable2 = FindOrDie(variables, constraint.variable2);
+  const FapVariable& variable1 =
+      gtl::FindOrDie(variables, constraint.variable1);
+  const FapVariable& variable2 =
+      gtl::FindOrDie(variables, constraint.variable2);
   const int degree1 = variable1.degree;
   const int degree2 = variable2.degree;
   const int max_degree = std::max(degree1, degree2);
@@ -292,13 +301,13 @@ int EvaluateConstraintImpact(const std::map<int, FapVariable>& variables,
 
 void ParseInstance(const std::string& data_directory, bool find_components,
                    std::map<int, FapVariable>* variables,
-                   std::vector<FapConstraint>* constraints, std::string* objective,
-                   std::vector<int>* frequencies,
+                   std::vector<FapConstraint>* constraints,
+                   std::string* objective, std::vector<int>* frequencies,
                    std::unordered_map<int, FapComponent>* components) {
-  CHECK_NOTNULL(variables);
-  CHECK_NOTNULL(constraints);
-  CHECK_NOTNULL(objective);
-  CHECK_NOTNULL(frequencies);
+  CHECK(variables != nullptr);
+  CHECK(constraints != nullptr);
+  CHECK(objective != nullptr);
+  CHECK(frequencies != nullptr);
 
   // Parse the data files.
   VariableParser var(data_directory);
@@ -315,13 +324,12 @@ void ParseInstance(const std::string& data_directory, bool find_components,
 
   ParametersParser cst(data_directory);
   cst.Parse();
-  const int maximum_weight_cost =
-      *std::max_element((cst.constraint_weights()).begin(),
-                        (cst.constraint_weights()).end());
+  const int maximum_weight_cost = *std::max_element(
+      (cst.constraint_weights()).begin(), (cst.constraint_weights()).end());
 
   // Make the variables of the instance.
   for (auto& it : *variables) {
-    it.second.domain = FindOrDie(dom.domains(), it.second.domain_index);
+    it.second.domain = gtl::FindOrDie(dom.domains(), it.second.domain_index);
     it.second.domain_size = it.second.domain.size();
 
     if ((it.second.mobility_index == -1) || (it.second.mobility_index == 0)) {
@@ -347,12 +355,12 @@ void ParseInstance(const std::string& data_directory, bool find_components,
     ++((*variables)[ct.variable2]).degree;
   }
   // Make the available frequencies of the instance.
-  *frequencies = FindOrDie(dom.domains(), 0);
+  *frequencies = gtl::FindOrDie(dom.domains(), 0);
   // Make the objective of the instance.
   *objective = cst.objective();
 
   if (find_components) {
-    CHECK_NOTNULL(components);
+    CHECK(components != nullptr);
     FindComponents(*constraints, *variables, maximum_variable_id, components);
     // Evaluate each components's constraints impacts.
     for (auto& component : *components) {
@@ -363,8 +371,8 @@ void ParseInstance(const std::string& data_directory, bool find_components,
     }
   } else {
     for (FapConstraint& constraint : *constraints) {
-      constraint.impact = EvaluateConstraintImpact(
-          *variables, maximum_weight_cost, constraint);
+      constraint.impact =
+          EvaluateConstraintImpact(*variables, maximum_weight_cost, constraint);
     }
   }
 }

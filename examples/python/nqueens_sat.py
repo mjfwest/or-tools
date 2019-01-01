@@ -10,17 +10,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """OR-tools solution to the N-queens problem."""
 from __future__ import print_function
 import time
 import sys
 from ortools.sat.python import cp_model
 
+
 class NQueenSolutionPrinter(cp_model.CpSolverSolutionCallback):
   """Print intermediate solutions."""
 
   def __init__(self, queens):
+    cp_model.CpSolverSolutionCallback.__init__(self)
     self.__queens = queens
     self.__solution_count = 0
     self.__start_time = time.time()
@@ -28,10 +29,10 @@ class NQueenSolutionPrinter(cp_model.CpSolverSolutionCallback):
   def SolutionCount(self):
     return self.__solution_count
 
-  def NewSolution(self):
+  def OnSolutionCallback(self):
     current_time = time.time()
-    print('Solution %i, time = %f s' %
-          (self.__solution_count, current_time - self.__start_time))
+    print('Solution %i, time = %f s' % (self.__solution_count,
+                                        current_time - self.__start_time))
     self.__solution_count += 1
 
     all_queens = range(len(self.__queens))
@@ -39,9 +40,9 @@ class NQueenSolutionPrinter(cp_model.CpSolverSolutionCallback):
       for j in all_queens:
         if self.Value(self.__queens[j]) == i:
           # There is a queen in column j, row i.
-          print('Q', end = ' ')
+          print('Q', end=' ')
         else:
-          print('_', end = ' ')
+          print('_', end=' ')
       print()
     print()
 
@@ -51,8 +52,9 @@ def main(board_size):
   model = cp_model.CpModel()
   # Creates the variables.
   # The array index is the column, and the value is the row.
-  queens = [model.NewIntVar(0, board_size - 1, 'x%i' % i)
-            for i in range(board_size)]
+  queens = [
+      model.NewIntVar(0, board_size - 1, 'x%i' % i) for i in range(board_size)
+  ]
   # Creates the constraints.
 
   # All rows must be different.
@@ -89,7 +91,6 @@ def main(board_size):
 
 # By default, solve the 8x8 problem.
 board_size = 8
-
 
 if __name__ == '__main__':
   if len(sys.argv) > 1:

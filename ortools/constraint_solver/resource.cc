@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // This file contains implementations of several resource constraints.
 // The implemented constraints are:
 // * Disjunctive: forces a set of intervals to be non-overlapping
@@ -22,21 +21,20 @@
 // on a set of interval variables.
 
 #include <algorithm>
-#include <unordered_map>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
+#include "ortools/base/join.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
-#include "ortools/base/join.h"
-#include "ortools/base/stl_util.h"
 #include "ortools/base/mathutil.h"
+#include "ortools/base/stl_util.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/bitset.h"
@@ -446,7 +444,7 @@ class NotLast {
   NotLast(Solver* const solver, const std::vector<IntervalVar*>& intervals,
           bool mirror, bool strict);
 
-  ~NotLast() { STLDeleteElements(&by_start_min_); }
+  ~NotLast() { gtl::STLDeleteElements(&by_start_min_); }
 
   bool Propagate();
 
@@ -546,7 +544,9 @@ class EdgeFinderAndDetectablePrecedences {
   EdgeFinderAndDetectablePrecedences(Solver* const solver,
                                      const std::vector<IntervalVar*>& intervals,
                                      bool mirror, bool strict);
-  ~EdgeFinderAndDetectablePrecedences() { STLDeleteElements(&by_start_min_); }
+  ~EdgeFinderAndDetectablePrecedences() {
+    gtl::STLDeleteElements(&by_start_min_);
+  }
   int64 size() const { return by_start_min_.size(); }
   IntervalVar* interval(int index) { return by_start_min_[index]->interval; }
   void UpdateEst();
@@ -563,8 +563,8 @@ class EdgeFinderAndDetectablePrecedences {
   // use them must first sort them in the right order.
 
   // All of these vectors store the same set of objects. Therefore, at
-  // destruction time, STLDeleteElements should be called on only one of them.
-  // It does not matter which one.
+  // destruction time, gtl::STLDeleteElements should be called on only one of
+  // them. It does not matter which one.
 
   ThetaTree theta_tree_;
   std::vector<DisjunctiveTask*> by_end_min_;
@@ -1403,8 +1403,8 @@ class EdgeFinder : public Constraint {
         has_zero_demand_tasks_(true) {}
 
   ~EdgeFinder() override {
-    STLDeleteElements(&tasks_);
-    STLDeleteValues(&update_map_);
+    gtl::STLDeleteElements(&tasks_);
+    gtl::STLDeleteValues(&update_map_);
   }
 
   void Post() override {
@@ -1437,7 +1437,7 @@ class EdgeFinder : public Constraint {
 
  private:
   UpdatesForADemand* GetOrMakeUpdate(int64 demand_min) {
-    UpdatesForADemand* update = FindPtrOrNull(update_map_, demand_min);
+    UpdatesForADemand* update = gtl::FindPtrOrNull(update_map_, demand_min);
     if (update == nullptr) {
       update = new UpdatesForADemand(tasks_.size());
       update_map_[demand_min] = update;
@@ -1717,7 +1717,7 @@ class CumulativeTimeTable : public Constraint {
     profile_unique_time_.reserve(profile_max_size);
   }
 
-  ~CumulativeTimeTable() override { STLDeleteElements(&by_start_min_); }
+  ~CumulativeTimeTable() override { gtl::STLDeleteElements(&by_start_min_); }
 
   void InitialPropagate() override {
     BuildProfile();
@@ -1917,7 +1917,7 @@ class TimeTableSync : public Constraint {
     demands_.reserve(num_tasks_);
   }
 
-  ~TimeTableSync() override { STLDeleteElements(&tasks_); }
+  ~TimeTableSync() override { gtl::STLDeleteElements(&tasks_); }
 
   void InitialPropagate() override {
     // Reset data structures.
@@ -2364,7 +2364,8 @@ class VariableDemandCumulativeConstraint : public Constraint {
   VariableDemandCumulativeConstraint(Solver* const s,
                                      const std::vector<IntervalVar*>& intervals,
                                      const std::vector<IntVar*>& demands,
-                                     IntVar* const capacity, const std::string& name)
+                                     IntVar* const capacity,
+                                     const std::string& name)
       : Constraint(s),
         capacity_(capacity),
         intervals_(intervals),
@@ -2462,7 +2463,8 @@ class VariableDemandCumulativeConstraint : public Constraint {
       if (high_demand_intervals.size() >= 2) {
         // If there are less than 2 such intervals, the constraint would do
         // nothing
-        const std::string seq_name = absl::StrCat(name(), "-HighDemandSequence");
+        const std::string seq_name =
+            absl::StrCat(name(), "-HighDemandSequence");
         constraint = solver()->MakeStrictDisjunctiveConstraint(
             high_demand_intervals, seq_name);
       }
@@ -2607,7 +2609,8 @@ Constraint* Solver::MakeCumulative(const std::vector<IntervalVar*>& intervals,
 
 Constraint* Solver::MakeCumulative(const std::vector<IntervalVar*>& intervals,
                                    const std::vector<int64>& demands,
-                                   IntVar* const capacity, const std::string& name) {
+                                   IntVar* const capacity,
+                                   const std::string& name) {
   CHECK_EQ(intervals.size(), demands.size());
   for (int i = 0; i < intervals.size(); ++i) {
     CHECK_GE(demands[i], 0);
@@ -2618,7 +2621,8 @@ Constraint* Solver::MakeCumulative(const std::vector<IntervalVar*>& intervals,
 
 Constraint* Solver::MakeCumulative(const std::vector<IntervalVar*>& intervals,
                                    const std::vector<int>& demands,
-                                   IntVar* const capacity, const std::string& name) {
+                                   IntVar* const capacity,
+                                   const std::string& name) {
   return MakeCumulative(intervals, ToInt64Vector(demands), capacity, name);
 }
 
@@ -2644,7 +2648,8 @@ Constraint* Solver::MakeCumulative(const std::vector<IntervalVar*>& intervals,
 
 Constraint* Solver::MakeCumulative(const std::vector<IntervalVar*>& intervals,
                                    const std::vector<IntVar*>& demands,
-                                   IntVar* const capacity, const std::string& name) {
+                                   IntVar* const capacity,
+                                   const std::string& name) {
   CHECK_EQ(intervals.size(), demands.size());
   for (int i = 0; i < intervals.size(); ++i) {
     CHECK_GE(demands[i]->Min(), 0);

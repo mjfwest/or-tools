@@ -11,18 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <string>
 
-#include "ortools/base/integral_types.h"
-#include "ortools/base/logging.h"
-#include "ortools/base/stringprintf.h"
-#include "ortools/base/join.h"
-#include "ortools/base/join.h"
-#include "ortools/base/map_util.h"
 #include "ortools/base/hash.h"
+#include "ortools/base/integral_types.h"
+#include "ortools/base/join.h"
+#include "ortools/base/logging.h"
+#include "ortools/base/map_util.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/bitset.h"
@@ -438,7 +436,8 @@ class PrintModelVisitor : public ModelVisitor {
   }
 
   void VisitIntegerVariableArrayArgument(
-      const std::string& arg_name, const std::vector<IntVar*>& arguments) override {
+      const std::string& arg_name,
+      const std::vector<IntVar*>& arguments) override {
     LOG(INFO) << Spaces() << arg_name << ": [";
     Increase();
     for (int i = 0; i < arguments.size(); ++i) {
@@ -624,7 +623,8 @@ class ModelStatisticsVisitor : public ModelVisitor {
   }
 
   void VisitIntegerVariableArrayArgument(
-      const std::string& arg_name, const std::vector<IntVar*>& arguments) override {
+      const std::string& arg_name,
+      const std::vector<IntVar*>& arguments) override {
     for (int i = 0; i < arguments.size(); ++i) {
       VisitSubArgument(arguments[i]);
     }
@@ -666,7 +666,7 @@ class ModelStatisticsVisitor : public ModelVisitor {
   }
 
   bool AlreadyVisited(const BaseObject* const object) {
-    return ContainsKey(already_visited_, object);
+    return gtl::ContainsKey(already_visited_, object);
   }
 
   // T should derive from BaseObject
@@ -707,7 +707,8 @@ class ModelStatisticsVisitor : public ModelVisitor {
 
 class VariableDegreeVisitor : public ModelVisitor {
  public:
-  explicit VariableDegreeVisitor(std::unordered_map<const IntVar*, int>* const map)
+  explicit VariableDegreeVisitor(
+      std::unordered_map<const IntVar*, int>* const map)
       : map_(map) {}
 
   ~VariableDegreeVisitor() override {}
@@ -716,7 +717,7 @@ class VariableDegreeVisitor : public ModelVisitor {
   void VisitIntegerVariable(const IntVar* const variable,
                             IntExpr* const delegate) override {
     IntVar* const var = const_cast<IntVar*>(variable);
-    if (ContainsKey(*map_, var)) {
+    if (gtl::ContainsKey(*map_, var)) {
       (*map_)[var]++;
     }
     if (delegate) {
@@ -728,7 +729,7 @@ class VariableDegreeVisitor : public ModelVisitor {
                             const std::string& operation, int64 value,
                             IntVar* const delegate) override {
     IntVar* const var = const_cast<IntVar*>(variable);
-    if (ContainsKey(*map_, var)) {
+    if (gtl::ContainsKey(*map_, var)) {
       (*map_)[var]++;
     }
     VisitSubArgument(delegate);
@@ -755,7 +756,8 @@ class VariableDegreeVisitor : public ModelVisitor {
   }
 
   void VisitIntegerVariableArrayArgument(
-      const std::string& arg_name, const std::vector<IntVar*>& arguments) override {
+      const std::string& arg_name,
+      const std::vector<IntVar*>& arguments) override {
     for (int i = 0; i < arguments.size(); ++i) {
       VisitSubArgument(arguments[i]);
     }

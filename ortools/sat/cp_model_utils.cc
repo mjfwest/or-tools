@@ -13,6 +13,9 @@
 
 #include "ortools/sat/cp_model_utils.h"
 
+#include <unordered_set>
+#include "ortools/base/stl_util.h"
+
 namespace operations_research {
 namespace sat {
 
@@ -69,7 +72,7 @@ void AddReferencesUsedByConstraint(const ConstraintProto& ct,
       AddIndices(ct.element().vars(), &output->variables);
       break;
     case ConstraintProto::ConstraintCase::kCircuit:
-      AddIndices(ct.circuit().literals(), &output->variables);
+      AddIndices(ct.circuit().literals(), &output->literals);
       break;
     case ConstraintProto::ConstraintCase::kRoutes:
       AddIndices(ct.routes().literals(), &output->literals);
@@ -320,7 +323,8 @@ void ApplyToAllIntervalIndices(const std::function<void(int*)>& f,
 #undef APPLY_TO_SINGULAR_FIELD
 #undef APPLY_TO_REPEATED_FIELD
 
-std::string ConstraintCaseName(ConstraintProto::ConstraintCase constraint_case) {
+std::string ConstraintCaseName(
+    ConstraintProto::ConstraintCase constraint_case) {
   switch (constraint_case) {
     case ConstraintProto::ConstraintCase::kBoolOr:
       return "kBoolOr";
@@ -369,6 +373,24 @@ std::string ConstraintCaseName(ConstraintProto::ConstraintCase constraint_case) 
     case ConstraintProto::ConstraintCase::CONSTRAINT_NOT_SET:
       return "kEmpty";
   }
+}
+
+std::vector<int> UsedVariables(const ConstraintProto& ct) {
+  IndexReferences references;
+  AddReferencesUsedByConstraint(ct, &references);
+
+  std::vector<int> used_variables;
+  for (const int var : references.variables) {
+    used_variables.push_back(PositiveRef(var));
+  }
+  for (const int lit : references.literals) {
+    used_variables.push_back(PositiveRef(lit));
+  }
+  for (const int lit : ct.enforcement_literal()) {
+    used_variables.push_back(PositiveRef(lit));
+  }
+  gtl::STLSortAndRemoveDuplicates(&used_variables);
+  return used_variables;
 }
 
 }  // namespace sat

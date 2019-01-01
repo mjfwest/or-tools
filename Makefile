@@ -34,6 +34,15 @@ else
   endif
 endif
 
+# Delete all implicit rules to speed up makefile
+.SUFFIXES:
+# Remove some rules from gmake that .SUFFIXES does not remove.
+SUFFIXES =
+
+# Keep all intermediate files
+# ToDo: try to remove it later
+.SECONDARY:
+
 # Read version.
 include $(OR_ROOT)Version.txt
 
@@ -55,13 +64,8 @@ include $(OR_ROOT)makefiles/Makefile.third_party.$(SYSTEM).mk
 include $(OR_ROOT)makefiles/Makefile.cpp.mk
 include $(OR_ROOT)makefiles/Makefile.python.mk
 include $(OR_ROOT)makefiles/Makefile.java.mk
-include $(OR_ROOT)makefiles/Makefile.csharp.mk
-include $(OR_ROOT)makefiles/Makefile.fsharp.mk
+include $(OR_ROOT)makefiles/Makefile.dotnet.mk
 include $(OR_ROOT)makefiles/Makefile.archive.mk
-include $(OR_ROOT)makefiles/Makefile.install.mk
-
-# Include test
-include $(OR_ROOT)makefiles/Makefile.test.mk
 
 # Finally include user makefile if it exists
 -include $(OR_ROOT)Makefile.user
@@ -81,21 +85,25 @@ else
 endif
 
 .PHONY: help_all
-help_all: help_usage help_third_party help_cc help_python help_java help_csharp help_fsharp
+help_all: help_usage help_third_party help_cc help_python help_java help_dotnet help_archive
 
 .PHONY: build_all
-build_all: cc python java csharp fsharp
+build_all: cc python java dotnet
 	@echo Or-tools have been built for $(BUILT_LANGUAGES)
 
 .PHONY: test_all
-test_all: test_cc test_python test_java test_csharp test_fsharp
+test_all: test_cc test_python test_java test_dotnet
 	@echo Or-tools have been built and tested for $(BUILT_LANGUAGES)
 
 .PHONY: clean_all
-clean_all: clean_cc clean_python clean_java clean_csharp clean_compat clean_fsharp
+clean_all: clean_cc clean_python clean_java clean_dotnet clean_compat clean_archive
+	-$(DELREC) $(BIN_DIR)
+	-$(DELREC) $(LIB_DIR)
+	-$(DELREC) $(OBJ_DIR)
+	-$(DELREC) $(GEN_PATH)
 	@echo Or-tools have been cleaned for $(BUILT_LANGUAGES)
 
 .PHONY: detect_all
-detect_all: detect_port detect_cc detect_python detect_java detect_csharp detect_fsharp
+detect_all: detect_port detect_third_party detect_cc detect_python detect_java detect_dotnet detect_archive
 
 print-%  : ; @echo $* = $($*)

@@ -18,11 +18,12 @@
 #include <vector>
 
 #include "ortools/base/basictypes.h"
+#include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
-#include "ortools/base/int_type.h"
-#include "ortools/base/int_type_indexed_vector.h"
+#include "ortools/base/random.h"
 #include "ortools/bop/bop_base.h"
 #include "ortools/bop/bop_parameters.pb.h"
 #include "ortools/bop/bop_solution.h"
@@ -33,7 +34,6 @@
 #include "ortools/sat/sat_solver.h"
 #include "ortools/util/stats.h"
 #include "ortools/util/time_limit.h"
-#include "ortools/base/random.h"
 
 namespace operations_research {
 namespace bop {
@@ -174,7 +174,7 @@ class RelationGraphBasedNeighborhood : public NeighborhoodGenerator {
 
   // TODO(user): reuse by_variable_matrix_ from the LS? Note however than we
   // don't need the coefficients here.
-  ITIVector<VariableIndex, std::vector<ConstraintIndex>> columns_;
+  gtl::ITIVector<VariableIndex, std::vector<ConstraintIndex>> columns_;
   MTRandom* random_;
 };
 

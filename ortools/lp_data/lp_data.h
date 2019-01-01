@@ -25,17 +25,17 @@
 #define OR_TOOLS_LP_DATA_LP_DATA_H_
 
 #include <algorithm>  // for max
-#include <unordered_map>
-#include <unordered_set>
 #include <map>
 #include <string>  // for std::string
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>  // for vector
 
-#include "ortools/base/logging.h"  // for CHECK*
-#include "ortools/base/macros.h"   // for DISALLOW_COPY_AND_ASSIGN, NULL
+#include "ortools/base/hash.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
-#include "ortools/base/hash.h"
+#include "ortools/base/logging.h"  // for CHECK*
+#include "ortools/base/macros.h"   // for DISALLOW_COPY_AND_ASSIGN, NULL
 #include "ortools/glop/parameters.pb.h"
 #include "ortools/lp_data/lp_types.h"
 #include "ortools/lp_data/sparse.h"
@@ -82,7 +82,8 @@ class LinearProgram {
   // to create non-slack variables.
   ColIndex CreateNewSlackVariable(bool is_integer_slack_variable,
                                   Fractional lower_bound,
-                                  Fractional upper_bound, const std::string& name);
+                                  Fractional upper_bound,
+                                  const std::string& name);
 
   // Creates a new constraint and returns its index.
   // By default, the constraint bounds will be [0, 0].
@@ -261,6 +262,10 @@ class LinearProgram {
     return objective_scaling_factor_;
   }
 
+  // Checks if each variable respects its bounds, nothing else.
+  bool SolutionIsWithinVariableBounds(const DenseRow& solution,
+                                      Fractional absolute_tolerance) const;
+
   // Tests if the solution is LP-feasible within the given tolerance,
   // i.e., satisfies all linear constraints within the absolute tolerance level.
   // The solution does not need to satisfy the integer constraints.
@@ -276,6 +281,10 @@ class LinearProgram {
   // Tests if the solution is both LP-feasible and integer within the tolerance.
   bool SolutionIsMIPFeasible(const DenseRow& solution,
                              Fractional absolute_tolerance) const;
+
+  // Fills the value of the slack from the other variable values.
+  // This requires that the slack have been added.
+  void ComputeSlackVariableValues(DenseRow* solution) const;
 
   // Functions to translate the sum(solution * objective_coefficients()) to
   // the real objective of the problem and back. Note that these can also
@@ -297,9 +306,8 @@ class LinearProgram {
   // format var1 = X, var2 = Y, var3 = Z, ...
   std::string DumpSolution(const DenseRow& variable_values) const;
 
-
-  // Returns a comma-separated std::string of integers containing (in that order)
-  // num_constraints_, num_variables_in_file_, num_entries_,
+  // Returns a comma-separated std::string of integers containing (in that
+  // order) num_constraints_, num_variables_in_file_, num_entries_,
   // num_objective_non_zeros_, num_rhs_non_zeros_, num_less_than_constraints_,
   // num_greater_than_constraints_, num_equal_constraints_,
   // num_range_constraints_, num_non_negative_variables_, num_boxed_variables_,
@@ -307,8 +315,8 @@ class LinearProgram {
   // Very useful for reporting in the way used in journal articles.
   std::string GetProblemStats() const;
 
-  // Returns a std::string containing the same information as with GetProblemStats(),
-  // but in a much more human-readable form, for example:
+  // Returns a std::string containing the same information as with
+  // GetProblemStats(), but in a much more human-readable form, for example:
   //      Number of rows                               : 27
   //      Number of variables in file                  : 32
   //      Number of entries (non-zeros)                : 83
@@ -335,8 +343,8 @@ class LinearProgram {
   // moved to SparseMatrix.
   std::string GetNonZeroStats() const;
 
-  // Returns a std::string containing the same information as with GetNonZeroStats(),
-  // but in a much more human-readable form, for example:
+  // Returns a std::string containing the same information as with
+  // GetNonZeroStats(), but in a much more human-readable form, for example:
   //      Fill rate                                    : 9.61%
   //      Entries in row (Max / average / std, dev.)   : 9 / 3.07 / 1.94
   //      Entries in column (Max / average / std, dev.): 4 / 2.59 / 0.96
@@ -406,7 +414,7 @@ class LinearProgram {
   // compute the solution of a maximization problem given as an argument.
   //
   // TODO(user): Do not interpret as a minimization problem?
-  void PopulateFromDual(const LinearProgram& linear_program,
+  void PopulateFromDual(const LinearProgram& dual,
                         RowToColMapping* duplicated_rows);
 
   // Populates the calling object with the given LinearProgram.

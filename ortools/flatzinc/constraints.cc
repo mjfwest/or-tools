@@ -16,9 +16,9 @@
 #include <string>
 #include <unordered_set>
 
+#include "ortools/base/hash.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
-#include "ortools/base/hash.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/flatzinc/flatzinc_constraints.h"
@@ -48,7 +48,7 @@ void PostBooleanSumInRange(SatPropagator* sat, Solver* solver,
                            int64 range_min, int64 range_max) {
   // TODO(user): Use sat_solver::AddLinearConstraint()
   const int64 size = variables.size();
-  range_min = std::max(0LL, range_min);
+  range_min = std::max(int64{0}, range_min);
   range_max = std::min(size, range_max);
   int true_vars = 0;
   std::vector<IntVar*> alt;
@@ -96,7 +96,7 @@ void PostIsBooleanSumInRange(SatPropagator* sat, Solver* solver,
                              const std::vector<IntVar*>& variables,
                              int64 range_min, int64 range_max, IntVar* target) {
   const int64 size = variables.size();
-  range_min = std::max(0LL, range_min);
+  range_min = std::max(int64{0}, range_min);
   range_max = std::min(size, range_max);
   int true_vars = 0;
   int possible_vars = 0;
@@ -187,7 +187,9 @@ void ExtractAmong(fz::SolverData* data, fz::Constraint* ct) {
         tmp_sum.push_back(solver->MakeIsMemberVar(var, arg.values));
         break;
       }
-      default: { LOG(FATAL) << "Invalid constraint " << ct->DebugString(); }
+      default: {
+        LOG(FATAL) << "Invalid constraint " << ct->DebugString();
+      }
     }
   }
   if (ct->arguments[0].HasOneValue()) {
@@ -218,7 +220,7 @@ void ExtractArrayBoolAnd(fz::SolverData* data, fz::Constraint* ct) {
   const std::vector<IntVar*> tmp_vars =
       data->GetOrCreateVariableArray(ct->arguments[0]);
   for (IntVar* const to_add : tmp_vars) {
-    if (!ContainsKey(added, to_add) && to_add->Min() != 1) {
+    if (!gtl::ContainsKey(added, to_add) && to_add->Min() != 1) {
       variables.push_back(to_add);
       added.insert(to_add);
     }
@@ -271,7 +273,7 @@ void ExtractArrayBoolOr(fz::SolverData* data, fz::Constraint* ct) {
   const std::vector<IntVar*> tmp_vars =
       data->GetOrCreateVariableArray(ct->arguments[0]);
   for (IntVar* const to_add : tmp_vars) {
-    if (!ContainsKey(added, to_add) && to_add->Max() != 0) {
+    if (!gtl::ContainsKey(added, to_add) && to_add->Max() != 0) {
       variables.push_back(to_add);
       added.insert(to_add);
     }
@@ -380,7 +382,7 @@ void ExtractArrayIntElement(fz::SolverData* data, fz::Constraint* ct) {
   if (ct->arguments[0].type == fz::Argument::INT_VAR_REF) {
     IntExpr* const index = data->GetOrCreateExpression(ct->arguments[0]);
     const std::vector<int64>& values = ct->arguments[1].values;
-    const int64 imin = std::max(index->Min(), 1LL);
+    const int64 imin = std::max(index->Min(), int64{1});
     const int64 imax = std::min<int64>(index->Max(), values.size());
     IntVar* const shifted_index = solver->MakeSum(index, -imin)->Var();
     const int64 size = imax - imin + 1;
@@ -435,11 +437,33 @@ void ExtractArrayIntElement(fz::SolverData* data, fz::Constraint* ct) {
   }
 }
 
+void ExtractArrayIntElementNoOffset(fz::SolverData* data, fz::Constraint* ct) {
+  CHECK_EQ(1, ct->arguments[0].variables.size());
+  Solver* const solver = data->solver();
+  if (ct->arguments[0].type == fz::Argument::INT_VAR_REF) {
+    IntVar* const index = data->GetOrCreateExpression(ct->arguments[0])->Var();
+    const std::vector<int64>& values = ct->arguments[1].values;
+    if (ct->target_variable != nullptr) {
+      DCHECK_EQ(ct->arguments[2].Var(), ct->target_variable);
+      IntExpr* const target = solver->MakeElement(values, index);
+      FZVLOG << "  - creating " << ct->target_variable->DebugString()
+             << " := " << target->DebugString() << FZENDL;
+      data->SetExtracted(ct->target_variable, target);
+    } else {
+      IntVar* const target =
+          data->GetOrCreateExpression(ct->arguments[2])->Var();
+      Constraint* const constraint =
+          solver->MakeElementEquality(values, index, target);
+      AddConstraint(solver, ct, constraint);
+    }
+  }
+}
+
 void ExtractArrayVarIntElement(fz::SolverData* data, fz::Constraint* ct) {
   Solver* const solver = data->solver();
   IntExpr* const index = data->GetOrCreateExpression(ct->arguments[0]);
   const int64 array_size = ct->arguments[1].variables.size();
-  const int64 imin = std::max(index->Min(), 1LL);
+  const int64 imin = std::max(index->Min(), int64{1});
   const int64 imax = std::min(index->Max(), array_size);
   IntVar* const shifted_index = solver->MakeSum(index, -imin)->Var();
   const std::vector<IntVar*> vars =
@@ -1382,7 +1406,7 @@ void ExtractIntEqReif(fz::SolverData* data, fz::Constraint* ct) {
       IntExpr* const left = data->GetOrCreateExpression(ct->arguments[0]);
       IntExpr* const right = data->GetOrCreateExpression(ct->arguments[1]);
       IntVar* tmp_var = nullptr;
-      bool tmp_neg = 0;
+      bool tmp_neg = false;
       bool success = false;
       if (FLAGS_fz_use_sat && solver->IsBooleanVar(left, &tmp_var, &tmp_neg) &&
           solver->IsBooleanVar(right, &tmp_var, &tmp_neg)) {
@@ -1725,7 +1749,9 @@ void ParseShortIntLin(fz::SolverData* data, fz::Constraint* ct, IntExpr** left,
       }
       break;
     }
-    default: { LOG(FATAL) << "Too many terms in " << ct->DebugString(); }
+    default: {
+      LOG(FATAL) << "Too many terms in " << ct->DebugString();
+    }
   }
 }
 
@@ -1796,7 +1822,9 @@ bool ExtractLinAsShort(fz::SolverData* data, fz::Constraint* ct) {
         return true;
       }
     }
-    default: { return false; }
+    default: {
+      return false;
+    }
   }
 }
 
@@ -2149,8 +2177,9 @@ void ExtractIntLinNe(fz::SolverData* data, fz::Constraint* ct) {
     std::vector<int64> coeffs;
     int64 rhs = 0;
     ParseLongIntLin(data, ct, &vars, &coeffs, &rhs);
-    AddConstraint(solver, ct, solver->MakeNonEquality(
-                                  solver->MakeScalProd(vars, coeffs), rhs));
+    AddConstraint(
+        solver, ct,
+        solver->MakeNonEquality(solver->MakeScalProd(vars, coeffs), rhs));
   }
 }
 
@@ -2363,7 +2392,7 @@ void ExtractIntNeReif(fz::SolverData* data, fz::Constraint* ct) {
     } else {
       IntExpr* const right = data->GetOrCreateExpression(ct->arguments[1]);
       IntVar* tmp_var = nullptr;
-      bool tmp_neg = 0;
+      bool tmp_neg = false;
       bool success = false;
       if (FLAGS_fz_use_sat && solver->IsBooleanVar(left, &tmp_var, &tmp_neg) &&
           solver->IsBooleanVar(right, &tmp_var, &tmp_neg)) {
@@ -2671,7 +2700,9 @@ void ExtractRegular(fz::SolverData* data, fz::Constraint* ct) {
       final_states = ct->arguments[5].values;
       break;
     }
-    default: { LOG(FATAL) << "Wrong constraint " << ct->DebugString(); }
+    default: {
+      LOG(FATAL) << "Wrong constraint " << ct->DebugString();
+    }
   }
   Constraint* const constraint = solver->MakeTransitionConstraint(
       variables, tuples, initial_state, final_states);
@@ -2727,7 +2758,9 @@ void ExtractRegularNfa(fz::SolverData* data, fz::Constraint* ct) {
       final_states = ct->arguments[5].values;
       break;
     }
-    default: { LOG(FATAL) << "Wrong constraint " << ct->DebugString(); }
+    default: {
+      LOG(FATAL) << "Wrong constraint " << ct->DebugString();
+    }
   }
   Constraint* const constraint = solver->MakeTransitionConstraint(
       variables, tuples, initial_state, final_states);
@@ -2757,7 +2790,9 @@ void ExtractSetIn(fz::SolverData* data, fz::Constraint* ct) {
       AddConstraint(solver, ct, constraint);
       break;
     }
-    default: { LOG(FATAL) << "Invalid constraint " << ct->DebugString(); }
+    default: {
+      LOG(FATAL) << "Invalid constraint " << ct->DebugString();
+    }
   }
 }
 
@@ -2785,7 +2820,9 @@ void ExtractSetNotIn(fz::SolverData* data, fz::Constraint* ct) {
       AddConstraint(solver, ct, constraint);
       break;
     }
-    default: { LOG(FATAL) << "Invalid constraint " << ct->DebugString(); }
+    default: {
+      LOG(FATAL) << "Invalid constraint " << ct->DebugString();
+    }
   }
 }
 
@@ -2818,7 +2855,9 @@ void ExtractSetInReif(fz::SolverData* data, fz::Constraint* ct) {
       AddConstraint(solver, ct, constraint);
       break;
     }
-    default: { LOG(FATAL) << "Invalid constraint " << ct->DebugString(); }
+    default: {
+      LOG(FATAL) << "Invalid constraint " << ct->DebugString();
+    }
   }
 }
 
@@ -2930,6 +2969,8 @@ void ExtractConstraint(SolverData* data, Constraint* ct) {
     ExtractArrayBoolXor(data, ct);
   } else if (type == "array_int_element") {
     ExtractArrayIntElement(data, ct);
+  } else if (type == "array_int_element_no_offset") {
+    ExtractArrayIntElementNoOffset(data, ct);
   } else if (type == "array_var_bool_element") {
     ExtractArrayVarIntElement(data, ct);
   } else if (type == "array_var_int_element") {

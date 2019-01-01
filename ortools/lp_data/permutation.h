@@ -11,10 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #ifndef OR_TOOLS_LP_DATA_PERMUTATION_H_
 #define OR_TOOLS_LP_DATA_PERMUTATION_H_
 
+#include "ortools/base/random.h"
 #include "ortools/lp_data/lp_types.h"
 #include "ortools/util/return_macros.h"
 
@@ -85,7 +85,7 @@ class Permutation {
   int ComputeSignature() const;
 
  private:
-  ITIVector<IndexType, IndexType> perm_;
+  gtl::ITIVector<IndexType, IndexType> perm_;
 
   DISALLOW_COPY_AND_ASSIGN(Permutation);
 };
@@ -143,13 +143,13 @@ void Permutation<IndexType>::PopulateFromIdentity() {
 template <typename IndexType>
 void Permutation<IndexType>::PopulateRandomly() {
   PopulateFromIdentity();
-  std::random_shuffle(perm_.begin(), perm_.end());
+  std::shuffle(perm_.begin(), perm_.end());
 }
 
 template <typename IndexType>
 bool Permutation<IndexType>::Check() const {
   const size_t size = perm_.size();
-  ITIVector<IndexType, bool> visited(size, false);
+  gtl::ITIVector<IndexType, bool> visited(size, false);
   for (IndexType i(0); i < size; ++i) {
     if (perm_[i] < 0 || perm_[i] >= size) {
       return false;
@@ -167,7 +167,7 @@ bool Permutation<IndexType>::Check() const {
 template <typename IndexType>
 int Permutation<IndexType>::ComputeSignature() const {
   const size_t size = perm_.size();
-  ITIVector<IndexType, bool> visited(size);
+  gtl::ITIVector<IndexType, bool> visited(size);
   DCHECK(Check());
   int signature = 1;
   for (IndexType i(0); i < size; ++i) {
