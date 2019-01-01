@@ -25,6 +25,7 @@ MISSING_DIRECTORIES = \
 	objs/com/google/ortools \
 	objs/constraint_solver \
 	objs/flatzinc \
+	objs/data \
 	objs/glop \
 	objs/graph \
 	objs/linear_solver \
@@ -43,6 +44,7 @@ MISSING_DIRECTORIES = \
 	ortools/gen/ortools/algorithms \
 	ortools/gen/ortools/bop \
 	ortools/gen/ortools/constraint_solver \
+	ortools/gen/ortools/data \
 	ortools/gen/ortools/flatzinc \
 	ortools/gen/ortools/glop \
 	ortools/gen/ortools/graph \
@@ -81,6 +83,9 @@ objs/com/google/ortools:
 
 objs/constraint_solver:
 	$(MKDIR_P) objs$Sconstraint_solver
+
+objs/data:
+	$(MKDIR_P) objs$Sdata
 
 objs/flatzinc:
 	$(MKDIR_P) objs$Sflatzinc
@@ -138,6 +143,9 @@ ortools/gen/ortools/bop:
 
 ortools/gen/ortools/constraint_solver:
 	$(MKDIR_P) ortools$Sgen$Sortools$Sconstraint_solver
+
+ortools/gen/ortools/data:
+	$(MKDIR_P) ortools$Sgen$Sortools$Sdata
 
 ortools/gen/ortools/flatzinc:
 	$(MKDIR_P) ortools$Sgen$Sortools$Sflatzinc
@@ -326,7 +334,7 @@ dependencies/install/lib/protobuf.jar: dependencies/install/bin/protoc.exe
 	  ..\\..\\..\\install\\bin\\protoc --java_out=core/src/main/java -I../src \
 	  ../src/google/protobuf/descriptor.proto
 	cd dependencies\\sources\\protobuf-$(PROTOBUF_TAG)\\java\\core\\src\\main\\java && $(JAVAC_BIN) com\\google\\protobuf\\*java
-	cd dependencies\\sources\\protobuf-$(PROTOBUF_TAG)\\java\\core\\src\\main\\java && jar cvf ..\\..\\..\\..\\..\\..\\..\\install\\lib\\protobuf.jar com\\google\\protobuf\\*class
+	cd dependencies\\sources\\protobuf-$(PROTOBUF_TAG)\\java\\core\\src\\main\\java && $(JAR_BIN) cvf ..\\..\\..\\..\\..\\..\\..\\install\\lib\\protobuf.jar com\\google\\protobuf\\*class
 
 # TODO: TBD: Don't know if this is a ubiquitous issue across platforms...
 # Handle a couple of extraneous circumstances involving TortoiseSVN caching and .svn readonly attributes.

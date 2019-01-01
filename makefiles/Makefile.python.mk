@@ -7,7 +7,7 @@
 OR_TOOLS_PYTHONPATH = $(OR_ROOT_FULL)$(CPSEP)$(OR_ROOT_FULL)$Sdependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Spython
 
 ifeq ($(SYSTEM),win)
-  PYTHON_EXECUTABLE = $(WINDOWS_PATH_TO_PYTHON)$Spython.exe
+  PYTHON_EXECUTABLE = "$(WINDOWS_PATH_TO_PYTHON)$Spython.exe"
   SET_PYTHONPATH = @set PYTHONPATH=$(OR_TOOLS_PYTHONPATH) &&
 else #UNIX
   PYTHON_EXECUTABLE = $(shell which python$(UNIX_PYTHON_VER))
@@ -21,9 +21,10 @@ ifeq ($(shell $(PYTHON_EXECUTABLE) -c "from sys import version_info as v; print 
 endif
 
 # Main target
-CANONIC_PYTHON_EXECUTABLE = $(subst $(SPACE),$(BACKSLASH_SPACE),$(subst \,/,$(subst \\,/,$(PYTHON_EXECUTABLE))))
+CANONIC_PYTHON_EXECUTABLE = $(subst ",,$(subst $(SPACE),$(BACKSLASH_SPACE),$(subst \,/,$(subst \\,/,$(PYTHON_EXECUTABLE)))))
 ifeq ($(wildcard  $(CANONIC_PYTHON_EXECUTABLE)),)
 python:
+	@echo CANONIC_PYTHON_EXECUTABLE = $(CANONIC_PYTHON_EXECUTABLE)
 	@echo "The python executable was not set properly. Check Makefile.local for more information."
 test_python: python
 
@@ -309,8 +310,11 @@ python_examples_archive:
 	$(MKDIR) temp$Sortools_examples
 	$(MKDIR) temp$Sortools_examples$Sexamples
 	$(MKDIR) temp$Sortools_examples$Sexamples$Spython
+	$(MKDIR) temp$Sortools_examples$Sexamples$Snotebook
 	$(MKDIR) temp$Sortools_examples$Sexamples$Sdata
 	$(COPY) examples$Spython$S*.py temp$Sortools_examples$Sexamples$Spython
+	$(COPY) examples$Snotebook$S*.ipynb temp$Sortools_examples$Sexamples$Snotebook
+	$(COPY) examples$Snotebook$S*.md temp$Sortools_examples$Sexamples$Snotebook
 	$(COPY) tools$SREADME.examples.python temp$Sortools_examples$SREADME.txt
 	$(COPY) LICENSE-2.0.txt temp$Sortools_examples
 ifeq ($(SYSTEM),win)
@@ -421,5 +425,10 @@ endif
 	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && twine upload dist/*
 
 detect_python:
+	@echo PYTHON_VERSION = $(PYTHON_VERSION)
+	@echo PYTHON_EXECUTABLE = $(PYTHON_EXECUTABLE)
+	@echo PYTHON_INC = $(PYTHON_INC)
+	@echo PYTHON_LNK = $(PYTHON_LNK)
 	@echo PYTHON3 = $(PYTHON3)
 	@echo SWIG_PYTHON3_FLAG = $(SWIG_PYTHON3_FLAG)
+	@echo SET_PYTHONPATH = $(SET_PYTHONPATH)
