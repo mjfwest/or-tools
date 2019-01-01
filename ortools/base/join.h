@@ -21,6 +21,8 @@
 #include "ortools/base/integral_types.h"
 #include "ortools/base/string_view.h"
 
+namespace absl {
+
 // A buffer size large enough for all FastToBuffer functions.
 const int kFastToBufferSize = 32;
 
@@ -37,7 +39,7 @@ char* NumToBuffer(T i, char* buffer) {
 }
 
 struct AlphaNum {
-  operations_research::string_view piece;
+  absl::string_view piece;
   char digits[kFastToBufferSize];
 
   // No bool ctor -- bools convert to an integral type.
@@ -62,13 +64,11 @@ struct AlphaNum {
     piece.set(digits);
   }
   AlphaNum(const char* c_str) : piece(c_str) {}   // NOLINT(runtime/explicit)
-  AlphaNum(const operations_research::string_view& pc)
+  AlphaNum(const absl::string_view& pc)
       : piece(pc) {}                              // NOLINT(runtime/explicit)
   AlphaNum(const std::string& s) : piece(s) {}         // NOLINT(runtime/explicit)
 
-  operations_research::string_view::size_type size() const {
-    return piece.size();
-  }
+  absl::string_view::size_type size() const { return piece.size(); }
   const char* data() const { return piece.data(); }
 
  private:
@@ -77,11 +77,6 @@ struct AlphaNum {
 };
 
 extern AlphaNum gEmptyAlphaNum;
-
-template <typename T>
-const T& LegacyPrecision(const T& t) {
-  return t;
-}
 
 std::string StrCat(const AlphaNum& a);
 std::string StrCat(const AlphaNum& a, const AlphaNum& b);
@@ -159,9 +154,8 @@ void StrAppend(std::string* s, const AlphaNum& a, const AlphaNum& b,
                const AlphaNum& i, const AlphaNum& j, const AlphaNum& k,
                const AlphaNum& l, const AlphaNum& m);
 
-namespace strings {
 template <class Iterable>
-std::string Join(const Iterable& elements, const std::string& separator) {
+std::string StrJoin(const Iterable& elements, const std::string& separator) {
   std::string out;
   for (const auto& e : elements) {
     if (!out.empty()) out += separator;
@@ -169,6 +163,15 @@ std::string Join(const Iterable& elements, const std::string& separator) {
   }
   return out;
 }
-}  // namespace strings
+
+template <typename T>
+const T& LegacyPrecision(const T& t) {
+  return t;
+}
+}  // namespace absl
+
+// Temporary aliases to support old code not using the absl:: namespace.
+using absl::StrAppend;  // NOLINT(readability/namespace)
+using absl::StrCat;     // NOLINT(readability/namespace)
 
 #endif  // OR_TOOLS_BASE_JOIN_H_

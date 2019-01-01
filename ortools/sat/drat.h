@@ -17,7 +17,11 @@
 #include <string>
 #include <vector>
 
+#if !defined(__PORTABLE_PLATFORM__)
 #include "ortools/base/file.h"
+#else
+class File {};
+#endif  // !__PORTABLE_PLATFORM__
 #include "ortools/base/span.h"
 #include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/sat/sat_base.h"
@@ -55,7 +59,7 @@ class DratWriter {
   // newer variables always comes first. This is needed because in the DRAT
   // format, the clause is checked for the RAT property with only its first
   // literal.
-  void AddClause(gtl::Span<Literal> clause);
+  void AddClause(absl::Span<Literal> clause);
 
   // Writes a "deletion" information about a clause that has been added before
   // to the DRAT output. Note that it is also possible to delete a clause from
@@ -63,17 +67,11 @@ class DratWriter {
   //
   // Because of a limitation a the DRAT-trim tool, it seems the order of the
   // literals during addition and deletion should be EXACTLY the same. Because
-  // of that, we currently can't delete problem clauses since we don't keep the
-  // literal order in our memory representation. We use the ignore_call argument
-  // to simply do nothing by default, and we only set it to false in the places
-  // where we are sure the clause was outputed by an AddClause() call.
-  //
-  // TODO(user): an alternative would be to call AddClause() on all the problem
-  // clause first.
-  void DeleteClause(gtl::Span<Literal> clause, bool ignore_call = true);
+  // of this we get warnings for problem clauses.
+  void DeleteClause(absl::Span<Literal> clause);
 
  private:
-  void WriteClause(gtl::Span<Literal> clause);
+  void WriteClause(absl::Span<Literal> clause);
 
   // We need to keep track of the variable newly created.
   int variable_index_;

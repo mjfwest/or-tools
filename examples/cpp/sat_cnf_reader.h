@@ -15,21 +15,26 @@
 #define OR_TOOLS_SAT_SAT_CNF_READER_H_
 
 #include <map>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
+#include "ortools/base/macros.h"
 #include "ortools/base/strtoint.h"
 #include "ortools/base/split.h"
 #include "ortools/base/string_view.h"
 #include "ortools/sat/boolean_problem.pb.h"
-#include "ortools/util/filelineiter.h"
+#include "ortools/base/filelineiter.h"
 
 DEFINE_bool(wcnf_use_strong_slack, true,
             "If true, when we add a slack variable to reify a soft clause, we "
             "enforce the fact that when it is true, the clause must be false.");
+
+using ::absl::delimiter::AnyOf;
 
 namespace operations_research {
 namespace sat {
@@ -103,7 +108,7 @@ class SatCnfReader {
     return problem_name;
   }
 
-  int64 StringPieceAtoi(string_view input) {
+  int64 StringPieceAtoi(absl::string_view input) {
     // Hack: data() is not null terminated, but we do know that it points
     // inside a std::string where numbers are separated by " " and since atoi64 will
     // stop at the first invalid char, this works.
@@ -111,10 +116,7 @@ class SatCnfReader {
   }
 
   void ProcessNewLine(const std::string& line, LinearBooleanProblem* problem) {
-    static const char kWordDelimiters[] = " ";
-    words_ = strings::Split(
-        line, kWordDelimiters,
-        static_cast<int64>(strings::SkipEmpty()));
+    words_ = absl::StrSplit(line, AnyOf(" "), absl::SkipEmpty());
     if (words_.empty() || words_[0] == "c" || end_marker_seen_) return;
     if (words_[0] == "%") {
       end_marker_seen_ = true;
@@ -225,7 +227,7 @@ class SatCnfReader {
   int num_variables_;
 
   // Temporary storage for ProcessNewLine().
-  std::vector<string_view> words_;
+  std::vector<std::string> words_;
 
   // We stores the objective in a map because we want the variables to appear
   // only once in the LinearObjective proto.

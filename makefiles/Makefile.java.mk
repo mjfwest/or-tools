@@ -1,6 +1,16 @@
 # ---------- Java support using SWIG ----------
+.PHONY: help_java # Generate list of Java targets with descriptions.
+help_java:
+	@echo Use one of the following Java targets:
+ifeq ($(SYSTEM),win)
+	@tools\grep.exe "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.java.mk | tools\sed.exe "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/"
+	@echo off & echo(
+else
+	@grep "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.java.mk | sed "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/" | expand -t24
+	@echo
+endif
 
-.PHONY: java rjava cjava
+.PHONY: rjava cjava
 
 JAVA_ORTOOLS_LIBS= $(LIB_DIR)/com.google.ortools.jar $(LIB_DIR)/$(LIB_PREFIX)jniortools.$(JNI_LIB_EXT)
 
@@ -374,25 +384,21 @@ endif
 endif # ifeq ($(EX),)
 
 # Main target
-CANONIC_JDK_DIRECTORY = $(subst $(SPACE),$(BACKSLASH_SPACE),$(subst \,/,$(subst \\,/,$(JDK_DIRECTORY))))
-ifeq ($(wildcard $(CANONIC_JDK_DIRECTORY)),)
+.PHONY: java # Build Java OR-Tools.
+.PHONY: test_java # Test Java OR-Tools using various examples.
+ifeq ($(JAVA_BIN),)
 java:
-	@echo "The java executable was not set properly. Check Makefile.local for more information."
+	$@echo JAVA_HOME = ${JAVA_HOME}
+	$@echo JAVA_BIN = ${JAVA_BIN}
+	$(warning Cannot find 'java' command which is needed for build. Please make sure it is installed and in system path. Check Makefile.local for more information.)
 test_java: java
 else
-java: $(JAVA_ORTOOLS_LIBS)
+java: ortoolslibs $(JAVA_ORTOOLS_LIBS)
 test_java: test_java_examples
-BUILT_LANGUAGES +=, java
+BUILT_LANGUAGES +=, Java
 endif
 
-detect_java:
-	@echo JDK_DIRECTORY = $(JDK_DIRECTORY)
-	@echo JAVAC_BIN = $(JAVAC_BIN)
-	@echo JAVA_BIN = $(JAVA_BIN)
-	@echo JAVA_INC = $(JAVA_INC)
-	@echo JAR_BIN = $(JAR_BIN)
-
-# Clean target
+.PHONY: clean_java # Clean Java output from previous build.
 clean_java:
 	-$(DEL) $(LIB_DIR)$S$(LIB_PREFIX)jni*.$(JNI_LIB_EXT)
 	-$(DEL) $(LIB_DIR)$S*.jar
@@ -410,3 +416,18 @@ clean_java:
 	-$(DEL) $(OBJ_DIR)$Scom$Sgoogle$Sortools$Slinearsolver$S*.class
 	-$(DEL) $(OBJ_DIR)$Scom$Sgoogle$Sortools$Ssamples$S*.class
 	-$(DEL) $(OBJ_DIR)$Sswig$S*java_wrap.$O
+
+.PHONY: detect_java # Show variables used to build Java OR-Tools.
+detect_java:
+	@echo Relevant info for the Java build:
+	@echo JAVA_HOME = $(JAVA_HOME)
+	@echo JAVA_BIN = $(JAVA_BIN)
+	@echo JAVA_INC = $(JAVA_INC)
+	@echo JAVAC_BIN = $(JAVAC_BIN)
+	@echo JAR_BIN = $(JAR_BIN)
+	@echo JNIFLAGS = $(JNIFLAGS)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif

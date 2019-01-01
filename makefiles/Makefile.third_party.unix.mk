@@ -1,9 +1,15 @@
-# SVN tags of dependencies to checkout.
+.PHONY: help_third_party # Generate list of Prerequisite targets with descriptions.
+help_third_party:
+	@echo Use one of the following Prerequisite targets:
+	@grep "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.third_party.unix.mk | sed "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/" | expand -t20
+	@echo
 
+# Tags of dependencies to checkout.
 GFLAGS_TAG = 2.2.1
-PROTOBUF_TAG = 3.5.0
+PROTOBUF_TAG = 3.5.1
 GLOG_TAG = 0.3.5
 CBC_TAG = 2.9.9
+PATCHELF_TAG = 0.9
 
 # Detect if patchelf is needed
 ifeq ($(PLATFORM), LINUX)
@@ -15,12 +21,19 @@ ifeq ($(PLATFORM), MACOSX)
 endif
 
 # Main target.
-.PHONY: makefile_third_party missing_directories
+.PHONY: third_party # Build OR-Tools Prerequisite
 third_party: makefile_third_party install_third_party
 
-# Create missing directories
+.PHONY: third_party_check # Check if "make third_party" have been run or not
+third_party_check:
+ifeq ($(wildcard dependencies/install/include/gflags/gflags.h),)
+	@echo "One of the third party files was not found! did you run 'make third_party'?" && exit 1
+endif
 
+# Create missing directories
 MISSING_DIRECTORIES = \
+	dependencies/install \
+	dependencies/archives \
 	bin \
 	lib \
 	objs/algorithms \
@@ -55,15 +68,22 @@ MISSING_DIRECTORIES = \
 	ortools/gen/ortools/linear_solver \
 	ortools/gen/ortools/sat
 
+.PHONY: makefile_third_party missing_directories
 missing_directories: $(MISSING_DIRECTORIES)
 
 install_third_party: \
 	missing_directories \
-	install_gflags \
-	install_protobuf \
-	install_glog \
 	install_cbc \
+	install_gflags \
+	install_glog \
+	install_protobuf \
 	$(CSHARP_THIRD_PARTY)
+
+dependencies/archives:
+	$(MKDIR_P) dependencies/archives
+
+dependencies/install:
+	$(MKDIR_P) dependencies/install
 
 bin:
 	$(MKDIR_P) bin
@@ -167,8 +187,6 @@ ortools/gen/ortools/sat:
 # Install gflags. This uses cmake.
 install_gflags: dependencies/install/include/gflags/gflags.h
 
-CMAKE_MISSING = "cmake not found in /Applications, nor in the PATH. Install the official version, or from brew"
-
 dependencies/install/include/gflags/gflags.h: dependencies/sources/gflags-$(GFLAGS_TAG)/build_cmake/Makefile
 	cd dependencies/sources/gflags-$(GFLAGS_TAG)/build_cmake && \
 	$(SET_COMPILER) make -j 4 && make install
@@ -184,7 +202,7 @@ dependencies/sources/gflags-$(GFLAGS_TAG)/build_cmake/Makefile: dependencies/sou
 	         ..
 
 dependencies/sources/gflags-$(GFLAGS_TAG)/CMakeLists.txt:
-	git clone -b v$(GFLAGS_TAG) https://github.com/gflags/gflags.git dependencies/sources/gflags-$(GFLAGS_TAG)
+	git clone --quiet -b v$(GFLAGS_TAG) https://github.com/gflags/gflags.git dependencies/sources/gflags-$(GFLAGS_TAG)
 
 # Install protocol buffers.
 install_protobuf: dependencies/install/bin/protoc
@@ -202,7 +220,7 @@ dependencies/sources/protobuf-$(PROTOBUF_TAG)/cmake/build/Makefile: dependencies
 	           ..
 
 dependencies/sources/protobuf-$(PROTOBUF_TAG)/cmake/CMakeLists.txt:
-	git clone https://github.com/google/protobuf.git dependencies/sources/protobuf-$(PROTOBUF_TAG) && cd dependencies/sources/protobuf-$(PROTOBUF_TAG) && git checkout 3d9d1a1
+	git clone --quiet https://github.com/google/protobuf.git dependencies/sources/protobuf-$(PROTOBUF_TAG) && cd dependencies/sources/protobuf-$(PROTOBUF_TAG) && git checkout 3d9d1a1
 
 # Install GLOG.
 install_glog: dependencies/install/include/glog/logging.h
@@ -221,33 +239,35 @@ dependencies/sources/glog-$(GLOG_TAG)/build_cmake/Makefile: dependencies/sources
 	           ..
 
 dependencies/sources/glog-$(GLOG_TAG)/CMakeLists.txt:
-	git clone -b v$(GLOG_TAG) https://github.com/google/glog.git dependencies/sources/glog-$(GLOG_TAG)
+	git clone --quiet -b v$(GLOG_TAG) https://github.com/google/glog.git dependencies/sources/glog-$(GLOG_TAG)
 
 # Install Coin CBC.
 install_cbc: dependencies/install/bin/cbc
 
-dependencies/install/bin/cbc: dependencies/sources/cbc-$(CBC_TAG)/Makefile
-	cd dependencies/sources/cbc-$(CBC_TAG) && $(SET_COMPILER) make -j 4 && $(SET_COMPILER) make install
+dependencies/install/bin/cbc: dependencies/sources/Cbc-$(CBC_TAG)/Makefile
+	cd dependencies/sources/Cbc-$(CBC_TAG) && $(SET_COMPILER) make -j 4 && $(SET_COMPILER) make install
 
-dependencies/sources/cbc-$(CBC_TAG)/Makefile: dependencies/sources/cbc-$(CBC_TAG)/Makefile.in
-	cd dependencies/sources/cbc-$(CBC_TAG) && $(SET_COMPILER) ./configure --prefix=$(OR_ROOT_FULL)/dependencies/install --disable-bzlib --without-lapack --enable-static --with-pic ADD_CXXFLAGS="-DCBC_THREAD_SAFE -DCBC_NO_INTERRUPT $(MAC_VERSION)"
+dependencies/sources/Cbc-$(CBC_TAG)/Makefile: dependencies/sources/Cbc-$(CBC_TAG)/Makefile.in
+	cd dependencies/sources/Cbc-$(CBC_TAG) && $(SET_COMPILER) ./configure --prefix=$(OR_ROOT_FULL)/dependencies/install --disable-bzlib --without-lapack --enable-static --with-pic ADD_CXXFLAGS="-w -DCBC_THREAD_SAFE -DCBC_NO_INTERRUPT $(MAC_VERSION)"
 
-dependencies/sources/cbc-$(CBC_TAG)/Makefile.in:
-	svn co https://projects.coin-or.org/svn/Cbc/releases/$(CBC_TAG) dependencies/sources/cbc-$(CBC_TAG)
+CBC_ARCHIVE:=https://www.coin-or.org/download/source/Cbc/Cbc-${CBC_TAG}.tgz
+
+dependencies/sources/Cbc-$(CBC_TAG)/Makefile.in:
+	wget --quiet --no-check-certificate --continue -P dependencies/archives ${CBC_ARCHIVE} || (@echo wget failed to dowload $(CBC_ARCHIVE), try running 'wget -P dependencies/archives --no-check-certificate $(CBC_ARCHIVE)' then rerun 'make third_party' && exit 1)
+	tar xzf dependencies/archives/Cbc-${CBC_TAG}.tgz -C dependencies/sources/
 
 # Install patchelf on linux platforms.
-dependencies/install/bin/patchelf: dependencies/sources/patchelf-0.8/Makefile
-	cd dependencies/sources/patchelf-0.8 && make && make install
+dependencies/install/bin/patchelf: dependencies/sources/patchelf-$(PATCHELF_TAG)/Makefile
+	cd dependencies/sources/patchelf-$(PATCHELF_TAG) && make && make install
 
-dependencies/sources/patchelf-0.8/Makefile: dependencies/sources/patchelf-0.8/configure
-	cd dependencies/sources/patchelf-0.8 && ./configure --prefix=$(OR_ROOT_FULL)/dependencies/install
+dependencies/sources/patchelf-$(PATCHELF_TAG)/Makefile: dependencies/sources/patchelf-$(PATCHELF_TAG)/configure
+	cd dependencies/sources/patchelf-$(PATCHELF_TAG) && ./configure --prefix=$(OR_ROOT_FULL)/dependencies/install
 
-dependencies/sources/patchelf-0.8/configure: dependencies/archives/patchelf-0.8.tar.gz
-	cd dependencies/sources && tar xzmf ../archives/patchelf-0.8.tar.gz
-
+dependencies/sources/patchelf-$(PATCHELF_TAG)/configure:
+	git clone --quiet -b $(PATCHELF_TAG) https://github.com/NixOS/patchelf.git dependencies/sources/patchelf-$(PATCHELF_TAG)
+	cd dependencies/sources/patchelf-$(PATCHELF_TAG) && ./bootstrap.sh
 
 # Install Java protobuf
-
 dependencies/install/lib/protobuf.jar: dependencies/install/bin/protoc
 	cd dependencies/sources/protobuf-$(PROTOBUF_TAG)/java && \
 	  ../../../install/bin/protoc --java_out=core/src/main/java -I../src \
@@ -258,11 +278,13 @@ dependencies/install/lib/protobuf.jar: dependencies/install/bin/protoc
 # Install C# protobuf
 
 #create .snk file if strong named dll is required (this is the default behaviour)
-# Clean everything.
+
+.PHONY: clean_third_party # Clean everything. Remember to also delete archived dependencies, i.e. in the event of download failure, etc.
 clean_third_party:
 	-$(DEL) Makefile.local
-	-$(DELREC) dependencies/install
-	-$(DELREC) dependencies/sources/cbc*
+	-$(DELREC) dependencies/archives/Cbc*
+	-$(DELREC) dependencies/archives
+	-$(DELREC) dependencies/sources/Cbc*
 	-$(DELREC) dependencies/sources/coin-cbc*
 	-$(DELREC) dependencies/sources/gflags*
 	-$(DELREC) dependencies/sources/glog*
@@ -280,6 +302,7 @@ clean_third_party:
 	-$(DELREC) dependencies/sources/flex*
 	-$(DELREC) dependencies/sources/help2man*
 	-$(DELREC) dependencies/sources/patchelf*
+	-$(DELREC) dependencies/install
 
 # Create Makefile.local
 makefile_third_party: Makefile.local
@@ -287,9 +310,10 @@ makefile_third_party: Makefile.local
 Makefile.local: makefiles/Makefile.third_party.unix.mk
 	-$(DEL) Makefile.local
 	@echo Generating Makefile.local
-	@echo JDK_DIRECTORY = $(JDK_DIRECTORY)>> Makefile.local
+	@echo JAVA_HOME = $(JAVA_HOME)>> Makefile.local
 	@echo UNIX_PYTHON_VER = $(DETECTED_PYTHON_VERSION)>> Makefile.local
 	@echo PATH_TO_CSHARP_COMPILER = $(DETECTED_MCS_BINARY)>> Makefile.local
+	@echo DOTNET_INSTALL_PATH = $(DOTNET_INSTALL_PATH)>> Makefile.local
 	@echo CLR_KEYFILE = bin/or-tools.snk>> Makefile.local
 	@echo >> Makefile.local
 	@echo "# Define UNIX_GLPK_DIR to point to a compiled version of GLPK to use it" >> Makefile.local

@@ -152,6 +152,8 @@
 #include "ortools/glop/parameters.pb.h"
 #include "ortools/linear_solver/linear_expr.h"
 #include "ortools/linear_solver/linear_solver.pb.h"
+#include "ortools/port/proto_utils.h"
+#include "ortools/base/status.h"
 
 
 namespace operations_research {
@@ -422,7 +424,7 @@ class MPSolver {
   //   // This can be replaced by a stubby call to the linear solver server.
   //   MPSolver::SolveWithProto(model_proto, &solver_response);
   //   if (solver_response.result_status() == MPSolutionResponse::OPTIMAL) {
-  //     CHECK(my_solver.LoadSolutionFromProto(solver_response));
+  //     CHECK_OK(my_solver.LoadSolutionFromProto(solver_response));
   //     ... inspect the solution using the usual API: solution_value(), etc...
   //   }
   //
@@ -431,23 +433,23 @@ class MPSolver {
   // See /.linear_solver_server_integration_test.py.
   //
   // The response must be in OPTIMAL or FEASIBLE status.
-  // Returns false if a problem arised (typically, if it wasn't used like
-  // it should be):
+  // Returns a non-OK status if a problem arised (typically, if it wasn't used
+  // like it should be):
   // - loading a solution whose variables don't correspond to the solver's
   //   current variables
   // - loading a solution with a status other than OPTIMAL / FEASIBLE.
-  // Note: the variable and objective values aren't checked. You can use
-  // VerifySolution() for that.
-  bool LoadSolutionFromProto(const MPSolutionResponse& response);
+  // Note: the objective value isnn't checked. You can use VerifySolution()
+  // for that.
+  util::Status LoadSolutionFromProto(const MPSolutionResponse& response);
 
   // ----- Export model to files or strings -----
-#ifndef ANDROID_JNI
   // Shortcuts to the homonymous MPModelProtoExporter methods, via
   // exporting to a MPModelProto with ExportModelToProto() (see above).
-  bool ExportModelAsLpFormat(bool obfuscated, std::string* model_str);
-  bool ExportModelAsMpsFormat(bool fixed_format, bool obfuscated,
-                              std::string* model_str);
-#endif
+  //
+  // Produces empty std::string on portable platforms (e.g. android, ios).
+  bool ExportModelAsLpFormat(bool obfuscate, std::string* model_str) const;
+  bool ExportModelAsMpsFormat(bool fixed_format, bool obfuscate,
+                              std::string* model_str) const;
   // ----- Misc -----
 
   // Advanced usage: pass solver specific parameters in text format. The format
@@ -461,6 +463,11 @@ class MPSolver {
   std::string GetSolverSpecificParametersAsString() const {
     return solver_specific_parameter_string_;
   }
+
+  // Advanced usage: starting hint. This instructs the solver to first pin some
+  // variables to particular values and use that to quickly get an upper bound
+  // on the solution quality. Currently, only GLIP supports this.
+  void SetHint(const PartialVariableAssignment& hint);
 
   // Advanced usage: possible basis status values for a variable and the
   // slack variable of a linear constraint.
@@ -603,7 +610,7 @@ class MPSolver {
   std::vector<MPVariable*> variables_;
   // A map from a variable's name to its index in variables_.
   std::unordered_map<std::string, int> variable_name_to_index_;
-  // Whether constraints have been extracted to the underlying interface.
+  // Whether variables have been extracted to the underlying interface.
   std::vector<bool> variable_is_extracted_;
 
   // The vector of constraints in the problem.
@@ -637,13 +644,11 @@ class MPSolver {
   DISALLOW_COPY_AND_ASSIGN(MPSolver);
 };
 
-#ifndef ANDROID_JNI
 inline std::ostream& operator<<(std::ostream& os,
                                 MPSolver::ResultStatus status) {
-  return os << MPSolverResponseStatus_Name(
+  return os << ProtoEnumToString<MPSolverResponseStatus>(
              static_cast<MPSolverResponseStatus>(status));
 }
-#endif
 
 // The data structure used to store the coefficients of the contraints and of
 // the objective. Also define a type to facilitate iteration over them with:
@@ -1286,6 +1291,10 @@ class MPSolverInterface {
   virtual void SetStartingLpBasis(
       const std::vector<MPSolver::BasisStatus>& variable_statuses,
       const std::vector<MPSolver::BasisStatus>& constraint_statuses) {
+    LOG(FATAL) << "Not supported by this solver.";
+  }
+
+  virtual void SetHint(const PartialVariableAssignment& hint) {
     LOG(FATAL) << "Not supported by this solver.";
   }
 

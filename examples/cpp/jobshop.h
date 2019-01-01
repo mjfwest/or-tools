@@ -42,7 +42,7 @@
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/strtoint.h"
 #include "ortools/base/split.h"
-#include "ortools/util/filelineiter.h"
+#include "ortools/base/filelineiter.h"
 
 namespace operations_research {
 // ----- JobShopData -----
@@ -121,7 +121,7 @@ class JobShopData {
   void ProcessNewLine(const std::string& line) {
     // TODO(user): more robust logic to support single-task jobs.
     const std::vector<std::string> words =
-        strings::Split(line, ' ', strings::SkipEmpty());
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
     switch (problem_type_) {
       case UNDEFINED: {
         if (words.size() == 2 && words[0] == "instance") {

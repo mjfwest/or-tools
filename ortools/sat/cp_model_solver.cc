@@ -28,14 +28,18 @@
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/timer.h"
+#if !defined(__PORTABLE_PLATFORM__)
 #include "google/protobuf/text_format.h"
+#endif  // __PORTABLE_PLATFORM__
 #include "ortools/base/join.h"
 #include "ortools/base/join.h"
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
+#include "ortools/base/iterator_adaptors.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/graph/connectivity.h"
+#include "ortools/port/proto_utils.h"
 #include "ortools/sat/all_different.h"
 #include "ortools/sat/circuit.h"
 #include "ortools/sat/cp_constraints.h"
@@ -50,6 +54,7 @@
 #include "ortools/sat/integer_expr.h"
 #include "ortools/sat/intervals.h"
 #include "ortools/sat/linear_programming_constraint.h"
+#include "ortools/sat/linear_relaxation.h"
 #include "ortools/sat/optimization.h"
 #include "ortools/sat/pb_constraint.h"
 #include "ortools/sat/precedences.h"
@@ -67,6 +72,11 @@ DEFINE_string(cp_model_dump_file, "",
               "file will be ovewritten with the last such model. "
               "TODO(fdid): dump all model to a recordio file instead?");
 
+DEFINE_string(
+    drat_output, "",
+    "If non-empty, a proof in DRAT format will be written to this file. "
+    "This will only be used for pure-SAT problems.");
+
 namespace operations_research {
 namespace sat {
 
@@ -76,87 +86,11 @@ namespace {
 // Helper classes.
 // =============================================================================
 
-// List all the CpModelProto references used. This is just needed so that a
-// variable with a domain [0, 1] is only instantiated as Boolean variable or
-// as an IntegerVariable if possible instead of both.
-struct VariableUsage {
-  const std::vector<int> integers;
-  const std::vector<int> intervals;
-  const std::vector<int> booleans;
-};
-VariableUsage ComputeVariableUsage(const CpModelProto& model_proto,
-                                   bool view_all_booleans_as_integers = false) {
-  // Since an interval is a constraint by itself, this will just list all
-  // the interval constraint in order.
-  std::vector<int> used_intervals;
-
-  // TODO(user): use std::vector<bool> instead of unordered_set<int> + sort if
-  // efficiency become an issue.
-  IndexReferences references;
-  for (int c = 0; c < model_proto.constraints_size(); ++c) {
-    const ConstraintProto& ct = model_proto.constraints(c);
-    if (ct.constraint_case() == ConstraintProto::ConstraintCase::kInterval) {
-      used_intervals.push_back(c);
-    }
-    if (HasEnforcementLiteral(ct)) {
-      references.literals.insert(ct.enforcement_literal(0));
-    }
-    AddReferencesUsedByConstraint(ct, &references);
-  }
-
-  // Add the objectives and search heuristics variables that needs to be
-  // referenceable as integer even if they are only used as Booleans.
-  if (model_proto.has_objective()) {
-    for (const int obj_var : model_proto.objective().vars()) {
-      references.variables.insert(obj_var);
-    }
-  }
-  for (const DecisionStrategyProto& strategy : model_proto.search_strategy()) {
-    for (const int var : strategy.variables()) {
-      references.variables.insert(var);
-    }
-  }
-
-  for (int i = 0; i < model_proto.variables_size(); ++i) {
-    // Take into account the presence literal of optional variables.
-    if (!model_proto.variables(i).enforcement_literal().empty()) {
-      references.literals.insert(
-          model_proto.variables(i).enforcement_literal(0));
-    }
-
-    // Make sure that an unused variable is instantiated as an IntegerVariable.
-    if (ContainsKey(references.literals, i)) continue;
-    if (ContainsKey(references.literals, NegatedRef(i))) continue;
-    if (ContainsKey(references.variables, i)) continue;
-    if (ContainsKey(references.variables, NegatedRef(i))) continue;
-    references.variables.insert(i);
-  }
-
-  std::vector<int> used_integers;
-  for (const int var : references.variables) {
-    used_integers.push_back(PositiveRef(var));
-  }
-
-  std::vector<int> used_booleans;
-  for (const int lit : references.literals) {
-    used_booleans.push_back(PositiveRef(lit));
-    if (view_all_booleans_as_integers) {
-      used_integers.push_back(PositiveRef(lit));
-    }
-  }
-
-  STLSortAndRemoveDuplicates(&used_intervals);
-  STLSortAndRemoveDuplicates(&used_integers);
-  STLSortAndRemoveDuplicates(&used_booleans);
-  return VariableUsage{used_integers, used_intervals, used_booleans};
-}
-
 // Holds the sat::model and the mapping between the proto indices and the
 // sat::model ones.
 class ModelWithMapping {
  public:
-  ModelWithMapping(const CpModelProto& model_proto, const VariableUsage& usage,
-                   Model* model);
+  ModelWithMapping(const CpModelProto& model_proto, Model* model);
 
   // Shortcuts for the underlying model_ functions.
   template <typename T>
@@ -291,13 +225,34 @@ class ModelWithMapping {
 
   Model* model() const { return model_; }
 
+  // Note that both these functions returns positive reference or -1.
   int GetProtoVariableFromBooleanVariable(BooleanVariable var) {
     if (var.value() >= reverse_boolean_map_.size()) return -1;
     return reverse_boolean_map_[var];
   }
+  int GetProtoVariableFromIntegerVariable(IntegerVariable var) {
+    if (var.value() >= reverse_integer_map_.size()) return -1;
+    return reverse_integer_map_[var];
+  }
 
   const std::vector<IntegerVariable>& GetVariableMapping() const {
     return integers_;
+  }
+
+  // For logging only, these are not super efficient.
+  int NumIntegerVariables() const {
+    int result = 0;
+    for (const IntegerVariable var : integers_) {
+      if (var != kNoIntegerVariable) result++;
+    }
+    return result;
+  }
+  int NumBooleanVariables() const {
+    int result = 0;
+    for (const BooleanVariable var : booleans_) {
+      if (var != kNoBooleanVariable) result++;
+    }
+    return result;
   }
 
  private:
@@ -311,10 +266,11 @@ class ModelWithMapping {
   std::vector<IntervalVariable> intervals_;
   std::vector<BooleanVariable> booleans_;
 
-  // Recover from a BooleanVariable its associated CpModelProto index. The
-  // value of -1 is used to indicate that there is no correspondence (i.e. this
-  // variable is only used internally).
+  // Recover from a IntervalVariable/BooleanVariable its associated CpModelProto
+  // index. The value of -1 is used to indicate that there is no correspondence
+  // (i.e. this variable is only used internally).
   ITIVector<BooleanVariable, int> reverse_boolean_map_;
+  ITIVector<IntegerVariable, int> reverse_integer_map_;
 
   // Used to return a feasible solution for the unused variables.
   std::vector<int64> lower_bounds_;
@@ -516,76 +472,147 @@ void ModelWithMapping::ExtractEncoding(const CpModelProto& model_proto) {
 // Extracts all the used variables in the CpModelProto and creates a sat::Model
 // representation for them.
 ModelWithMapping::ModelWithMapping(const CpModelProto& model_proto,
-                                   const VariableUsage& usage, Model* sat_model)
-    : model_(sat_model) {
-  integers_.resize(model_proto.variables_size(), kNoIntegerVariable);
-  booleans_.resize(model_proto.variables_size(), kNoBooleanVariable);
-  intervals_.resize(model_proto.constraints_size(), kNoIntervalVariable);
-  lower_bounds_.resize(model_proto.variables_size(), 0);
+                                   Model* model)
+    : model_(model) {
+  const int num_proto_variables = model_proto.variables_size();
 
   // Fills lower_bounds_, this is only used in ExtractFullAssignment().
-  for (int i = 0; i < model_proto.variables_size(); ++i) {
+  lower_bounds_.resize(num_proto_variables, 0);
+  for (int i = 0; i < num_proto_variables; ++i) {
     lower_bounds_[i] = model_proto.variables(i).domain(0);
   }
 
-  for (const int i : usage.integers) {
+  // All [0, 1] variables always have a corresponding Boolean, even if it is
+  // fixed to 0 (domain == [0,0]) or fixed to 1 (domain == [1,1]).
+  booleans_.resize(num_proto_variables, kNoBooleanVariable);
+  for (int i = 0; i < num_proto_variables; ++i) {
+    const auto domain = ReadDomain(model_proto.variables(i));
+    if (domain.size() != 1) continue;
+    if (domain[0].start >= 0 && domain[0].end <= 1) {
+      booleans_[i] = Add(NewBooleanVariable());
+      if (booleans_[i] >= reverse_boolean_map_.size()) {
+        reverse_boolean_map_.resize(booleans_[i].value() + 1, -1);
+      }
+      reverse_boolean_map_[booleans_[i]] = i;
+
+      if (domain[0].start == 0 && domain[0].end == 0) {
+        // Fix to false.
+        Add(ClauseConstraint({sat::Literal(booleans_[i], false)}));
+      } else if (domain[0].start == 1 && domain[0].end == 1) {
+        // Fix to true.
+        Add(ClauseConstraint({sat::Literal(booleans_[i], true)}));
+      }
+    }
+  }
+
+  // Compute the list of positive variable reference for which we need to
+  // create an IntegerVariable.
+  std::vector<int> var_to_instantiate_as_integer;
+  const SatParameters& parameters = *(model->GetOrCreate<SatParameters>());
+  const bool view_all_booleans_as_integers =
+      (parameters.linearization_level() > 2) ||
+      (parameters.search_branching() == SatParameters::FIXED_SEARCH &&
+       model_proto.search_strategy().empty());
+  if (view_all_booleans_as_integers) {
+    var_to_instantiate_as_integer.resize(num_proto_variables);
+    for (int i = 0; i < num_proto_variables; ++i) {
+      var_to_instantiate_as_integer[i] = i;
+    }
+  } else {
+    // Compute the integer variable references used by the model.
+    IndexReferences references;
+    for (int c = 0; c < model_proto.constraints_size(); ++c) {
+      const ConstraintProto& ct = model_proto.constraints(c);
+      AddReferencesUsedByConstraint(ct, &references);
+    }
+
+    // Add the objectives and search heuristics variables that needs to be
+    // referenceable as integer even if they are only used as Booleans.
+    if (model_proto.has_objective()) {
+      for (const int obj_var : model_proto.objective().vars()) {
+        references.variables.insert(obj_var);
+      }
+    }
+    for (const DecisionStrategyProto& strategy :
+         model_proto.search_strategy()) {
+      for (const int var : strategy.variables()) {
+        references.variables.insert(var);
+      }
+    }
+
+    // Make sure any unused variable, that is not already a Boolean is
+    // considered "used". Same for optional variable that needs to be integer.
+    for (int i = 0; i < num_proto_variables; ++i) {
+      if (booleans_[i] == kNoBooleanVariable ||
+          !model_proto.variables(i).enforcement_literal().empty()) {
+        references.variables.insert(i);
+      }
+    }
+
+    // We want the variable in the problem order.
+    // Warning: references.variables also contains negative reference.
+    var_to_instantiate_as_integer.assign(references.variables.begin(),
+                                         references.variables.end());
+    for (int& ref : var_to_instantiate_as_integer) {
+      if (!RefIsPositive(ref)) ref = PositiveRef(ref);
+    }
+    STLSortAndRemoveDuplicates(&var_to_instantiate_as_integer);
+  }
+  integers_.resize(num_proto_variables, kNoIntegerVariable);
+  for (const int i : var_to_instantiate_as_integer) {
     const auto& var_proto = model_proto.variables(i);
     integers_[i] = Add(NewIntegerVariable(ReadDomain(var_proto)));
+    if (integers_[i] >= reverse_integer_map_.size()) {
+      reverse_integer_map_.resize(integers_[i].value() + 1, -1);
+    }
+    reverse_integer_map_[integers_[i]] = i;
   }
 
-  for (const int i : usage.booleans) {
-    booleans_[i] = Add(NewBooleanVariable());
-    if (booleans_[i] >= reverse_boolean_map_.size()) {
-      reverse_boolean_map_.resize(booleans_[i].value() + 1, -1);
-    }
-    reverse_boolean_map_[booleans_[i]] = i;
-
-    const auto domain = ReadDomain(model_proto.variables(i));
-    CHECK_EQ(domain.size(), 1);
-    if (domain[0].start == 0 && domain[0].end == 0) {
-      // Fix to false.
-      Add(ClauseConstraint({sat::Literal(booleans_[i], false)}));
-    } else if (domain[0].start == 1 && domain[0].end == 1) {
-      // Fix to true.
-      Add(ClauseConstraint({sat::Literal(booleans_[i], true)}));
-    } else if (integers_[i] != kNoIntegerVariable) {
-      // Associate with corresponding integer variable.
-      model_->GetOrCreate<IntegerEncoder>()->AssociateToIntegerEqualValue(
-          sat::Literal(booleans_[i], true), integers_[i], IntegerValue(1));
-
-      // This is needed so that IsFullyEncoded() returns true.
-      model_->GetOrCreate<IntegerEncoder>()->FullyEncodeVariable(integers_[i]);
-    }
-  }
-
-  // Now that the Boolean are created, mark the optional variable if any.
-  for (const int i : usage.integers) {
+  for (int i = 0; i < num_proto_variables; ++i) {
+    // Mark the optional IntegerVariable.
     const auto& var_proto = model_proto.variables(i);
     if (!var_proto.enforcement_literal().empty()) {
       const sat::Literal l = Literal(var_proto.enforcement_literal(0));
       model_->GetOrCreate<IntegerTrail>()->MarkIntegerVariableAsOptional(
           Integer(i), l);
     }
+
+    // Link any variable that has both views.
+    if (integers_[i] == kNoIntegerVariable) continue;
+    if (booleans_[i] == kNoBooleanVariable) continue;
+
+    // Associate with corresponding integer variable.
+    model_->GetOrCreate<IntegerEncoder>()->AssociateToIntegerEqualValue(
+        sat::Literal(booleans_[i], true), integers_[i], IntegerValue(1));
+
+    // This is needed so that IsFullyEncoded() returns true.
+    model_->GetOrCreate<IntegerEncoder>()->FullyEncodeVariable(integers_[i]);
   }
 
-  for (const int i : usage.intervals) {
-    const ConstraintProto& ct = model_proto.constraints(i);
+  // Create the interval variables.
+  intervals_.resize(model_proto.constraints_size(), kNoIntervalVariable);
+  for (int c = 0; c < model_proto.constraints_size(); ++c) {
+    const ConstraintProto& ct = model_proto.constraints(c);
+    if (ct.constraint_case() != ConstraintProto::ConstraintCase::kInterval) {
+      continue;
+    }
     if (HasEnforcementLiteral(ct)) {
       const sat::Literal enforcement_literal =
           Literal(ct.enforcement_literal(0));
       // TODO(user): Fix the constant variable situation. An optional interval
       // with constant start/end or size cannot share the same constant
       // variable if it is used in non-optional situation.
-      intervals_[i] = Add(NewOptionalInterval(
+      intervals_[c] = Add(NewOptionalInterval(
           Integer(ct.interval().start()), Integer(ct.interval().end()),
           Integer(ct.interval().size()), enforcement_literal));
     } else {
-      intervals_[i] = Add(NewInterval(Integer(ct.interval().start()),
+      intervals_[c] = Add(NewInterval(Integer(ct.interval().start()),
                                       Integer(ct.interval().end()),
                                       Integer(ct.interval().size())));
     }
   }
 
+  // Detect the encodings (IntegerVariable <-> Booleans) present in the model.
   ModelWithMapping::ExtractEncoding(model_proto);
 }
 
@@ -635,8 +662,6 @@ class FullEncodingFixedPointComputer {
         return PropagateTable(ct);
       case ConstraintProto::ConstraintProto::kAutomata:
         return PropagateAutomata(ct);
-      case ConstraintProto::ConstraintProto::kCircuit:
-        return PropagateCircuit(ct);
       case ConstraintProto::ConstraintProto::kInverse:
         return PropagateInverse(ct);
       case ConstraintProto::ConstraintProto::kLinear:
@@ -691,7 +716,6 @@ class FullEncodingFixedPointComputer {
   bool PropagateElement(const ConstraintProto* ct);
   bool PropagateTable(const ConstraintProto* ct);
   bool PropagateAutomata(const ConstraintProto* ct);
-  bool PropagateCircuit(const ConstraintProto* ct);
   bool PropagateInverse(const ConstraintProto* ct);
   bool PropagateLinear(const ConstraintProto* ct);
 
@@ -752,14 +776,6 @@ bool FullEncodingFixedPointComputer::PropagateTable(const ConstraintProto* ct) {
 bool FullEncodingFixedPointComputer::PropagateAutomata(
     const ConstraintProto* ct) {
   for (const int variable : ct->automata().vars()) {
-    FullyEncode(variable);
-  }
-  return true;
-}
-
-bool FullEncodingFixedPointComputer::PropagateCircuit(
-    const ConstraintProto* ct) {
-  for (const int variable : ct->circuit().nexts()) {
     FullyEncode(variable);
   }
   return true;
@@ -1275,30 +1291,26 @@ std::vector<std::vector<Literal>> GetSquareMatrixFromIntegerVariables(
 }
 
 void LoadCircuitConstraint(const ConstraintProto& ct, ModelWithMapping* m) {
-  const std::vector<IntegerVariable> nexts = m->Integers(ct.circuit().nexts());
-  m->Add(SubcircuitConstraint(GetSquareMatrixFromIntegerVariables(nexts, m)));
+  const auto& circuit = ct.circuit();
+  if (circuit.tails().empty()) return;
+
+  std::vector<int> tails(circuit.tails().begin(), circuit.tails().end());
+  std::vector<int> heads(circuit.heads().begin(), circuit.heads().end());
+  std::vector<Literal> literals = m->Literals(circuit.literals());
+  const int num_nodes = ReindexArcs(&tails, &heads, &literals);
+  m->Add(SubcircuitConstraint(num_nodes, tails, heads, literals));
 }
 
-// TODO(user): provide a sparse API.
 void LoadRoutesConstraint(const ConstraintProto& ct, ModelWithMapping* m) {
-  int num_nodes = 0;
-  const RoutesConstraintProto& arg = ct.routes();
-  for (const int32 tail : arg.tails()) {
-    num_nodes = std::max(num_nodes, tail + 1);
-  }
-  for (const int32 head : arg.heads()) {
-    num_nodes = std::max(num_nodes, head + 1);
-  }
+  const auto& routes = ct.routes();
+  if (routes.tails().empty()) return;
 
-  const Literal kFalseLiteral =
-      m->GetOrCreate<IntegerEncoder>()->GetFalseLiteral();
-  std::vector<std::vector<Literal>> graph(
-      num_nodes, std::vector<Literal>(num_nodes, kFalseLiteral));
-  const int num_arcs = arg.tails_size();
-  for (int i = 0; i < num_arcs; ++i) {
-    graph[arg.tails(i)][arg.heads(i)] = m->Literal(arg.literals(i));
-  }
-  m->Add(MultipleSubcircuitThroughZeroConstraint(graph));
+  std::vector<int> tails(routes.tails().begin(), routes.tails().end());
+  std::vector<int> heads(routes.heads().begin(), routes.heads().end());
+  std::vector<Literal> literals = m->Literals(routes.literals());
+  const int num_nodes = ReindexArcs(&tails, &heads, &literals);
+  m->Add(SubcircuitConstraint(num_nodes, tails, heads, literals,
+                              /*multiple_subcircuit_through_zero=*/true));
 }
 
 void LoadCircuitCoveringConstraint(const ConstraintProto& ct,
@@ -1415,25 +1427,26 @@ std::string CpModelStats(const CpModelProto& model_proto) {
   }
 
   std::string result;
-  StrAppend(&result, "Model '", model_proto.name(), "':\n");
+  absl::StrAppend(&result, "Model '", model_proto.name(), "':\n");
 
   for (const DecisionStrategyProto& strategy : model_proto.search_strategy()) {
-    StrAppend(&result, "Search strategy: on ", strategy.variables_size(),
-                    " variables, ",
-                    DecisionStrategyProto::VariableSelectionStrategy_Name(
-                        strategy.variable_selection_strategy()),
-                    ", ",
-                    DecisionStrategyProto::DomainReductionStrategy_Name(
-                        strategy.domain_reduction_strategy()),
-                    "\n");
+    absl::StrAppend(
+        &result, "Search strategy: on ", strategy.variables_size(),
+        " variables, ",
+        ProtoEnumToString<DecisionStrategyProto::VariableSelectionStrategy>(
+            strategy.variable_selection_strategy()),
+        ", ",
+        ProtoEnumToString<DecisionStrategyProto::DomainReductionStrategy>(
+            strategy.domain_reduction_strategy()),
+        "\n");
   }
 
-  StrAppend(&result, "#Variables: ", model_proto.variables_size(), "\n");
+  absl::StrAppend(&result, "#Variables: ", model_proto.variables_size(), "\n");
   if (num_vars_per_domains.size() < 20) {
     for (const auto& entry : num_vars_per_domains) {
-      const std::string temp = StrCat(" - ", entry.second, " in ",
+      const std::string temp = absl::StrCat(" - ", entry.second, " in ",
                                        IntervalsAsString(entry.first), "\n");
-      StrAppend(&result, Summarize(temp));
+      absl::StrAppend(&result, Summarize(temp));
     }
   } else {
     int64 max_complexity = 0;
@@ -1445,41 +1458,37 @@ std::string CpModelStats(const CpModelProto& model_proto) {
       max_complexity =
           std::max(max_complexity, static_cast<int64>(entry.first.size()));
     }
-    StrAppend(&result, " - ", num_vars_per_domains.size(),
+    absl::StrAppend(&result, " - ", num_vars_per_domains.size(),
                     " different domains in [", min, ",", max,
                     "] with a largest complexity of ", max_complexity, ".\n");
   }
 
   if (num_constants > 0) {
     const std::string temp =
-        StrCat(" - ", num_constants, " constants in {",
-                     strings::Join(constant_values, ","), "} \n");
-    StrAppend(&result, Summarize(temp));
+        absl::StrCat(" - ", num_constants, " constants in {",
+                     absl::StrJoin(constant_values, ","), "} \n");
+    absl::StrAppend(&result, Summarize(temp));
   }
-
-  const VariableUsage usage = ComputeVariableUsage(model_proto);
-  StrAppend(&result, "#Booleans: ", usage.booleans.size(), "\n");
-  StrAppend(&result, "#Integers: ", usage.integers.size(), "\n");
 
   std::vector<std::string> constraints;
   constraints.reserve(num_constraints_by_type.size());
   for (const auto entry : num_constraints_by_type) {
     constraints.push_back(
-        StrCat("#", ConstraintCaseName(entry.first), ": ", entry.second,
+        absl::StrCat("#", ConstraintCaseName(entry.first), ": ", entry.second,
                      " (", num_reif_constraints_by_type[entry.first],
                      " with enforcement literal)"));
   }
   std::sort(constraints.begin(), constraints.end());
-  StrAppend(&result, strings::Join(constraints, "\n"));
+  absl::StrAppend(&result, absl::StrJoin(constraints, "\n"));
 
   return result;
 }
 
 std::string CpSolverResponseStats(const CpSolverResponse& response) {
   std::string result;
-  StrAppend(&result, "CpSolverResponse:");
-  StrAppend(&result,
-                  "\nstatus: ", CpSolverStatus_Name(response.status()));
+  absl::StrAppend(&result, "CpSolverResponse:");
+  absl::StrAppend(&result, "\nstatus: ",
+                  ProtoEnumToString<CpSolverStatus>(response.status()));
 
   // We special case the pure-decision problem for clarity.
   //
@@ -1488,32 +1497,32 @@ std::string CpSolverResponseStats(const CpSolverResponse& response) {
   // objective is zero...
   if (response.status() != CpSolverStatus::OPTIMAL &&
       response.objective_value() == 0 && response.best_objective_bound() == 0) {
-    StrAppend(&result, "\nobjective: NA");
-    StrAppend(&result, "\nbest_bound: NA");
+    absl::StrAppend(&result, "\nobjective: NA");
+    absl::StrAppend(&result, "\nbest_bound: NA");
   } else {
-    StrAppend(&result, "\nobjective: ",
-                    LegacyPrecision(response.objective_value()));
-    StrAppend(&result, "\nbest_bound: ",
-                    LegacyPrecision(response.best_objective_bound()));
+    absl::StrAppend(&result, "\nobjective: ",
+                    absl::LegacyPrecision(response.objective_value()));
+    absl::StrAppend(&result, "\nbest_bound: ",
+                    absl::LegacyPrecision(response.best_objective_bound()));
   }
 
-  StrAppend(&result, "\nbooleans: ", response.num_booleans());
-  StrAppend(&result, "\nconflicts: ", response.num_conflicts());
-  StrAppend(&result, "\nbranches: ", response.num_branches());
+  absl::StrAppend(&result, "\nbooleans: ", response.num_booleans());
+  absl::StrAppend(&result, "\nconflicts: ", response.num_conflicts());
+  absl::StrAppend(&result, "\nbranches: ", response.num_branches());
 
   // TODO(user): This is probably better named "binary_propagation", but we just
   // output "propagations" to be consistent with sat/analyze.sh.
-  StrAppend(&result,
+  absl::StrAppend(&result,
                   "\npropagations: ", response.num_binary_propagations());
-  StrAppend(
+  absl::StrAppend(
       &result, "\ninteger_propagations: ", response.num_integer_propagations());
-  StrAppend(&result,
-                  "\nwalltime: ", LegacyPrecision(response.wall_time()));
-  StrAppend(&result,
-                  "\nusertime: ", LegacyPrecision(response.user_time()));
-  StrAppend(&result, "\ndeterministic_time: ",
-                  LegacyPrecision(response.deterministic_time()));
-  StrAppend(&result, "\n");
+  absl::StrAppend(&result,
+                  "\nwalltime: ", absl::LegacyPrecision(response.wall_time()));
+  absl::StrAppend(&result,
+                  "\nusertime: ", absl::LegacyPrecision(response.user_time()));
+  absl::StrAppend(&result, "\ndeterministic_time: ",
+                  absl::LegacyPrecision(response.deterministic_time()));
+  absl::StrAppend(&result, "\n");
   return result;
 }
 
@@ -1683,127 +1692,96 @@ IntegerVariable GetOrCreateVariableGreaterOrEqualToSumOf(
   return new_var;
 }
 
-// Basic container for a linear constraint: sum_i terms[i] \in [lb, ub].
-struct LpConstraint {
-  LpConstraint(double l, double u) : lb(l), ub(u) {}
-  double lb;
-  double ub;
-
-  // Important: the key must be a positive reference (i.e >= 0).
-  // TODO(user): make this a class and enforce this programmatically.
-  // TODO(user): if there is a lot of LpConstraint, it seems better to only use
-  // the map at construction and a vector once the constraint is constructed.
-  std::unordered_map<int, double> terms;
-
-  void AddTerm(int var_ref, double coeff) {
-    terms[PositiveRef(var_ref)] += RefIsPositive(var_ref) ? coeff : -coeff;
-  }
-
-  // When literal_ref is a positive reference to var, this simply add the term
-  // coeff * var to the LpConstraint. If the literal reference is negative, then
-  // this adds the term coeff * (1 - var) which require to adjust the constraint
-  // bounds.
-  void AddLiteralTerm(int literal_ref, double coeff) {
-    AddTerm(literal_ref, coeff);
-    if (!RefIsPositive(literal_ref)) {
-      lb -= coeff;
-      ub -= coeff;
-    }
-  }
-
-  std::string DebugString() {
-    std::string result;
-    if (lb > kint64min) StrAppend(&result, lb, " <= ");
-    for (const auto pair : terms) {
-      StrAppend(&result, pair.second, "*[", pair.first, "] ");
-    }
-    if (ub < kint64max) StrAppend(&result, "<= ", ub);
-    return result;
-  }
-};
-
 // Add a linear relaxation of the CP constraint to the set of linear
 // constraints. The highest linearization_level is, the more types of constraint
 // we encode. At level zero, we only encode non-reified linear constraints.
 //
 // TODO(user): In full generality, we could encode all the constraint as an LP.
-void TryToLinearizeConstraint(const CpModelProto& model_proto,
-                              const ConstraintProto& ct,
-                              int linearization_level,
-                              std::vector<LpConstraint>* linear_constraints) {
+void TryToLinearizeConstraint(
+    const CpModelProto& model_proto, const ConstraintProto& ct,
+    ModelWithMapping* m, int linearization_level,
+    std::vector<LinearConstraint>* linear_constraints) {
+  auto* encoder = m->GetOrCreate<IntegerEncoder>();
+  if (encoder == nullptr) return;
   const double kInfinity = std::numeric_limits<double>::infinity();
   if (ct.constraint_case() == ConstraintProto::ConstraintCase::kBoolOr) {
     if (linearization_level < 2) return;
     if (HasEnforcementLiteral(ct)) return;
-    LpConstraint lc(1.0, kInfinity);
-    for (const int literal : ct.bool_or().literals()) {
-      lc.AddLiteralTerm(literal, 1.0);
+    LinearConstraintBuilder lc(1.0, kInfinity);
+    for (const int ref : ct.bool_or().literals()) {
+      CHECK(lc.AddLiteralTerm(m->Literal(ref), 1.0, *encoder));
     }
-    linear_constraints->push_back(lc);
+    linear_constraints->push_back(lc.Build());
   } else if (ct.constraint_case() ==
              ConstraintProto::ConstraintCase::kBoolAnd) {
     if (linearization_level < 2) return;
     if (!HasEnforcementLiteral(ct)) return;
-    const int e = ct.enforcement_literal(0);
-    for (const int literal : ct.bool_and().literals()) {
+    const Literal e = m->Literal(ct.enforcement_literal(0));
+    for (const int ref : ct.bool_and().literals()) {
       // We linearize (e implies literal) as (e - literals <= 0).
-      LpConstraint lc(-kInfinity, 0.0);
-      lc.AddLiteralTerm(e, 1.0);
-      lc.AddLiteralTerm(literal, -1.0);
-      linear_constraints->push_back(lc);
+      LinearConstraintBuilder lc(-kInfinity, 0.0);
+      CHECK(lc.AddLiteralTerm(e, 1.0, *encoder));
+      CHECK(lc.AddLiteralTerm(m->Literal(ref), -1.0, *encoder));
+      linear_constraints->push_back(lc.Build());
     }
   } else if (ct.constraint_case() == ConstraintProto::ConstraintCase::kIntMax) {
     if (HasEnforcementLiteral(ct)) return;
     const int target = ct.int_max().target();
     for (const int var : ct.int_max().vars()) {
-      // This deal with the corner case X = std::max(X, Y, Z, ..) !
+      // This deal with the corner case X = max(X, Y, Z, ..) !
       // Note that this can be presolved into X >= Y, X >= Z, ...
       if (target == var) continue;
-      LpConstraint lc(-kInfinity, 0.0);
-      lc.AddTerm(var, 1.0);
-      lc.AddTerm(target, -1.0);
-      linear_constraints->push_back(lc);
+      LinearConstraintBuilder lc(-kInfinity, 0.0);
+      lc.AddTerm(m->Integer(var), 1.0);
+      lc.AddTerm(m->Integer(target), -1.0);
+      linear_constraints->push_back(lc.Build());
     }
   } else if (ct.constraint_case() == ConstraintProto::ConstraintCase::kIntMin) {
     if (HasEnforcementLiteral(ct)) return;
     const int target = ct.int_min().target();
     for (const int var : ct.int_min().vars()) {
       if (target == var) continue;
-      LpConstraint lc(-kInfinity, 0.0);
-      lc.AddTerm(target, 1.0);
-      lc.AddTerm(var, -1.0);
-      linear_constraints->push_back(lc);
+      LinearConstraintBuilder lc(-kInfinity, 0.0);
+      lc.AddTerm(m->Integer(target), 1.0);
+      lc.AddTerm(m->Integer(var), -1.0);
+      linear_constraints->push_back(lc.Build());
     }
   } else if (ct.constraint_case() == ConstraintProto::ConstraintCase::kLinear) {
-    // Note that we ignore the holes in the domain...
+    // Note that we ignore the holes in the domain.
+    //
+    // TODO(user): In LoadLinearConstraint() we already created intermediate
+    // Booleans for each disjoint interval, we should reuse them here if
+    // possible.
     const int64 min = ct.linear().domain(0);
     const int64 max = ct.linear().domain(ct.linear().domain_size() - 1);
     if (min == kint64min && max == kint64max) return;
 
-    // This is needed in case of duplicate variables in the linear constraint.
-    std::unordered_map<int, double> terms;
-    for (int i = 0; i < ct.linear().vars_size(); i++) {
-      const int ref = ct.linear().vars(i);
-      const int64 coeff = ct.linear().coeffs(i);
-      terms[PositiveRef(ref)] += RefIsPositive(ref) ? coeff : -coeff;
-    }
-
     if (!HasEnforcementLiteral(ct)) {
-      LpConstraint lc((min == kint64min) ? -kInfinity : min,
-                      (max == kint64max) ? kInfinity : max);
-      lc.terms = terms;
-      linear_constraints->push_back(lc);
+      LinearConstraintBuilder lc((min == kint64min) ? -kInfinity : min,
+                                 (max == kint64max) ? kInfinity : max);
+      for (int i = 0; i < ct.linear().vars_size(); i++) {
+        const int ref = ct.linear().vars(i);
+        const int64 coeff = ct.linear().coeffs(i);
+        lc.AddTerm(m->Integer(ref), coeff);
+      }
+      linear_constraints->push_back(lc.Build());
       return;
     }
 
     // Reified version.
-    if (linearization_level < 2) return;
+    if (linearization_level < 3) return;
 
+    // Compute the implied bounds on the linear expression.
     double implied_lb = 0.0;
     double implied_ub = 0.0;
-    for (const auto entry : terms) {
-      const double coeff = entry.second;
-      const IntegerVariableProto& p = model_proto.variables(entry.first);
+    for (int i = 0; i < ct.linear().vars_size(); i++) {
+      int ref = ct.linear().vars(i);
+      double coeff = static_cast<double>(ct.linear().coeffs(i));
+      if (!RefIsPositive(ref)) {
+        ref = PositiveRef(ref);
+        coeff -= coeff;
+      }
+      const IntegerVariableProto& p = model_proto.variables(ref);
       if (coeff > 0.0) {
         implied_lb += coeff * static_cast<double>(p.domain(0));
         implied_ub +=
@@ -1817,111 +1795,136 @@ void TryToLinearizeConstraint(const CpModelProto& model_proto,
     const int e = ct.enforcement_literal(0);
     if (min != kint64min) {
       // (e => terms >= min) <=> terms >= implied_lb + e * (min - implied_lb);
-      LpConstraint lc(implied_lb, kInfinity);
-      lc.terms = terms;
-      lc.AddLiteralTerm(e, implied_lb - min);
-      linear_constraints->push_back(lc);
+      LinearConstraintBuilder lc(implied_lb, kInfinity);
+      for (int i = 0; i < ct.linear().vars_size(); i++) {
+        const int ref = ct.linear().vars(i);
+        const int64 coeff = ct.linear().coeffs(i);
+        lc.AddTerm(m->Integer(ref), coeff);
+      }
+      CHECK(lc.AddLiteralTerm(m->Literal(e), implied_lb - min, *encoder));
+      linear_constraints->push_back(lc.Build());
     }
     if (max != kint64max) {
       // (e => terms <= max) <=> terms <= implied_ub + e * (max - implied_ub)
-      LpConstraint lc(-kInfinity, implied_ub);
-      lc.terms = terms;
-      lc.AddLiteralTerm(e, implied_ub - max);
-      linear_constraints->push_back(lc);
+      LinearConstraintBuilder lc(-kInfinity, implied_ub);
+      for (int i = 0; i < ct.linear().vars_size(); i++) {
+        const int ref = ct.linear().vars(i);
+        const int64 coeff = ct.linear().coeffs(i);
+        lc.AddTerm(m->Integer(ref), coeff);
+      }
+      CHECK(lc.AddLiteralTerm(m->Literal(e), implied_ub - max, *encoder));
+      linear_constraints->push_back(lc.Build());
     }
+  } else if (ct.constraint_case() ==
+             ConstraintProto::ConstraintCase::kCircuit) {
+    if (HasEnforcementLiteral(ct)) return;
+    const int num_arcs = ct.circuit().literals_size();
+    CHECK_EQ(num_arcs, ct.circuit().tails_size());
+    CHECK_EQ(num_arcs, ct.circuit().heads_size());
+
+    // Each node must have exctly one incoming and one outgoing arc (note that
+    // it can be the unique self-arc of this node too).
+    std::map<int, std::unique_ptr<LinearConstraintBuilder>>
+        incoming_arc_constraints;
+    std::map<int, std::unique_ptr<LinearConstraintBuilder>>
+        outgoing_arc_constraints;
+    auto get_constraint =
+        [](std::map<int, std::unique_ptr<LinearConstraintBuilder>>* node_map,
+           int node) {
+          if (!ContainsKey(*node_map, node)) {
+            (*node_map)[node].reset(new LinearConstraintBuilder(1, 1));
+          }
+          return (*node_map)[node].get();
+        };
+    for (int i = 0; i < num_arcs; i++) {
+      const Literal arc = m->Literal(ct.circuit().literals(i));
+      const int tail = ct.circuit().tails(i);
+      const int head = ct.circuit().heads(i);
+
+      // Make sure this literal has a view.
+      m->Add(NewIntegerVariableFromLiteral(arc));
+
+      CHECK(get_constraint(&outgoing_arc_constraints, tail)
+                ->AddLiteralTerm(arc, 1.0, *encoder));
+      CHECK(get_constraint(&incoming_arc_constraints, head)
+                ->AddLiteralTerm(arc, 1.0, *encoder));
+    }
+    for (const auto* node_map :
+         {&outgoing_arc_constraints, &incoming_arc_constraints}) {
+      for (const auto& entry : *node_map) {
+        linear_constraints->push_back(entry.second->Build());
+      }
+    }
+  } else if (ct.constraint_case() ==
+             ConstraintProto::ConstraintCase::kElement) {
+    const IntegerVariable index = m->Integer(ct.element().index());
+    const IntegerVariable target = m->Integer(ct.element().target());
+    const std::vector<IntegerVariable> vars = m->Integers(ct.element().vars());
+
+    // We only relax the case where all the vars are constant.
+    // target = sum (index == i) * fixed_vars[i].
+    LinearConstraintBuilder constraint(0.0, 0.0);
+    constraint.AddTerm(target, -1.0);
+    for (const auto literal_value : m->Add(FullyEncodeVariable((index)))) {
+      const IntegerVariable var = vars[literal_value.value.value()];
+      if (!m->Get(IsFixed(var))) return;
+
+      // Make sure this literal has a view.
+      m->Add(NewIntegerVariableFromLiteral(literal_value.literal));
+      CHECK(constraint.AddLiteralTerm(literal_value.literal, m->Get(Value(var)),
+                                      *encoder));
+    }
+
+    linear_constraints->push_back(constraint.Build());
   }
 }
 
-struct LpCutGenerators {
-  std::vector<int> refs;  // Used for the LP connected components.
-  CutGenerator cut_generator;
-};
-
-// TODO(user): it is annoying that we need the mapping here as it make stuff
-// harder to test. It should be possible to remove it if the circuit was
-// directly expressed in term of graph...
 void TryToAddCutGenerators(const CpModelProto& model_proto,
                            const ConstraintProto& ct, ModelWithMapping* m,
-                           std::vector<LpCutGenerators>* cut_generators) {
+                           std::vector<CutGenerator>* cut_generators) {
+  auto* encoder = m->GetOrCreate<IntegerEncoder>();
   if (ct.constraint_case() == ConstraintProto::ConstraintCase::kCircuit) {
-    // This cut generator is valid only if the circuit must pass by all the
-    // points. That is if there is no possible self-arc.
-    //
-    // For flatzinc problems, we often have nexts[0] fixed to zero, and we need
-    // to find a circuit on the rest of the nodes, it is why we have this
-    // ignore_zero_offset "hack". TODO(user): be even more generic.
-    int ignore_zero_offset = 0;
-    for (int i = 0; i < ct.circuit().nexts_size(); ++i) {
-      const auto domain =
-          ReadDomain(model_proto.variables(ct.circuit().nexts(i)));
-      if (i == 0 && domain.size() == 1 && domain[0].start == 0 &&
-          domain[0].end == 0) {
-        ignore_zero_offset = 1;
-        continue;
-      }
-      if (SortedDisjointIntervalsContain(domain, i)) {
-        VLOG(1) << "Subcircuit constraint, no cuts.";
-        return;
-      }
-    }
+    std::vector<int> tails(ct.circuit().tails().begin(),
+                           ct.circuit().tails().end());
+    std::vector<int> heads(ct.circuit().heads().begin(),
+                           ct.circuit().heads().end());
+    std::vector<Literal> literals = m->Literals(ct.circuit().literals());
+    const int num_nodes = ReindexArcs(&tails, &heads, &literals);
 
-    // TODO(user): A bit duplicated with LoadCircuitConstraint() except we
-    // need to convert Literal to IntegerVariable here.
-    const std::vector<IntegerVariable> nexts =
-        m->Integers(ct.circuit().nexts());
-
-    LpCutGenerators generator;
-    std::vector<int> tails;
-    std::vector<int> heads;
     std::vector<IntegerVariable> vars;
-    const int num_nodes = nexts.size();
-    for (int i = ignore_zero_offset; i < num_nodes; ++i) {
-      const auto encoding = m->Add(FullyEncodeVariable(nexts[i]));
-      for (const auto& entry : encoding) {
-        const Literal l = entry.literal;
-
-        // For now we need this Literal to appear as a variable in the cp_model
-        // proto.
-        int ref = m->GetProtoVariableFromBooleanVariable(l.Variable());
-        if (ref < 0 || !m->IsInteger(ref)) return;
-
-        if (l.IsNegative()) ref = NegatedRef(ref);
-        generator.refs.push_back(ref);
-        tails.push_back(i - ignore_zero_offset);
-        heads.push_back(entry.value.value() - ignore_zero_offset);
-        vars.push_back(m->Integer(ref));
-      }
+    vars.reserve(literals.size());
+    for (const Literal& literal : literals) {
+      vars.push_back(m->Add(NewIntegerVariableFromLiteral(literal)));
     }
-    generator.cut_generator = CreateStronglyConnectedGraphCutGenerator(
-        num_nodes - ignore_zero_offset, tails, heads, vars);
-    cut_generators->push_back(std::move(generator));
+
+    cut_generators->push_back(CreateStronglyConnectedGraphCutGenerator(
+        num_nodes, tails, heads, vars));
   }
   if (ct.constraint_case() == ConstraintProto::ConstraintCase::kRoutes) {
-    LpCutGenerators generator;
     std::vector<int> tails;
     std::vector<int> heads;
     std::vector<IntegerVariable> vars;
     int num_nodes = 0;
     for (int i = 0; i < ct.routes().tails_size(); ++i) {
-      const int ref = ct.routes().literals(i);
-      if (!m->IsInteger(ref)) return;
-      generator.refs.push_back(ref);
+      const IntegerVariable var =
+          encoder->GetLiteralView(m->Literal(ct.routes().literals(i)));
+      if (var == kNoIntegerVariable) return;
+
+      vars.push_back(var);
       tails.push_back(ct.routes().tails(i));
       heads.push_back(ct.routes().heads(i));
-      vars.push_back(m->Integer(ref));
       num_nodes = std::max(num_nodes, 1 + ct.routes().tails(i));
       num_nodes = std::max(num_nodes, 1 + ct.routes().heads(i));
     }
     if (ct.routes().demands().empty() || ct.routes().capacity() == 0) {
-      generator.cut_generator = CreateStronglyConnectedGraphCutGenerator(
-          num_nodes, tails, heads, vars);
+      cut_generators->push_back(CreateStronglyConnectedGraphCutGenerator(
+          num_nodes, tails, heads, vars));
     } else {
       const std::vector<int64> demands(ct.routes().demands().begin(),
                                        ct.routes().demands().end());
-      generator.cut_generator = CreateCVRPCutGenerator(
-          num_nodes, tails, heads, vars, demands, ct.routes().capacity());
+      cut_generators->push_back(CreateCVRPCutGenerator(
+          num_nodes, tails, heads, vars, demands, ct.routes().capacity()));
     }
-    cut_generators->push_back(std::move(generator));
   }
 }
 
@@ -1932,75 +1935,74 @@ IntegerVariable AddLPConstraints(const CpModelProto& model_proto,
                                  int linearization_level, ModelWithMapping* m) {
   // Linearize the constraints.
   IndexReferences refs;
-  std::vector<LpConstraint> linear_constraints;
-  std::vector<LpCutGenerators> cut_generators;
+  std::vector<LinearConstraint> linear_constraints;
+  std::vector<CutGenerator> cut_generators;
+  auto* encoder = m->GetOrCreate<IntegerEncoder>();
   for (const auto& ct : model_proto.constraints()) {
-    // We linearize fully encoded variable differently.
-    // TODO(user): Also deal with (bool => x >= value) contraints.
+    // We linearize fully/partially encoded variable differently, so we just
+    // skip all these constraint that corresponds to these encoding.
     if (m->IgnoreConstraint(&ct)) continue;
 
-    // For now, we skip any constraint with literal that do not already
-    // appear as IntegerVariable. TODO(user): It should be possible to speed
-    // this up if needed.
+    // For now, we skip any constraint with literals that do not have an integer
+    // view. Ideally it should be up to the constraint to decide if creating a
+    // view is worth it.
+    //
+    // TODO(user): It should be possible to speed this up if needed.
     refs.variables.clear();
     refs.literals.clear();
     refs.intervals.clear();
     AddReferencesUsedByConstraint(ct, &refs);
     bool ok = true;
     for (const int literal_ref : refs.literals) {
-      if (!m->IsInteger(literal_ref)) {
+      const Literal literal = m->Literal(literal_ref);
+      if (encoder->GetLiteralView(literal) == kNoIntegerVariable &&
+          encoder->GetLiteralView(literal.Negated()) == kNoIntegerVariable) {
         ok = false;
         break;
       }
     }
     if (!ok) continue;
-    TryToLinearizeConstraint(model_proto, ct, linearization_level,
+    TryToLinearizeConstraint(model_proto, ct, m, linearization_level,
                              &linear_constraints);
-    TryToAddCutGenerators(model_proto, ct, m, &cut_generators);
+
+    // For now these are only useful on problem with circuit. They can help
+    // a lot on complex problems, but they also slow down simple ones.
+    if (linearization_level > 1) {
+      TryToAddCutGenerators(model_proto, ct, m, &cut_generators);
+    }
   }
 
   // Linearize the encoding of variable that are fully encoded in the proto.
   int num_full_encoding_relaxations = 0;
-  IntegerEncoder* encoder = m->GetOrCreate<IntegerEncoder>();
+  const int old_size = linear_constraints.size();
   for (int i = 0; i < model_proto.variables_size(); ++i) {
     if (m->IsBoolean(i)) continue;
-    if (!m->IsInteger(i)) continue;
-    if (!encoder->VariableIsFullyEncoded(m->Integer(i))) continue;
 
-    // If an IntegerVariable X is fully encoded as (b_i, value_i), we use
-    // the linear relaxation:
-    // - Sum b_i = 1
-    // - X = Sum b_i * value_i
-    LpConstraint exactly_one(1, 1);
-    LpConstraint encoding(0, 0);
-    encoding.AddTerm(i, -1.0);
+    const IntegerVariable var = m->Integer(i);
+    if (m->Get(IsFixed(var))) continue;
 
-    // We can only linearize a full encoding if all of its Boolean also appear
-    // as IntegerVariable in other constraints.
-    bool ok = true;
-    for (const IntegerEncoder::ValueLiteralPair& pair :
-         encoder->FullDomainEncoding(m->Integer(i))) {
-      const int var =
-          m->GetProtoVariableFromBooleanVariable(pair.literal.Variable());
-      // TODO(user): for some reason, adding the encoding with a negative
-      // literal make many of the spot5 problem not solvable! investigate why.
-      if (var < 0 || !m->IsInteger(var) || pair.literal.IsNegative()) {
-        ok = false;
-        break;
-      }
-      const int ref = pair.literal.IsPositive() ? var : NegatedRef(var);
-      exactly_one.AddLiteralTerm(ref, 1.0);
-      encoding.AddLiteralTerm(ref, static_cast<double>(pair.value.value()));
+    // TODO(user): This different encoding for the partial variable might be
+    // better (less LP constraints), but we do need more investigation to
+    // decide.
+    if (/* DISABLES CODE */ false) {
+      AppendPartialEncodingRelaxation(var, *(m->model()), &linear_constraints);
+      continue;
     }
-    if (ok) {
-      // We add the linear relaxation of the full encoding.
-      ++num_full_encoding_relaxations;
-      linear_constraints.push_back(exactly_one);
-      linear_constraints.push_back(encoding);
+
+    if (encoder->VariableIsFullyEncoded(var)) {
+      if (AppendFullEncodingRelaxation(var, *(m->model()),
+                                       &linear_constraints)) {
+        ++num_full_encoding_relaxations;
+      }
+    } else {
+      AppendPartialGreaterThanEncodingRelaxation(var, *(m->model()),
+                                                 &linear_constraints);
     }
   }
-  VLOG(1) << "num_full_encoding_relaxations : "
-          << num_full_encoding_relaxations;
+
+  VLOG(1) << "num_full_encoding_relaxations: " << num_full_encoding_relaxations;
+  VLOG(1) << "num_integer_encoding_constraints: "
+          << linear_constraints.size() - old_size;
   VLOG(1) << linear_constraints.size() << " constraints in the LP relaxation.";
   VLOG(1) << cut_generators.size() << " cuts generators.";
 
@@ -2008,31 +2010,35 @@ IntegerVariable AddLPConstraints(const CpModelProto& model_proto,
   // make a partition of the variables into connected components.
   // Constraint nodes are indexed by [0..num_lp_constraints),
   // variable nodes by [num_lp_constraints..num_lp_constraints+num_variables).
+  //
   // TODO(user): look into biconnected components.
   const int num_lp_constraints = linear_constraints.size();
   const int num_lp_cut_generators = cut_generators.size();
+  const int num_integer_variables =
+      m->GetOrCreate<IntegerTrail>()->NumIntegerVariables().value();
   ConnectedComponents<int, int> components;
   components.Init(num_lp_constraints + num_lp_cut_generators +
-                  model_proto.variables_size());
+                  num_integer_variables);
   auto get_constraint_index = [](int ct_index) { return ct_index; };
   auto get_cut_generator_index = [num_lp_constraints](int cut_index) {
     return num_lp_constraints + cut_index;
   };
-  auto get_var_index = [num_lp_constraints, num_lp_cut_generators](int ref) {
-    return num_lp_constraints + num_lp_cut_generators + PositiveRef(ref);
+  auto get_var_index = [num_lp_constraints,
+                        num_lp_cut_generators](IntegerVariable var) {
+    return num_lp_constraints + num_lp_cut_generators + var.value();
   };
   for (int i = 0; i < num_lp_constraints; i++) {
-    for (const auto term : linear_constraints[i].terms) {
-      components.AddArc(get_constraint_index(i), get_var_index(term.first));
+    for (const IntegerVariable var : linear_constraints[i].vars) {
+      components.AddArc(get_constraint_index(i), get_var_index(var));
     }
   }
   for (int i = 0; i < num_lp_cut_generators; ++i) {
-    for (const int ref : cut_generators[i].refs) {
-      components.AddArc(get_cut_generator_index(i), get_var_index(ref));
+    for (const IntegerVariable var : cut_generators[i].vars) {
+      components.AddArc(get_cut_generator_index(i), get_var_index(var));
     }
   }
 
-  std::unordered_map<int, int> components_to_size;
+  std::map<int, int> components_to_size;
   for (int i = 0; i < num_lp_constraints; i++) {
     const int id = components.GetClassRepresentative(get_constraint_index(i));
     components_to_size[id] += 1;
@@ -2049,13 +2055,13 @@ IntegerVariable AddLPConstraints(const CpModelProto& model_proto,
   // us on one of its components. This is critical on the zephyrus problems for
   // instance.
   for (int i = 0; i < model_proto.objective().coeffs_size(); ++i) {
-    const int var = model_proto.objective().vars(i);
+    const IntegerVariable var = m->Integer(model_proto.objective().vars(i));
     const int id = components.GetClassRepresentative(get_var_index(var));
     components_to_size[id] += 1;
   }
 
   // Dispatch every constraint to its LinearProgrammingConstraint.
-  std::unordered_map<int, LinearProgrammingConstraint*> representative_to_lp_constraint;
+  std::map<int, LinearProgrammingConstraint*> representative_to_lp_constraint;
   std::vector<LinearProgrammingConstraint*> lp_constraints;
   for (int i = 0; i < num_lp_constraints; i++) {
     const int id = components.GetClassRepresentative(get_constraint_index(i));
@@ -2070,8 +2076,9 @@ IntegerVariable AddLPConstraints(const CpModelProto& model_proto,
     LinearProgrammingConstraint* lp = representative_to_lp_constraint[id];
     const auto lp_constraint = lp->CreateNewConstraint(
         linear_constraints[i].lb, linear_constraints[i].ub);
-    for (const auto& term : linear_constraints[i].terms) {
-      lp->SetCoefficient(lp_constraint, m->Integer(term.first), term.second);
+    for (int j = 0; j < linear_constraints[i].vars.size(); ++j) {
+      lp->SetCoefficient(lp_constraint, linear_constraints[i].vars[j],
+                         linear_constraints[i].coeffs[j]);
     }
   }
 
@@ -2085,11 +2092,11 @@ IntegerVariable AddLPConstraints(const CpModelProto& model_proto,
       lp_constraints.push_back(lp);
     }
     LinearProgrammingConstraint* lp = representative_to_lp_constraint[id];
-    lp->AddCutGenerator(std::move(cut_generators[i].cut_generator));
+    lp->AddCutGenerator(std::move(cut_generators[i]));
   }
 
   // Add the objective.
-  std::unordered_map<int, std::vector<std::pair<IntegerVariable, int64>>>
+  std::map<int, std::vector<std::pair<IntegerVariable, int64>>>
       representative_to_cp_terms;
   std::vector<std::pair<IntegerVariable, int64>> top_level_cp_terms;
   int num_components_containing_objective = 0;
@@ -2097,17 +2104,16 @@ IntegerVariable AddLPConstraints(const CpModelProto& model_proto,
     // First pass: set objective coefficients on the lp constraints, and store
     // the cp terms in one vector per component.
     for (int i = 0; i < model_proto.objective().coeffs_size(); ++i) {
-      const int var = model_proto.objective().vars(i);
-      const IntegerVariable cp_var = m->Integer(var);
+      const IntegerVariable var = m->Integer(model_proto.objective().vars(i));
       const int64 coeff = model_proto.objective().coeffs(i);
       const int id = components.GetClassRepresentative(get_var_index(var));
       if (ContainsKey(representative_to_lp_constraint, id)) {
-        representative_to_lp_constraint[id]->SetObjectiveCoefficient(cp_var,
+        representative_to_lp_constraint[id]->SetObjectiveCoefficient(var,
                                                                      coeff);
-        representative_to_cp_terms[id].push_back(std::make_pair(cp_var, coeff));
+        representative_to_cp_terms[id].push_back(std::make_pair(var, coeff));
       } else {
         // Component is too small. We still need to store the objective term.
-        top_level_cp_terms.push_back(std::make_pair(cp_var, coeff));
+        top_level_cp_terms.push_back(std::make_pair(var, coeff));
       }
     }
     // Second pass: Build the cp sub-objectives per component.
@@ -2130,8 +2136,8 @@ IntegerVariable AddLPConstraints(const CpModelProto& model_proto,
   // Register LP constraints. Note that this needs to be done after all the
   // constraints have been added.
   for (auto* lp_constraint : lp_constraints) {
-    lp_constraint->RegisterWith(m->GetOrCreate<GenericLiteralWatcher>());
     VLOG(1) << "LP constraint: " << lp_constraint->DimensionString() << ".";
+    lp_constraint->RegisterWith(m->model());
   }
 
   VLOG(1) << top_level_cp_terms.size()
@@ -2169,6 +2175,8 @@ std::function<void(Model*)> NewFeasibleSolutionObserver(
   };
 }
 
+#if !defined(__PORTABLE_PLATFORM__)
+// TODO(user): Support it on android.
 std::function<SatParameters(Model*)> NewSatParameters(const std::string& params) {
   sat::SatParameters parameters;
   if (!params.empty()) {
@@ -2176,12 +2184,12 @@ std::function<SatParameters(Model*)> NewSatParameters(const std::string& params)
   }
   return NewSatParameters(parameters);
 }
+#endif  // __PORTABLE_PLATFORM__
 
 std::function<SatParameters(Model*)> NewSatParameters(
     const sat::SatParameters& parameters) {
   return [=](Model* model) {
     model->GetOrCreate<SatSolver>()->SetParameters(parameters);
-    model->SetSingleton(TimeLimit::FromParameters(parameters));
     return parameters;
   };
 }
@@ -2205,19 +2213,26 @@ CpSolverResponse SolveCpModelInternal(
   CpSolverResponse response;
   response.set_status(CpSolverStatus::MODEL_INVALID);
 
+  auto fill_response_statistics = [&]() {
+    response.set_num_booleans(model->Get<SatSolver>()->NumVariables());
+    response.set_num_branches(model->Get<SatSolver>()->num_branches());
+    response.set_num_conflicts(model->Get<SatSolver>()->num_failures());
+    response.set_num_binary_propagations(
+        model->Get<SatSolver>()->num_propagations());
+    response.set_num_integer_propagations(
+        model->Get<IntegerTrail>() == nullptr
+            ? 0
+            : model->Get<IntegerTrail>()->num_enqueues());
+    response.set_wall_time(wall_timer.Get());
+    response.set_user_time(user_timer.Get());
+    response.set_deterministic_time(
+        model->Get<TimeLimit>()->GetElapsedDeterministicTime());
+  };
+
   // We will add them all at once after model_proto is loaded.
   model->GetOrCreate<IntegerEncoder>()->DisableImplicationBetweenLiteral();
 
-  const SatParameters& parameters =
-      model->GetOrCreate<SatSolver>()->parameters();
-
-  // Instantiate all the needed variables. Note that if we have a fixed search
-  // with no search strategy, then we instantiate all the Booleans as integers.
-  const VariableUsage usage = ComputeVariableUsage(
-      model_proto,
-      /*view_all_booleans_as_integers=*/parameters.use_fixed_search() &&
-          model_proto.search_strategy().empty());
-  ModelWithMapping m(model_proto, usage, model);
+  ModelWithMapping m(model_proto, model);
 
   // Force some variables to be fully encoded.
   FullEncodingFixedPointComputer fixpoint(&m);
@@ -2228,7 +2243,6 @@ CpSolverResponse SolveCpModelInternal(
 
   // Load the constraints.
   std::set<std::string> unsupported_types;
-  Trail* trail = model->GetOrCreate<Trail>();
   int num_ignored_constraints = 0;
   for (const ConstraintProto& ct : model_proto.constraints()) {
     if (m.IgnoreConstraint(&ct)) {
@@ -2236,7 +2250,6 @@ CpSolverResponse SolveCpModelInternal(
       continue;
     }
 
-    const int old_num_fixed = trail->Index();
     if (!LoadConstraint(ct, &m)) {
       unsupported_types.insert(ConstraintCaseName(ct.constraint_case()));
       continue;
@@ -2251,15 +2264,17 @@ CpSolverResponse SolveCpModelInternal(
     // certain types of problems with millions of constraints.
     if (DEBUG_MODE) {
       model->GetOrCreate<SatSolver>()->Propagate();
+      Trail* trail = model->GetOrCreate<Trail>();
+      const int old_num_fixed = trail->Index();
       if (trail->Index() > old_num_fixed) {
         VLOG(1) << "Constraint fixed " << trail->Index() - old_num_fixed
-                << " Boolean variable(s): " << ct.ShortDebugString();
+                << " Boolean variable(s): " << ProtobufDebugString(ct);
       }
     }
     if (model->GetOrCreate<SatSolver>()->IsModelUnsat()) {
       VLOG(1) << "UNSAT during extraction (after adding '"
               << ConstraintCaseName(ct.constraint_case()) << "'). "
-              << ct.DebugString();
+              << ProtobufDebugString(ct);
       break;
     }
   }
@@ -2277,8 +2292,8 @@ CpSolverResponse SolveCpModelInternal(
   // Create an objective variable and its associated linear constraint if
   // needed.
   IntegerVariable objective_var = kNoIntegerVariable;
-  if (is_real_solve && parameters.use_global_lp_constraint() &&
-      parameters.linearization_level() > 0) {
+  const SatParameters& parameters = *(model->GetOrCreate<SatParameters>());
+  if (is_real_solve && parameters.linearization_level() > 0) {
     // Linearize some part of the problem and register LP constraint(s).
     objective_var =
         AddLPConstraints(model_proto, parameters.linearization_level(), &m);
@@ -2289,7 +2304,12 @@ CpSolverResponse SolveCpModelInternal(
     for (int i = 0; i < obj.vars_size(); ++i) {
       terms.push_back(std::make_pair(m.Integer(obj.vars(i)), obj.coeffs(i)));
     }
-    objective_var = GetOrCreateVariableGreaterOrEqualToSumOf(terms, m.model());
+    if (parameters.optimize_with_core()) {
+      objective_var = GetOrCreateVariableWithTightBound(terms, model);
+    } else {
+      objective_var =
+          GetOrCreateVariableGreaterOrEqualToSumOf(terms, m.model());
+    }
   }
 
   // Intersect the objective domain with the given one if any.
@@ -2298,6 +2318,8 @@ CpSolverResponse SolveCpModelInternal(
     const auto automatic_domain =
         model->GetOrCreate<IntegerTrail>()->InitialVariableDomain(
             objective_var);
+    VLOG(1) << "Objective offset:" << model_proto.objective().offset()
+            << " scaling_factor:" << model_proto.objective().scaling_factor();
     VLOG(1) << "Automatic internal objective domain: " << automatic_domain;
     VLOG(1) << "User specified internal objective domain: " << user_domain;
     CHECK_NE(objective_var, kNoIntegerVariable);
@@ -2311,7 +2333,7 @@ CpSolverResponse SolveCpModelInternal(
     // Make sure the sum take a value inside the objective domain by adding
     // the other side: objective <= sum terms.
     //
-    // TODO(user): Use a better condition to detect when this is not usefull.
+    // TODO(user): Use a better condition to detect when this is not useful.
     if (user_domain != automatic_domain) {
       std::vector<IntegerVariable> vars;
       std::vector<int64> coeffs;
@@ -2332,8 +2354,9 @@ CpSolverResponse SolveCpModelInternal(
       ->AddAllImplicationsBetweenAssociatedLiterals();
   model->GetOrCreate<SatSolver>()->Propagate();
 
-  // TODO(user): add an option?
-  if (model->Mutable<PrecedencesPropagator>() != nullptr) {
+  // Auto detect "at least one of" constraints in the PrecedencesPropagator.
+  if (model->Mutable<PrecedencesPropagator>() != nullptr &&
+      parameters.auto_detect_greater_than_at_least_one_of()) {
     model->Mutable<PrecedencesPropagator>()
         ->AddGreaterThanAtLeastOneOfConstraints(model);
     model->GetOrCreate<SatSolver>()->Propagate();
@@ -2371,6 +2394,7 @@ CpSolverResponse SolveCpModelInternal(
       // TODO(user): add all solutions to the response? or their count?
       ++num_solutions;
       FillSolutionInResponse(model_proto, m, &response);
+      fill_response_statistics();
       external_solution_observer(response);
 
       if (!parameters.enumerate_all_solutions()) break;
@@ -2389,9 +2413,11 @@ CpSolverResponse SolveCpModelInternal(
     VLOG(1) << "Initial num_bool: " << model->Get<SatSolver>()->NumVariables();
     const auto solution_observer =
         [&model_proto, &response, &num_solutions, &obj, &m,
-         &external_solution_observer, objective_var](const Model& sat_model) {
+         &external_solution_observer, objective_var,
+         &fill_response_statistics](const Model& sat_model) {
           num_solutions++;
           FillSolutionInResponse(model_proto, m, &response);
+          fill_response_statistics();
           int64 objective_value = 0;
           for (int i = 0; i < model_proto.objective().vars_size(); ++i) {
             objective_value += model_proto.objective().coeffs(i) *
@@ -2410,19 +2436,15 @@ CpSolverResponse SolveCpModelInternal(
       std::vector<IntegerVariable> linear_vars;
       std::vector<IntegerValue> linear_coeffs;
       ExtractLinearObjective(model_proto, &m, &linear_vars, &linear_coeffs);
-      #if defined(USE_CBC) || defined(USE_SCIP)
       if (parameters.optimize_with_max_hs()) {
         status = MinimizeWithHittingSetAndLazyEncoding(
             VLOG_IS_ON(1), objective_var, linear_vars, linear_coeffs,
             next_decision, solution_observer, model);
       } else {
-        #endif  // defined(USE_CBC) || defined(USE_SCIP)
         status = MinimizeWithCoreAndLazyEncoding(
             VLOG_IS_ON(1), objective_var, linear_vars, linear_coeffs,
             next_decision, solution_observer, model);
-        #if defined(USE_CBC) || defined(USE_SCIP)
       }
-      #endif  // defined(USE_CBC) || defined(USE_SCIP)
     } else {
       status = MinimizeIntegerVariableWithLinearScanAndLazyEncoding(
           /*log_info=*/false, objective_var, next_decision, solution_observer,
@@ -2463,19 +2485,7 @@ CpSolverResponse SolveCpModelInternal(
     default:
       LOG(FATAL) << "Unexpected SatSolver::Status " << status;
   }
-  response.set_num_booleans(model->Get<SatSolver>()->NumVariables());
-  response.set_num_branches(model->Get<SatSolver>()->num_branches());
-  response.set_num_conflicts(model->Get<SatSolver>()->num_failures());
-  response.set_num_binary_propagations(
-      model->Get<SatSolver>()->num_propagations());
-  response.set_num_integer_propagations(
-      model->Get<IntegerTrail>() == nullptr
-          ? 0
-          : model->Get<IntegerTrail>()->num_enqueues());
-  response.set_wall_time(wall_timer.Get());
-  response.set_user_time(user_timer.Get());
-  response.set_deterministic_time(
-      model->Get<TimeLimit>()->GetElapsedDeterministicTime());
+  fill_response_statistics();
   return response;
 }
 
@@ -2512,7 +2522,7 @@ void PostsolveResponse(const CpModelProto& model_proto,
   Model postsolve_model;
   {
     SatParameters params;
-    params.set_use_global_lp_constraint(false);
+    params.set_linearization_level(0);
     postsolve_model.Add(operations_research::sat::NewSatParameters(params));
   }
   const CpSolverResponse postsolve_response = SolveCpModelInternal(
@@ -2540,6 +2550,131 @@ void PostsolveResponse(const CpModelProto& model_proto,
   }
 }
 
+CpSolverResponse SolvePureSatModel(const CpModelProto& model_proto,
+                                   Model* model) {
+  std::unique_ptr<SatSolver> solver(new SatSolver());
+  SatParameters parameters = *model->GetOrCreate<SatParameters>();
+  parameters.set_log_search_progress(true);
+  solver->SetParameters(parameters);
+  model->GetOrCreate<TimeLimit>()->ResetLimitFromParameters(parameters);
+
+  // Create a DratWriter?
+  std::unique_ptr<DratWriter> drat_writer;
+#if !defined(__PORTABLE_PLATFORM__)
+  if (!FLAGS_drat_output.empty()) {
+    File* output;
+    CHECK_OK(file::Open(FLAGS_drat_output, "w", &output, file::Defaults()));
+    drat_writer.reset(new DratWriter(/*in_binary_format=*/false, output));
+    solver->SetDratWriter(drat_writer.get());
+  }
+#endif  // __PORTABLE_PLATFORM__
+
+  // Timing.
+  WallTimer wall_timer;
+  UserTimer user_timer;
+  wall_timer.Start();
+  user_timer.Start();
+
+  auto get_literal = [](int ref) {
+    if (ref >= 0) return Literal(BooleanVariable(ref), true);
+    return Literal(BooleanVariable(NegatedRef(ref)), false);
+  };
+
+  std::vector<Literal> temp;
+  const int num_variables = model_proto.variables_size();
+  solver->SetNumVariables(num_variables);
+  if (drat_writer != nullptr) drat_writer->SetNumVariables(num_variables);
+
+  for (const ConstraintProto& ct : model_proto.constraints()) {
+    switch (ct.constraint_case()) {
+      case ConstraintProto::ConstraintCase::kBoolAnd: {
+        // a => b
+        const Literal not_a = get_literal(ct.enforcement_literal(0)).Negated();
+        for (const int ref : ct.bool_and().literals()) {
+          const Literal b = get_literal(ref);
+          solver->AddProblemClause({not_a, b});
+        }
+        break;
+      }
+      case ConstraintProto::ConstraintCase::kBoolOr:
+        temp.clear();
+        for (const int ref : ct.bool_or().literals()) {
+          temp.push_back(get_literal(ref));
+        }
+        solver->AddProblemClause(temp);
+        break;
+      default:
+        LOG(FATAL) << "Not supported";
+    }
+  }
+
+  // Deal with fixed variables.
+  for (int ref = 0; ref < num_variables; ++ref) {
+    const auto domain = ReadDomain(model_proto.variables(ref));
+    CHECK_EQ(domain.size(), 1);
+    if (domain[0].start == domain[0].end) {
+      if (domain[0].start == 0) {
+        solver->AddUnitClause(get_literal(ref).Negated());
+      } else {
+        solver->AddUnitClause(get_literal(ref));
+      }
+    }
+  }
+
+  SatSolver::Status status;
+  CpSolverResponse response;
+  if (parameters.cp_model_presolve()) {
+    std::vector<bool> solution;
+    status = SolveWithPresolve(&solver, model->GetOrCreate<TimeLimit>(),
+                               &solution, drat_writer.get());
+    if (status == SatSolver::MODEL_SAT) {
+      response.clear_solution();
+      for (int ref = 0; ref < num_variables; ++ref) {
+        response.add_solution(solution[ref]);
+      }
+    }
+  } else {
+    status = solver->SolveWithTimeLimit(model->GetOrCreate<TimeLimit>());
+    if (status == SatSolver::MODEL_SAT) {
+      response.clear_solution();
+      for (int ref = 0; ref < num_variables; ++ref) {
+        response.add_solution(
+            solver->Assignment().LiteralIsTrue(get_literal(ref)) ? 1 : 0);
+      }
+    }
+  }
+
+  switch (status) {
+    case SatSolver::LIMIT_REACHED: {
+      response.set_status(CpSolverStatus::UNKNOWN);
+      break;
+    }
+    case SatSolver::MODEL_SAT: {
+      CHECK(SolutionIsFeasible(model_proto,
+                               std::vector<int64>(response.solution().begin(),
+                                                  response.solution().end())));
+      response.set_status(CpSolverStatus::MODEL_SAT);
+      break;
+    }
+    case SatSolver::MODEL_UNSAT: {
+      response.set_status(CpSolverStatus::MODEL_UNSAT);
+      break;
+    }
+    default:
+      LOG(FATAL) << "Unexpected SatSolver::Status " << status;
+  }
+  response.set_num_booleans(solver->NumVariables());
+  response.set_num_branches(solver->num_branches());
+  response.set_num_conflicts(solver->num_failures());
+  response.set_num_binary_propagations(solver->num_propagations());
+  response.set_num_integer_propagations(0);
+  response.set_wall_time(wall_timer.Get());
+  response.set_user_time(user_timer.Get());
+  response.set_deterministic_time(
+      model->Get<TimeLimit>()->GetElapsedDeterministicTime());
+  return response;
+}
+
 }  // namespace
 
 CpSolverResponse SolveCpModel(const CpModelProto& model_proto, Model* model) {
@@ -2555,6 +2690,7 @@ CpSolverResponse SolveCpModel(const CpModelProto& model_proto, Model* model) {
     }
   }
 
+#if !defined(__PORTABLE_PLATFORM__)
   // Dump?
   if (!FLAGS_cp_model_dump_file.empty()) {
     LOG(INFO) << "Dumping cp model proto to '" << FLAGS_cp_model_dump_file
@@ -2562,14 +2698,29 @@ CpSolverResponse SolveCpModel(const CpModelProto& model_proto, Model* model) {
     CHECK_OK(file::SetBinaryProto(FLAGS_cp_model_dump_file, model_proto,
                                   file::Defaults()));
   }
+#endif  // __PORTABLE_PLATFORM__
 
-  const CpModelProto expanded_proto = ExpandCpModel(model_proto);
+  // Special case for pure-sat problem.
+  // TODO(user): improve the normal presolver to do the same thing.
+  if (!model_proto.has_objective() &&
+      !model->GetOrCreate<SatParameters>()->enumerate_all_solutions()) {
+    bool is_pure_sat = true;
+    for (const ConstraintProto& ct : model_proto.constraints()) {
+      if (ct.constraint_case() != ConstraintProto::ConstraintCase::kBoolOr &&
+          ct.constraint_case() != ConstraintProto::ConstraintCase::kBoolAnd) {
+        is_pure_sat = false;
+        break;
+      }
+    }
+    if (is_pure_sat) return SolvePureSatModel(model_proto, model);
+  }
+
+  // Starts by expanding some constraints if needed.
+  CpModelProto presolved_proto = ExpandCpModel(model_proto);
 
   const auto& observers = model->GetOrCreate<SolutionObservers>()->observers;
-  const SatParameters& parameters =
-      model->GetOrCreate<SatSolver>()->parameters();
-  if (!parameters.cp_model_presolve()) {
-    return SolveCpModelInternal(expanded_proto, true,
+  if (!model->GetOrCreate<SatParameters>()->cp_model_presolve()) {
+    return SolveCpModelInternal(presolved_proto, true,
                                 [&](const CpSolverResponse& response) {
                                   for (const auto& observer : observers) {
                                     observer(response);
@@ -2578,27 +2729,29 @@ CpSolverResponse SolveCpModel(const CpModelProto& model_proto, Model* model) {
                                 model);
   }
 
-  CpModelProto presolved_proto;
+  // Do the actual presolve.
   CpModelProto mapping_proto;
   std::vector<int> postsolve_mapping;
-  PresolveCpModel(expanded_proto, &presolved_proto, &mapping_proto,
-                  &postsolve_mapping);
+  PresolveCpModel(&presolved_proto, &mapping_proto, &postsolve_mapping);
   VLOG(1) << CpModelStats(presolved_proto);
 
+  // Note that it is okay to use the initial model_proto in the postsolve even
+  // though we called PresolveCpModel() on the expanded proto. This is because
+  // PostsolveResponse() only use the proto to known the number of variables to
+  // fill in the response and to check the solution feasibility of these
+  // variables.
   CpSolverResponse response = SolveCpModelInternal(
       presolved_proto, true,
       [&](const CpSolverResponse& response) {
         if (observers.empty()) return;
         CpSolverResponse copy = response;
-        PostsolveResponse(expanded_proto, mapping_proto, postsolve_mapping,
-                          &copy);
+        PostsolveResponse(model_proto, mapping_proto, postsolve_mapping, &copy);
         for (const auto& observer : observers) {
           observer(copy);
         }
       },
       model);
-  PostsolveResponse(expanded_proto, mapping_proto, postsolve_mapping,
-                    &response);
+  PostsolveResponse(model_proto, mapping_proto, postsolve_mapping, &response);
   return response;
 }
 

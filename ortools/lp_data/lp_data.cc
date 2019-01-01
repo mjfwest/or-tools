@@ -24,6 +24,7 @@
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/join.h"
 #include "ortools/base/join.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/lp_data/lp_print_utils.h"
 #include "ortools/lp_data/lp_utils.h"
 #include "ortools/lp_data/matrix_utils.h"
@@ -416,7 +417,7 @@ Fractional LinearProgram::GetObjectiveCoefficientForMinimizationVersion(
 }
 
 std::string LinearProgram::GetDimensionString() const {
-  return StringPrintf(
+  return absl::StrFormat(
       "%d rows, %d columns, %lld entries", num_constraints().value(),
       num_variables().value(),
       // static_cast<int64> is needed because the Android port uses int32.
@@ -437,8 +438,8 @@ std::string LinearProgram::GetObjectiveStatsString() const {
   if (num_non_zeros == 0) {
     return "No objective term. This is a pure feasibility problem.";
   } else {
-    return StringPrintf("%lld non-zeros, range [%e, %e]", num_non_zeros,
-                        min_value, max_value);
+    return absl::StrFormat("%lld non-zeros, range [%e, %e]", num_non_zeros,
+                           min_value, max_value);
   }
 }
 
@@ -589,9 +590,9 @@ std::string LinearProgram::DumpSolution(const DenseRow& variable_values) const {
   DCHECK_EQ(variable_values.size(), num_variables());
   std::string output;
   for (ColIndex col(0); col < variable_values.size(); ++col) {
-    if (!output.empty()) StrAppend(&output, ", ");
-    StrAppend(&output, GetVariableName(col), " = ",
-                    LegacyPrecision(variable_values[col]));
+    if (!output.empty()) absl::StrAppend(&output, ", ");
+    absl::StrAppend(&output, GetVariableName(col), " = ",
+                    absl::LegacyPrecision(variable_values[col]));
   }
   return output;
 }
@@ -678,7 +679,7 @@ void LinearProgram::AddSlackVariablesWhereNecessary(
     }
     const ColIndex slack_col = CreateNewSlackVariable(
         has_integer_slack_variable[row], -constraint_upper_bounds_[row],
-        -constraint_lower_bounds_[row], StrCat("s", row.value()));
+        -constraint_lower_bounds_[row], absl::StrCat("s", row.value()));
     SetCoefficient(row, slack_col, 1.0);
     SetConstraintBounds(row, 0.0, 0.0);
   }
@@ -1075,17 +1076,6 @@ void LinearProgram::DeleteSlackVariables() {
   first_slack_variable_ = kInvalidCol;
 }
 
-void LinearProgram::Scale(SparseMatrixScaler* scaler) {
-  scaler->Init(&matrix_);
-  scaler->Scale();  // Compute R and C, and replace the matrix A by R.A.C
-  scaler->ScaleRowVector(false, &objective_coefficients_);      // oc = oc.C
-  scaler->ScaleRowVector(true, &variable_lower_bounds_);        // cl = cl.C^-1
-  scaler->ScaleRowVector(true, &variable_upper_bounds_);        // cu = cu.C^-1
-  scaler->ScaleColumnVector(false, &constraint_lower_bounds_);  // rl = R.rl
-  scaler->ScaleColumnVector(false, &constraint_upper_bounds_);  // ru = R.ru
-  transpose_matrix_is_consistent_ = false;
-}
-
 namespace {
 
 // Note that we ignore zeros and infinities because they do not matter from a
@@ -1197,7 +1187,8 @@ void LinearProgram::DeleteRows(const DenseBooleanColumn& row_to_delete) {
   matrix_.DeleteRows(new_index, permutation);
 
   // Remove the id of the deleted rows and adjust the index of the other.
-  std::unordered_map<std::string, RowIndex>::iterator it = constraint_table_.begin();
+  std::unordered_map<std::string, RowIndex>::iterator it =
+      constraint_table_.begin();
   while (it != constraint_table_.end()) {
     const RowIndex row = it->second;
     if (permutation[row] != kInvalidRow) {

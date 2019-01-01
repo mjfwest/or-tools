@@ -36,6 +36,8 @@
 #include "ortools/sat/optimization.h"
 #include "ortools/sat/sat_solver.h"
 #include "ortools/sat/table.h"
+#include "ortools/util/sigint.h"
+#include "ortools/util/time_limit.h"
 
 DEFINE_string(cp_sat_params, "", "SatParameters as a text proto.");
 DEFINE_bool(use_flatzinc_format, true, "Output uses the flatzinc format");
@@ -399,8 +401,6 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
     auto* arg = ct->mutable_all_diff();
     for (const int var : LookupVars(fz_ct.arguments[0])) arg->add_vars(var);
   } else if (fz_ct.type == "circuit" || fz_ct.type == "subcircuit") {
-    auto* arg = ct->mutable_circuit();
-
     // Try to auto-detect if it is zero or one based.
     bool found_zero = false;
     bool found_size = false;
@@ -409,15 +409,23 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
       if (var->domain.Min() == 0) found_zero = true;
       if (var->domain.Max() == size) found_size = true;
     }
-
-    // Add a dummy constant variable at zero if the indexing is one based.
     const bool is_one_based = !found_zero || found_size;
-    if (is_one_based) arg->add_nexts(LookupConstant(0));
+    const int min_index = is_one_based ? 1 : 0;
+    const int max_index = min_index + fz_ct.arguments[0].variables.size() - 1;
 
-    int index = is_one_based ? 1 : 0;
+    // The arc-based mutable circuit.
+    auto* circuit_arg = ct->mutable_circuit();
+
+    // We fully encode all variables so we can use the literal based circuit.
+    // TODO(user): avoid fully encoding more than once?
+    int index = min_index;
     const bool is_circuit = (fz_ct.type == "circuit");
     for (const int var : LookupVars(fz_ct.arguments[0])) {
-      arg->add_nexts(var);
+      // Restrict the domain of var to [min_index, max_index]
+      FillDomain(
+          IntersectionOfSortedDisjointIntervals(
+              ReadDomain(proto.variables(var)), {{min_index, max_index}}),
+          proto.mutable_variables(var));
       if (is_circuit) {
         // We simply make sure that the variable cannot take the value index.
         FillDomain(IntersectionOfSortedDisjointIntervals(
@@ -425,6 +433,47 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
                        {{kint64min, index - 1}, {index + 1, kint64max}}),
                    proto.mutable_variables(var));
       }
+
+      const auto domain = ReadDomain(proto.variables(var));
+      for (const auto interval : domain) {
+        for (int64 value = interval.start; value <= interval.end; ++value) {
+          // Create one Boolean variable for this arc.
+          const int literal = proto.variables_size();
+          {
+            auto* new_var = proto.add_variables();
+            new_var->add_domain(0);
+            new_var->add_domain(1);
+          }
+
+          // Add the arc.
+          circuit_arg->add_tails(index);
+          circuit_arg->add_heads(value);
+          circuit_arg->add_literals(literal);
+
+          // literal => var == value.
+          {
+            auto* ct = proto.add_constraints();
+            ct->add_enforcement_literal(literal);
+            ct->mutable_linear()->add_coeffs(1);
+            ct->mutable_linear()->add_vars(var);
+            ct->mutable_linear()->add_domain(value);
+            ct->mutable_linear()->add_domain(value);
+          }
+
+          // not(literal) => var != value
+          {
+            auto* ct = proto.add_constraints();
+            ct->add_enforcement_literal(NegatedRef(literal));
+            ct->mutable_linear()->add_coeffs(1);
+            ct->mutable_linear()->add_vars(var);
+            ct->mutable_linear()->add_domain(kint64min);
+            ct->mutable_linear()->add_domain(value - 1);
+            ct->mutable_linear()->add_domain(value + 1);
+            ct->mutable_linear()->add_domain(kint64max);
+          }
+        }
+      }
+
       ++index;
     }
   } else if (fz_ct.type == "inverse") {
@@ -501,10 +550,7 @@ void CpModelProtoWithMapping::FillConstraint(const fz::Constraint& fz_ct,
   } else if (fz_ct.type == "network_flow" ||
              fz_ct.type == "network_flow_cost") {
     // Note that we leave ct empty here (with just the name set).
-
-    // We simply do a linear encoding and forces the global lp constraint to
-    // be run on such problem.
-    parameters.set_use_global_lp_constraint(true);
+    // We simply do a linear encoding of this constraint.
     const bool has_cost = fz_ct.type == "network_flow_cost";
     const std::vector<int> flow = LookupVars(fz_ct.arguments[has_cost ? 3 : 2]);
 
@@ -699,17 +745,17 @@ std::string SolutionString(
   if (output.variable != nullptr) {
     const int64 value = value_func(output.variable);
     if (output.display_as_boolean) {
-      return StrCat(output.name, " = ", value == 1 ? "true" : "false",
+      return absl::StrCat(output.name, " = ", value == 1 ? "true" : "false",
                           ";");
     } else {
-      return StrCat(output.name, " = ", value, ";");
+      return absl::StrCat(output.name, " = ", value, ";");
     }
   } else {
     const int bound_size = output.bounds.size();
     std::string result = StrCat(output.name, " = array", bound_size, "d(");
     for (int i = 0; i < bound_size; ++i) {
       if (output.bounds[i].max_value != 0) {
-        StrAppend(&result, output.bounds[i].min_value, "..",
+        absl::StrAppend(&result, output.bounds[i].min_value, "..",
                         output.bounds[i].max_value, ", ");
       } else {
         result.append("{},");
@@ -721,7 +767,7 @@ std::string SolutionString(
       if (output.display_as_boolean) {
         result.append(value ? "true" : "false");
       } else {
-        StrAppend(&result, value);
+        absl::StrAppend(&result, value);
       }
       if (i != output.flat_variables.size() - 1) {
         result.append(", ");
@@ -747,7 +793,7 @@ std::string SolutionString(
 
 void LogInFlatzincFormat(const std::string& multi_line_input) {
   std::vector<std::string> lines =
-      strings::Split(multi_line_input, '\n', strings::SkipEmpty());
+      absl::StrSplit(multi_line_input, '\n', absl::SkipEmpty());
   for (const std::string& line : lines) {
     FZLOG << line << FZENDL;
   }
@@ -756,8 +802,7 @@ void LogInFlatzincFormat(const std::string& multi_line_input) {
 }  // namespace
 
 void SolveFzWithCpModelProto(const fz::Model& fz_model,
-                             const fz::FlatzincParameters& p,
-                             bool* interrupt_solve) {
+                             const fz::FlatzincParameters& p) {
   CpModelProtoWithMapping m;
   m.proto.set_name(fz_model.name());
 
@@ -826,8 +871,6 @@ void SolveFzWithCpModelProto(const fz::Model& fz_model,
   // Fill the search order.
   m.TranslateSearchAnnotations(fz_model.search_annotations());
 
-  Model sat_model;
-
   // The order is important, we want the flag parameters to overwrite anything
   // set in m.parameters.
   sat::SatParameters flag_parameters;
@@ -839,18 +882,20 @@ void SolveFzWithCpModelProto(const fz::Model& fz_model,
     // Enumerate all sat solutions.
     m.parameters.set_enumerate_all_solutions(true);
   }
-  m.parameters.set_use_fixed_search(!p.free_search);
-  sat_model.GetOrCreate<SatSolver>()->SetParameters(m.parameters);
+  if (!p.free_search) {
+      m.parameters.set_search_branching(SatParameters::FIXED_SEARCH);
+    }
 
-  std::unique_ptr<TimeLimit> time_limit;
   if (p.time_limit_in_ms > 0) {
-    time_limit.reset(new TimeLimit(p.time_limit_in_ms * 1e-3));
-  } else {
-    // If the p.time_limit_in_ms is not set, we use the SatParameters one.
-    time_limit = TimeLimit::FromParameters(m.parameters);
+    m.parameters.set_max_time_in_seconds(p.time_limit_in_ms * 1e-3);
   }
-  time_limit->RegisterExternalBooleanAsLimit(interrupt_solve);
-  sat_model.SetSingleton(std::move(time_limit));
+
+  bool stopped = false;
+  Model sat_model;
+  sat_model.Add(NewSatParameters(m.parameters));
+  sat_model.GetOrCreate<TimeLimit>()->RegisterExternalBooleanAsLimit(&stopped);
+  sat_model.GetOrCreate<SigintHandler>()->Register(
+      [&stopped]() { stopped = true; });
 
   // Print model statistics.
   if (!FLAGS_use_flatzinc_format) {

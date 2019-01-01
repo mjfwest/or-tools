@@ -27,7 +27,7 @@ void ParseFileByLines(const std::string& filename, std::vector<std::string>* lin
   CHECK_NOTNULL(lines);
   std::string result;
   CHECK_OK(file::GetContents(filename, &result, file::Defaults()));
-  *lines = strings::Split(result, '\n', strings::SkipEmpty());
+  *lines = absl::StrSplit(result, '\n', absl::SkipEmpty());
 }
 
 // VariableParser Implementation
@@ -40,8 +40,7 @@ void VariableParser::Parse() {
   std::vector<std::string> lines;
   ParseFileByLines(filename_, &lines);
   for (const std::string& line : lines) {
-    std::vector<std::string> tokens =
-        strings::Split(line, ' ', strings::SkipEmpty());
+    std::vector<std::string> tokens = absl::StrSplit(line, ' ', absl::SkipEmpty());
     if (tokens.empty()) {
       continue;
     }
@@ -67,8 +66,7 @@ void DomainParser::Parse() {
   std::vector<std::string> lines;
   ParseFileByLines(filename_, &lines);
   for (const std::string& line : lines) {
-    std::vector<std::string> tokens =
-        strings::Split(line, ' ', strings::SkipEmpty());
+    std::vector<std::string> tokens = absl::StrSplit(line, ' ', absl::SkipEmpty());
     if (tokens.empty()) {
       continue;
     }
@@ -98,8 +96,7 @@ void ConstraintParser::Parse() {
   std::vector<std::string> lines;
   ParseFileByLines(filename_, &lines);
   for (const std::string& line : lines) {
-    std::vector<std::string> tokens =
-        strings::Split(line, ' ', strings::SkipEmpty());
+    std::vector<std::string> tokens = absl::StrSplit(line, ' ', absl::SkipEmpty());
     if (tokens.empty()) {
       continue;
     }
@@ -158,7 +155,7 @@ void ParametersParser::Parse() {
       objective = false;
       if (line.find("=") != std::string::npos) {
         std::vector<std::string> tokens =
-            strings::Split(line, ' ', strings::SkipEmpty());
+            absl::StrSplit(line, ' ', absl::SkipEmpty());
         CHECK_GE(tokens.size(), 3);
         coefficients.push_back(atoi32(tokens[2].c_str()));
       }

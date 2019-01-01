@@ -157,16 +157,18 @@ message ReservoirConstraintProto {
   repeated int64 demands = 4;
 }
 
-// The "next" variable of a node i represents its successor in a graph. Any
-// value that fall outside [0, n = next_variables.size()) or is a self-loop
-// (next[i] == i) takes the special meaning of no-successor.
+// The circuit constraint is defined on a graph where the arc presence are
+// controlled by literals. Each arc is given by an index in the
+// tails/heads/literals lists that must have the same size.
 //
-// The circuit constraint enforces that all nodes with a valid successor must
-// form a circuit, that is a single loop that goes through all of them. Note
-// that to enforce that a node has a valid successor, it is sufficient to
-// reduce its domain to only valid values.
+// For now, we ignore node indices with no incident arc. All the other nodes
+// must have exactly one incoming and one outgoing selected arc (i.e. literal at
+// true). All the selected arcs that are not self-loops must form a single
+// circuit.
 message CircuitConstraintProto {
-  repeated int32 nexts = 2;
+  repeated int32 tails = 3;
+  repeated int32 heads = 4;
+  repeated int32 literals = 5;
 }
 
 // The "VRP" constraint.
@@ -260,7 +262,11 @@ message ConstraintProto {
   oneof constraint {
     BoolArgumentProto bool_or = 3;   // OR(literals) is true.
     BoolArgumentProto bool_and = 4;  // AND(literals) is true.
-    BoolArgumentProto bool_xor = 5;  // XOR(literals) is true.
+
+    // XOR(literals) is true.  For more than two literals, note that
+    // (a_1 XOR a_2 XOR ... XOR a_n) is equivalent to an odd number the a_i
+    // being true.
+    BoolArgumentProto bool_xor = 5;
 
     IntegerArgumentProto int_div = 7;    // target = vars[0] / vars[1]
     IntegerArgumentProto int_mod = 8;    // target = vars[0] % vars[1]
@@ -365,6 +371,14 @@ message DecisionStrategyProto {
   repeated AffineTransformation transformations = 4;
 }
 
+// This message encodes a partial (or full) assignment of the variables of a
+// CpModelProto. The variable indices should be unique and valid variable
+// indices.
+message PartialVariableAssignment {
+  repeated int32 vars = 1;
+  repeated int64 values = 2;
+}
+
 // A constraint programming problem.
 message CpModelProto {
   // For debug/logging only. Can be empty.
@@ -377,9 +391,9 @@ message CpModelProto {
   // The objective to minimize. Can be empty for pure decision problems.
   CpObjectiveProto objective = 4;
 
-  // Defines the strategy that the solver should follow when the "fixed_search"
-  // parameters is set to true. Note that this strategy is also used as an
-  // heuristic when we are not in fixed search.
+  // Defines the strategy that the solver should follow when the
+  // search_branching parameter is set to FIXED_SEARCH. Note that this strategy
+  // is also used as a heuristic when we are not in fixed search.
   //
   // If empty, the solver will try to assign all variables to their min value in
   // the order of their appearance in the variables field above. Otherwise, it
@@ -392,6 +406,19 @@ message CpModelProto {
   // may be fixed and this is why the solution_lower_bounds and
   // solution_upper_bounds fields in the CpSolverResponse are for.
   repeated DecisionStrategyProto search_strategy = 5;
+
+  // Solution hint.
+  //
+  // If a feasible or almost-feasible solution to the problem is already known,
+  // it may be helpful to pass it to the solver so that it can be used. The
+  // solver will try to use this information to create its initial feasible
+  // solution.
+  //
+  // Note that it may not always be faster to give a hint like this to the
+  // solver. There is also no guarantee that the solver will use this hint or
+  // try to return a solution "close" to this assignment in case of multiple
+  // optimal solutions.
+  PartialVariableAssignment solution_hint = 6;
 }
 
 // The status returned by a solver trying to solve a CpModelProto.

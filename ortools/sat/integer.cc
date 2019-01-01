@@ -128,6 +128,35 @@ IntegerEncoder::FullDomainEncoding(IntegerVariable var) const {
   return encoding;
 }
 
+std::vector<IntegerEncoder::ValueLiteralPair>
+IntegerEncoder::PartialDomainEncoding(IntegerVariable var) const {
+  std::vector<ValueLiteralPair> encoding;
+
+  // Because the domain of var can be arbitrary large, we use the fact that
+  // when (var == value) is created, then we have (var >= value && var <= value)
+  // too. Except for the min/max of the initial domain.
+  if (var >= encoding_by_var_.size()) return encoding;
+
+  std::set<IntegerValue> possible_values;
+  possible_values.insert(IntegerValue((*domains_)[var].front().start));
+  possible_values.insert(IntegerValue((*domains_)[var].back().end));
+  for (const auto entry : encoding_by_var_[var]) {
+    possible_values.insert(entry.first);
+  }
+  for (const IntegerValue value : possible_values) {
+    const std::pair<IntegerVariable, IntegerValue> key{var, value};
+    const auto it = equality_to_associated_literal_.find(key);
+    if (it == equality_to_associated_literal_.end()) continue;
+    const Literal literal = it->second;
+    if (sat_solver_->Assignment().LiteralIsTrue(literal)) {
+      return {{value, literal}};
+    } else if (!sat_solver_->Assignment().LiteralIsFalse(literal)) {
+      encoding.push_back({value, literal});
+    }
+  }
+  return encoding;
+}
+
 // Note that by not inserting the literal in "order" we can in the worst case
 // use twice as much implication (2 by literals) instead of only one between
 // consecutive literals.
@@ -231,21 +260,30 @@ Literal IntegerEncoder::GetOrCreateLiteralAssociatedToEquality(
   return literal;
 }
 
-// TODO(user): for the fist and last value, we should also update
-// equality_to_associated_literal_.
 void IntegerEncoder::AssociateToIntegerLiteral(Literal literal,
                                                IntegerLiteral i_lit) {
   CHECK(!sat_solver_->Assignment().LiteralIsAssigned(literal));
-
   const auto& domain = (*domains_)[i_lit.var];
-  if (i_lit.bound <= domain.front().start) {
+  const IntegerValue min(domain.front().start);
+  const IntegerValue max(domain.back().end);
+  if (i_lit.bound <= min) {
     sat_solver_->AddUnitClause(literal);
-  } else if (i_lit.bound > domain.back().end) {
+  } else if (i_lit.bound > max) {
     sat_solver_->AddUnitClause(literal.Negated());
   } else {
     const auto pair = Canonicalize(i_lit);
     HalfAssociateGivenLiteral(pair.first, literal);
     HalfAssociateGivenLiteral(pair.second, literal.Negated());
+
+    // Detect the case >= max or <= min and properly register them. Note that
+    // both cases will happen at the same time if there is just two possible
+    // value in the domain.
+    if (pair.first.bound == max) {
+      AssociateToIntegerEqualValue(literal, i_lit.var, max);
+    }
+    if (-pair.second.bound == min) {
+      AssociateToIntegerEqualValue(literal.Negated(), i_lit.var, min);
+    }
   }
 }
 
@@ -265,13 +303,34 @@ void IntegerEncoder::AssociateToIntegerEqualValue(Literal literal,
   equality_to_associated_literal_[key] = literal;
   equality_to_associated_literal_[{NegationOf(var), -value}] = literal;
 
+  // Detect literal view. Note that the same literal can be associated to more
+  // than one variable, and thus already have a view. We don't change it in
+  // this case.
   const auto& domain = (*domains_)[var];
+  if (value == 1 && domain.front().start >= 0 && domain.back().end <= 1) {
+    if (literal.Index() >= literal_view_.size()) {
+      literal_view_.resize(literal.Index().value() + 1, kNoIntegerVariable);
+      literal_view_[literal.Index()] = var;
+    } else if (literal_view_[literal.Index()] == kNoIntegerVariable) {
+      literal_view_[literal.Index()] = var;
+    }
+  }
+  if (value == -1 && domain.front().start >= -1 && domain.back().end <= 0) {
+    if (literal.Index() >= literal_view_.size()) {
+      literal_view_.resize(literal.Index().value() + 1, kNoIntegerVariable);
+      literal_view_[literal.Index()] = NegationOf(var);
+    } else if (literal_view_[literal.Index()] == kNoIntegerVariable) {
+      literal_view_[literal.Index()] = NegationOf(var);
+    }
+  }
+
+  // Fix literal for value outside the domain or for singleton domain.
   if (!SortedDisjointIntervalsContain(domain, value.value())) {
     sat_solver_->AddUnitClause(literal.Negated());
     return;
   }
   if (value == domain.front().start && value == domain.back().end) {
-    sat_solver_->AddUnitClause(literal);  // fixed variable.
+    sat_solver_->AddUnitClause(literal);
     return;
   }
 
@@ -281,6 +340,11 @@ void IntegerEncoder::AssociateToIntegerEqualValue(Literal literal,
 
   // Special case for the first and last value.
   if (value == domain.front().start) {
+    // Note that this will recursively call AssociateToIntegerEqualValue() but
+    // since equality_to_associated_literal_[] is now set, the recursion will
+    // stop there. When a domain has just 2 values, this allows to call just
+    // once AssociateToIntegerEqualValue() and also associate the other value to
+    // the negation of the given literal.
     AssociateToIntegerLiteral(literal,
                               IntegerLiteral::LowerOrEqual(var, value));
     return;
@@ -291,7 +355,7 @@ void IntegerEncoder::AssociateToIntegerEqualValue(Literal literal,
     return;
   }
 
-  //  (var == value)  <=>  (var >= value) and (var <= value).
+  // (var == value)  <=>  (var >= value) and (var <= value).
   const Literal a(
       GetOrCreateAssociatedLiteral(IntegerLiteral::GreaterOrEqual(var, value)));
   const Literal b(
@@ -356,13 +420,13 @@ bool IntegerTrail::Propagate(Trail* trail) {
   const int level = trail->CurrentDecisionLevel();
   for (ReversibleInterface* rev : reversible_classes_) rev->SetLevel(level);
 
-  // Make sure that our internal "integer_decision_levels_" size matches the
-  // sat decision levels. At the level zero, integer_decision_levels_ should
+  // Make sure that our internal "integer_search_levels_" size matches the
+  // sat decision levels. At the level zero, integer_search_levels_ should
   // be empty.
-  if (level > integer_decision_levels_.size()) {
-    integer_decision_levels_.push_back(integer_trail_.size());
+  if (level > integer_search_levels_.size()) {
+    integer_search_levels_.push_back(integer_trail_.size());
     reason_decision_levels_.push_back(literals_reason_starts_.size());
-    CHECK_EQ(trail->CurrentDecisionLevel(), integer_decision_levels_.size());
+    CHECK_EQ(trail->CurrentDecisionLevel(), integer_search_levels_.size());
   }
 
   // This is used to map any integer literal out of the initial variable domain
@@ -393,9 +457,9 @@ void IntegerTrail::Untrail(const Trail& trail, int literal_trail_index) {
 
   // Note that if a conflict was detected before Propagate() of this class was
   // even called, it is possible that there is nothing to backtrack.
-  if (level >= integer_decision_levels_.size()) return;
-  const int target = integer_decision_levels_[level];
-  integer_decision_levels_.resize(level);
+  if (level >= integer_search_levels_.size()) return;
+  const int target = integer_search_levels_[level];
+  integer_search_levels_.resize(level);
   CHECK_GE(target, vars_.size());
   CHECK_LE(target, integer_trail_.size());
 
@@ -425,7 +489,7 @@ IntegerVariable IntegerTrail::AddIntegerVariable(IntegerValue lower_bound,
   CHECK_LE(lower_bound, kMaxIntegerValue);
   CHECK_GE(upper_bound, kMinIntegerValue);
   CHECK_LE(upper_bound, kMaxIntegerValue);
-  CHECK(integer_decision_levels_.empty());
+  CHECK(integer_search_levels_.empty());
   CHECK_EQ(vars_.size(), integer_trail_.size());
 
   const IntegerVariable i(vars_.size());
@@ -608,11 +672,11 @@ int IntegerTrail::FindLowestTrailIndexThatExplainBound(
 
 bool IntegerTrail::EnqueueAssociatedLiteral(
     Literal literal, int trail_index_with_same_reason,
-    gtl::Span<Literal> literal_reason,
-    gtl::Span<IntegerLiteral> integer_reason,
+    absl::Span<Literal> literal_reason,
+    absl::Span<IntegerLiteral> integer_reason,
     BooleanVariable* variable_with_same_reason) {
   if (!trail_->Assignment().VariableIsAssigned(literal.Variable())) {
-    if (integer_decision_levels_.empty()) {
+    if (integer_search_levels_.empty()) {
       trail_->EnqueueWithUnitReason(literal);
       return true;
     }
@@ -658,8 +722,8 @@ bool IntegerTrail::EnqueueAssociatedLiteral(
 
 namespace {
 
-std::string ReasonDebugString(gtl::Span<Literal> literal_reason,
-                         gtl::Span<IntegerLiteral> integer_reason) {
+std::string ReasonDebugString(absl::Span<Literal> literal_reason,
+                         absl::Span<IntegerLiteral> integer_reason) {
   std::string result = "literals:{";
   for (const Literal l : literal_reason) {
     if (result.back() != '{') result += ",";
@@ -696,14 +760,14 @@ std::string IntegerTrail::DebugString() {
 }
 
 bool IntegerTrail::Enqueue(IntegerLiteral i_lit,
-                           gtl::Span<Literal> literal_reason,
-                           gtl::Span<IntegerLiteral> integer_reason) {
+                           absl::Span<Literal> literal_reason,
+                           absl::Span<IntegerLiteral> integer_reason) {
   return Enqueue(i_lit, literal_reason, integer_reason, integer_trail_.size());
 }
 
 bool IntegerTrail::Enqueue(IntegerLiteral i_lit,
-                           gtl::Span<Literal> literal_reason,
-                           gtl::Span<IntegerLiteral> integer_reason,
+                           absl::Span<Literal> literal_reason,
+                           absl::Span<IntegerLiteral> integer_reason,
                            int trail_index_with_same_reason) {
   DCHECK(AllLiteralsAreFalse(literal_reason));
 
@@ -718,12 +782,12 @@ bool IntegerTrail::Enqueue(IntegerLiteral i_lit,
 
   // This may not indicate an incorectness, but just some propagators that
   // didn't reach a fixed-point at level zero.
-  if (DEBUG_MODE && !integer_decision_levels_.empty()) {
+  if (DEBUG_MODE && !integer_search_levels_.empty()) {
     std::vector<Literal> l(literal_reason.begin(), literal_reason.end());
     MergeReasonInto(integer_reason, &l);
     LOG_IF(WARNING, l.empty())
         << "Propagating a literal with no reason at a positive level!\n"
-        << "level:" << integer_decision_levels_.size() << " i_lit:" << i_lit
+        << "level:" << integer_search_levels_.size() << " i_lit:" << i_lit
         << " " << ReasonDebugString(literal_reason, integer_reason) << "\n"
         << DebugString();
   }
@@ -794,7 +858,7 @@ bool IntegerTrail::Enqueue(IntegerLiteral i_lit,
       // literal, and we where reaching a conflict while propagating the
       // associated literal instead of setting is_ignored below to false.
       const Literal is_ignored = Literal(is_ignored_literals_[var]);
-      if (integer_decision_levels_.empty()) {
+      if (integer_search_levels_.empty()) {
         trail_->EnqueueWithUnitReason(is_ignored);
       } else {
         EnqueueLiteral(is_ignored, literal_reason, integer_reason);
@@ -828,7 +892,7 @@ bool IntegerTrail::Enqueue(IntegerLiteral i_lit,
   }
 
   // Special case for level zero.
-  if (integer_decision_levels_.empty()) {
+  if (integer_search_levels_.empty()) {
     vars_[i_lit.var].current_bound = i_lit.bound;
     integer_trail_[i_lit.var.value()].bound = i_lit.bound;
     return true;
@@ -917,7 +981,7 @@ std::vector<Literal> IntegerTrail::ReasonFor(IntegerLiteral literal) const {
 }
 
 bool IntegerTrail::AllLiteralsAreFalse(
-    gtl::Span<Literal> literals) const {
+    absl::Span<Literal> literals) const {
   for (const Literal lit : literals) {
     if (!trail_->Assignment().LiteralIsFalse(lit)) return false;
   }
@@ -926,7 +990,7 @@ bool IntegerTrail::AllLiteralsAreFalse(
 
 // TODO(user): If this is called many time on the same variables, it could be
 // made faster by using some caching mecanism.
-void IntegerTrail::MergeReasonInto(gtl::Span<IntegerLiteral> literals,
+void IntegerTrail::MergeReasonInto(absl::Span<IntegerLiteral> literals,
                                    std::vector<Literal>* output) const {
   DCHECK(tmp_queue_.empty());
   const int size = vars_.size();
@@ -1047,7 +1111,7 @@ void IntegerTrail::MergeReasonIntoInternal(std::vector<Literal>* output) const {
   STLSortAndRemoveDuplicates(output);
 }
 
-gtl::Span<Literal> IntegerTrail::Reason(const Trail& trail,
+absl::Span<Literal> IntegerTrail::Reason(const Trail& trail,
                                                int trail_index) const {
   const int index = boolean_trail_index_to_integer_one_[trail_index];
   std::vector<Literal>* reason = trail.GetEmptyVectorToStoreReason(trail_index);
@@ -1064,10 +1128,10 @@ gtl::Span<Literal> IntegerTrail::Reason(const Trail& trail,
 }
 
 void IntegerTrail::EnqueueLiteral(
-    Literal literal, gtl::Span<Literal> literal_reason,
-    gtl::Span<IntegerLiteral> integer_reason) {
+    Literal literal, absl::Span<Literal> literal_reason,
+    absl::Span<IntegerLiteral> integer_reason) {
   DCHECK(AllLiteralsAreFalse(literal_reason));
-  if (integer_decision_levels_.empty()) {
+  if (integer_search_levels_.empty()) {
     // Level zero. We don't keep any reason.
     trail_->EnqueueWithUnitReason(literal);
     return;
@@ -1075,12 +1139,12 @@ void IntegerTrail::EnqueueLiteral(
 
   // This may not indicate an incorectness, but just some propagators that
   // didn't reach a fixed-point at level zero.
-  if (DEBUG_MODE && !integer_decision_levels_.empty()) {
+  if (DEBUG_MODE && !integer_search_levels_.empty()) {
     std::vector<Literal> l(literal_reason.begin(), literal_reason.end());
     MergeReasonInto(integer_reason, &l);
     LOG_IF(WARNING, l.empty())
         << "Propagating a literal with no reason at a positive level!\n"
-        << "level:" << integer_decision_levels_.size() << " lit:" << literal
+        << "level:" << integer_search_levels_.size() << " lit:" << literal
         << " " << ReasonDebugString(literal_reason, integer_reason) << "\n"
         << DebugString();
   }
@@ -1313,132 +1377,6 @@ void GenericLiteralWatcher::RegisterReversibleClass(int id,
 
 void GenericLiteralWatcher::RegisterReversibleInt(int id, int* rev) {
   id_to_reversible_ints_[id].push_back(rev);
-}
-
-// TODO(user): the complexity of this heuristic and the one below is ok when
-// use_fixed_search() is false because it is not executed often, however, we do
-// a linear scan for each search decision when use_fixed_search() is true, which
-// seems bad. Improve.
-std::function<LiteralIndex()> FirstUnassignedVarAtItsMinHeuristic(
-    const std::vector<IntegerVariable>& vars, Model* model) {
-  IntegerEncoder* const integer_encoder = model->GetOrCreate<IntegerEncoder>();
-  IntegerTrail* const integer_trail = model->GetOrCreate<IntegerTrail>();
-  return [integer_encoder, integer_trail, /*copy*/ vars]() {
-    for (const IntegerVariable var : vars) {
-      // Note that there is no point trying to fix a currently ignored variable.
-      if (integer_trail->IsCurrentlyIgnored(var)) continue;
-      const IntegerValue lb = integer_trail->LowerBound(var);
-      if (lb < integer_trail->UpperBound(var)) {
-        return integer_encoder
-            ->GetOrCreateAssociatedLiteral(
-                IntegerLiteral::LowerOrEqual(var, lb))
-            .Index();
-      }
-    }
-    return LiteralIndex(kNoLiteralIndex);
-  };
-}
-
-std::function<LiteralIndex()> UnassignedVarWithLowestMinAtItsMinHeuristic(
-    const std::vector<IntegerVariable>& vars, Model* model) {
-  IntegerEncoder* const integer_encoder = model->GetOrCreate<IntegerEncoder>();
-  IntegerTrail* const integer_trail = model->GetOrCreate<IntegerTrail>();
-  return [integer_encoder, integer_trail, /*copy */ vars]() {
-    IntegerVariable candidate = kNoIntegerVariable;
-    IntegerValue candidate_lb;
-    for (const IntegerVariable var : vars) {
-      if (integer_trail->IsCurrentlyIgnored(var)) continue;
-      const IntegerValue lb = integer_trail->LowerBound(var);
-      if (lb < integer_trail->UpperBound(var) &&
-          (candidate == kNoIntegerVariable || lb < candidate_lb)) {
-        candidate = var;
-        candidate_lb = lb;
-      }
-    }
-    // Fix compilation error on visual studio 2013.
-    if (candidate == kNoIntegerVariable) return LiteralIndex(kNoLiteralIndex);
-    return integer_encoder
-        ->GetOrCreateAssociatedLiteral(
-            IntegerLiteral::LowerOrEqual(candidate, candidate_lb))
-        .Index();
-  };
-}
-
-std::function<LiteralIndex()> SequentialSearch(
-    std::vector<std::function<LiteralIndex()>> heuristics) {
-  return [heuristics]() {
-    for (const auto& h : heuristics) {
-      const LiteralIndex li = h();
-      if (li != kNoLiteralIndex) return li;
-    }
-    return kNoLiteralIndex;
-  };
-}
-
-SatSolver::Status SolveIntegerProblemWithLazyEncoding(
-    const std::vector<Literal>& assumptions,
-    const std::function<LiteralIndex()>& next_decision, Model* model) {
-  // TODO(user): Improve the time-limit situation, especially when
-  // use_fixed_search() is true where the deterministic time is not updated.
-  TimeLimit* time_limit = model->Mutable<TimeLimit>();
-  if (time_limit == nullptr) {
-    model->SetSingleton(TimeLimit::Infinite());
-    time_limit = model->Mutable<TimeLimit>();
-  }
-  SatSolver* const solver = model->GetOrCreate<SatSolver>();
-  if (solver->IsModelUnsat()) return SatSolver::MODEL_UNSAT;
-  solver->Backtrack(0);
-  solver->SetAssumptionLevel(0);
-
-  const SatParameters parameters = solver->parameters();
-  if (parameters.use_fixed_search()) {
-    CHECK(assumptions.empty()) << "Not supported yet";
-    // Note that it is important to do the level-zero propagation if it wasn't
-    // already done because EnqueueDecisionAndBackjumpOnConflict() assumes that
-    // the solver is in a "propagated" state.
-    if (!solver->Propagate()) return SatSolver::MODEL_UNSAT;
-  }
-  while (!time_limit->LimitReached()) {
-    // If we are not in fixed search, let the SAT solver do a full search to
-    // instantiate all the already created Booleans.
-    if (!parameters.use_fixed_search()) {
-      if (assumptions.empty()) {
-        const SatSolver::Status status = solver->SolveWithTimeLimit(time_limit);
-        if (status != SatSolver::MODEL_SAT) return status;
-      } else {
-        // TODO(user): We actually don't want to reset the solver from one
-        // loop to the next as it is less efficient.
-        const SatSolver::Status status =
-            solver->ResetAndSolveWithGivenAssumptions(assumptions, time_limit);
-        if (status != SatSolver::MODEL_SAT) return status;
-      }
-    }
-
-    // Look for the "best" non-instantiated integer variable.
-    // If all variables are instantiated, we have a solution.
-    const LiteralIndex decision =
-        next_decision == nullptr ? kNoLiteralIndex : next_decision();
-    if (decision == kNoLiteralIndex) return SatSolver::MODEL_SAT;
-
-    // Always try to Enqueue this literal as the next decision so we bypass
-    // any default polarity heuristic the solver may use on this literal.
-    solver->EnqueueDecisionAndBackjumpOnConflict(Literal(decision));
-    if (solver->IsModelUnsat()) return SatSolver::MODEL_UNSAT;
-  }
-  return SatSolver::Status::LIMIT_REACHED;
-}
-
-// Shortcut when there is no assumption, and we consider all variables in
-// order for the search decision.
-SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model) {
-  const IntegerVariable num_vars =
-      model->GetOrCreate<IntegerTrail>()->NumIntegerVariables();
-  std::vector<IntegerVariable> all_variables;
-  for (IntegerVariable var(0); var < num_vars; ++var) {
-    all_variables.push_back(var);
-  }
-  return SolveIntegerProblemWithLazyEncoding(
-      {}, FirstUnassignedVarAtItsMinHeuristic(all_variables, model), model);
 }
 
 // This is really close to ExcludeCurrentSolutionAndBacktrack().

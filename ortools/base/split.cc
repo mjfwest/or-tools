@@ -18,7 +18,7 @@
 #endif  // _MSC_VER
 #include "ortools/base/logging.h"
 
-namespace strings {
+namespace absl {
 namespace {
 
 // ----------------------------------------------------------------------
@@ -73,27 +73,26 @@ static inline void InternalSplitStringUsing(const std::string& full,
 
 }  // namespace
 
-std::vector<std::string> Split(const std::string& full, char delim, int flags) {
-  CHECK_EQ(SkipEmpty(), flags);
+std::vector<std::string> StrSplit(const std::string& full, char delim, int flags) {
+  CHECK_EQ(absl::SkipEmpty(), flags);
   std::vector<std::string> out;
   InternalSplitStringUsingChar(full, delim, &out);
   return out;
 }
 
-std::vector<std::string> Split(const std::string& full, const char* delim, int flags) {
-  CHECK_EQ(SkipEmpty(), flags);
+std::vector<std::string> StrSplit(const std::string& full, const char* delim, int flags) {
+  CHECK_EQ(absl::SkipEmpty(), flags);
   std::vector<std::string> out;
   InternalSplitStringUsing(full, delim, &out);
   return out;
 }
 
-std::vector<operations_research::string_view> Split(const std::string& full,
-                                                    const char* delim,
-                                                    int64 flags) {
-  CHECK_EQ(SkipEmpty(), flags);
-  std::vector<operations_research::string_view> out;
+std::vector<absl::string_view> StrSplit(const std::string& full, const char* delim,
+                                        int64 flags) {
+  CHECK_EQ(absl::SkipEmpty(), flags);
+  std::vector<absl::string_view> out;
   InternalSplitStringUsing(full, delim, &out);
   return out;
 }
 
-}  // namespace strings
+}  // namespace absl

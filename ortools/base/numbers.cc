@@ -16,8 +16,6 @@
 #include <cctype>
 #include <cstdlib>
 
-namespace operations_research {
-
 #ifdef _MSC_VER
 #define strtof strtod
 #define strtoll _strtoi64
@@ -63,7 +61,11 @@ bool safe_strto64(const std::string& str, int64* value) {
   return *endptr == '\0' && str[0] != '\0';
 }
 
+bool safe_strto32(const std::string& str, int* value) {
+  if (str.empty()) return false;
+  char* endptr;
+  *value = strtol(str.c_str(), &endptr, /*base=*/10);  // NOLINT
+  return *endptr == '\0' && str[0] != '\0';
+}
 #undef strtof
 #undef strtoll
-
-}  // namespace operations_research

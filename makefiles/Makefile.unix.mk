@@ -52,8 +52,15 @@ RENAME = mv
 S = /
 CPSEP = :
 SED = sed
+GREP = grep
+WHICH = which
 ARCHIVE_EXT = .tar.gz
 FZ_EXE = fzn-or-tools$E
+
+CMAKE := $(shell $(WHICH) cmake)
+ifeq ($(CMAKE),)
+$(error Please add "cmake" to your PATH)
+endif
 
 # This is needed to find python.h
 PYTHON_VERSION = $(UNIX_PYTHON_VER)
@@ -67,6 +74,9 @@ ifeq ($(PLATFORM),LINUX)
 MAJOR_PYTHON_VERSION = $(shell python$(UNIX_PYTHON_VER) -c "from sys import version_info as v; print (str(v[0]))")
 PYTHON_INC += $(shell pkg-config --cflags --libs python$(MAJOR_PYTHON_VERSION) 2> /dev/null)
 endif
+
+MONO_COMPILER ?= mono
+MONO_EXECUTABLE := $(shell $(WHICH) $(MONO_COMPILER))
 
 # This is needed to find gflags/gflags.h
 GFLAGS_INC = -I$(UNIX_GFLAGS_DIR)/include
@@ -131,22 +141,16 @@ endif
 ifeq ($(PLATFORM),LINUX)
   CCC = g++ -fPIC -std=c++0x -fwrapv
   DYNAMIC_LD = g++ -shared
-  CMAKE = cmake
-  CSC = $(PATH_TO_CSHARP_COMPILER)
-  MONO = LD_LIBRARY_PATH=$(LIB_DIR):$(LD_LIBRARY_PATH) mono
+  MONO = LD_LIBRARY_PATH=$(LIB_DIR):$(LD_LIBRARY_PATH) $(MONO_EXECUTABLE)
 
   # This is needed to find libgflags.a
   GFLAGS_LNK = $(UNIX_GFLAGS_DIR)/lib/libgflags.a
   # This is needed to find libz.a
   ZLIB_LNK = -lz
-  # This is needed to find libprotobuf.a
-  ifeq ($(DISTRIBUTION_ID),Fedora)
-    PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib64/libprotobuf.a
-  else ifeq ($(DISTRIBUTION_ID),CentOS)
-    PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib64/libprotobuf.a
-  else
-    PROTOBUF_LNK = $(UNIX_PROTOBUF_DIR)/lib/libprotobuf.a
-  endif
+  # libprotobuf.a goes in a different subdirectory depending on the distribution
+  # and architecture, eg. "lib/" or "lib64/" for Fedora and Centos,
+  # "lib/x86_64-linux-gnu/" for Ubuntu (all on 64 bits), etc. So we wildcard it.
+  PROTOBUF_LNK = $(wildcard $(UNIX_PROTOBUF_DIR)/lib*/libprotobuf.a $(UNIX_PROTOBUF_DIR)/lib/*/libprotobuf.a)
   # This is needed to find libglog.a
   GLOG_LNK = $(UNIX_GLOG_DIR)/lib/libglog.a
 
@@ -182,10 +186,10 @@ ifeq ($(PLATFORM),LINUX)
     endif
   endif
   SYS_LNK = -lrt -lpthread
-  JAVA_INC = -I$(JDK_DIRECTORY)/include -I$(JDK_DIRECTORY)/include/linux
-  JAVAC_BIN = $(JDK_DIRECTORY)/bin/javac
-  JAVA_BIN = $(JDK_DIRECTORY)/bin/java
-  JAR_BIN = $(JDK_DIRECTORY)/bin/jar
+  JAVA_INC = -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux
+  JAVAC_BIN = $(shell $(WHICH) $(JAVA_HOME)/bin/javac)
+  JAVA_BIN = $(shell $(WHICH) $(JAVA_HOME)/bin/java)
+  JAR_BIN = $(shell $(WHICH) $(JAVA_HOME)/bin/jar)
   JNI_LIB_EXT = so
   LIB_SUFFIX = so
   SWIG_LIB_SUFFIX = so
@@ -199,16 +203,8 @@ ifeq ($(PLATFORM),MACOSX)
   CCC = clang++ -fPIC -std=c++11  $(MAC_VERSION) -stdlib=libc++
   DYNAMIC_LD = ld -arch x86_64 -bundle -flat_namespace -undefined suppress -macosx_version_min $(MAC_MIN_VERSION) -lSystem -compatibility_version $(OR_TOOLS_SHORT_VERSION) -current_version $(OR_TOOLS_SHORT_VERSION)
 
-  CMAKE := $(shell which cmake)
-  ifeq ($(CMAKE),)
-    CMAKE = /Applications/CMake.app/Contents/bin/cmake
-  else
-    $(warning "cmake found: $(CMAKE)")
-  endif
-
   JNI_LIB_EXT = jnilib
-  CSC = $(PATH_TO_CSHARP_COMPILER)
-  MONO =  DYLD_FALLBACK_LIBRARY_PATH=$(LIB_DIR):$(DYLD_LIBRARY_PATH) mono64
+  MONO =  DYLD_FALLBACK_LIBRARY_PATH=$(LIB_DIR):$(DYLD_LIBRARY_PATH) $(MONO_EXECUTABLE)
 
   GFLAGS_LNK = $(UNIX_GFLAGS_DIR)/lib/libgflags.a
   ZLIB_LNK = -lz
@@ -217,10 +213,10 @@ ifeq ($(PLATFORM),MACOSX)
 
   SYS_LNK =
 
-  JAVA_INC = -I$(JDK_DIRECTORY) -I$(JDK_DIRECTORY)/darwin
-  JAVAC_BIN = javac
-  JAVA_BIN = java
-  JAR_BIN = jar
+  JAVA_INC = -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+  JAVAC_BIN = $(shell $(WHICH) $(JAVA_HOME)/bin/javac)
+  JAVA_BIN = $(shell $(WHICH) $(JAVA_HOME)/bin/java)
+  JAR_BIN = $(shell $(WHICH) $(JAVA_HOME)/bin/jar)
 
   PRE_LIB = -L$(OR_ROOT)lib -l
   POST_LIB =

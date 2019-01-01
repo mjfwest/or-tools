@@ -18,12 +18,12 @@
 
 *)
 
-#I "./lib"
-#load "Google.OrTools.FSharp.fsx"
+#I "../../bin"
+#r "Google.OrTools.dll"
+#r "Google.OrTools.FSharp.dll"
 
 open System
 open Google.OrTools.FSharp
-open Google.OrTools.LinearSolver
 
 let opts = SolverOpts.Default
             .Name("Equality Constraints")
@@ -36,3 +36,4 @@ let opts = SolverOpts.Default
             .Algorithm(LP CLP)
 
 let slvr = opts |> lpSolve |> SolverSummary
+slvr |> ignore

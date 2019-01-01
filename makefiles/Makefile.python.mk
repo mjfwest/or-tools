@@ -1,35 +1,47 @@
-.PHONY : python install_python_modules pypi_archive pypi_archive_dir pyinit pycp pyalgorithms pygraph pylp pysat pydata
-
-# Python support using SWIG
-
-# Detect python3
+# ---------- Python support using SWIG ----------
+.PHONY: help_python # Generate list of Python targets with descriptions.
+help_python:
+	@echo Use one of the following Python targets:
+ifeq ($(SYSTEM),win)
+	@tools\grep.exe "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.python.mk | tools\sed.exe "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/"
+	@echo off & echo(
+else
+	@grep "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.python.mk | sed "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/" | expand -t24
+	@echo
+endif
 
 OR_TOOLS_PYTHONPATH = $(OR_ROOT_FULL)$(CPSEP)$(OR_ROOT_FULL)$Sdependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Spython
 
+# Check for required build tools
 ifeq ($(SYSTEM),win)
-  PYTHON_EXECUTABLE = "$(WINDOWS_PATH_TO_PYTHON)$Spython.exe"
-  SET_PYTHONPATH = @set PYTHONPATH=$(OR_TOOLS_PYTHONPATH) &&
-else #UNIX
-  PYTHON_EXECUTABLE = $(shell which python$(UNIX_PYTHON_VER))
-  SET_PYTHONPATH = @PYTHONPATH=$(OR_TOOLS_PYTHONPATH)
-endif
-
-ifeq ($(shell $(PYTHON_EXECUTABLE) -c "from sys import version_info as v; print (str(v[0]))"),3)
-  PYTHON3 = true
-  SWIG_PYTHON3_FLAG=-py3 -DPY3
-  PYTHON3_CFLAGS=-DPY3
-endif
-
-# Main target
-CANONIC_PYTHON_EXECUTABLE = $(subst ",,$(subst $(SPACE),$(BACKSLASH_SPACE),$(subst \,/,$(subst \\,/,$(PYTHON_EXECUTABLE)))))
-ifeq ($(wildcard  $(CANONIC_PYTHON_EXECUTABLE)),)
-python:
-	@echo CANONIC_PYTHON_EXECUTABLE = $(CANONIC_PYTHON_EXECUTABLE)
-	@echo "The python executable was not set properly. Check Makefile.local for more information."
-test_python: python
-
+PYTHON_COMPILER ?= python.exe
+ifneq ($(WINDOWS_PATH_TO_PYTHON),)
+PYTHON_EXECUTABLE := $(WINDOWS_PATH_TO_PYTHON)\$(PYTHON_COMPILER)
 else
+PYTHON_EXECUTABLE := $(shell $(WHICH) $(PYTHON_COMPILER) 2>nul)
+endif
+SET_PYTHONPATH = @set PYTHONPATH=$(OR_TOOLS_PYTHONPATH) &&
+else # UNIX
+PYTHON_COMPILER ?= python$(UNIX_PYTHON_VER)
+PYTHON_EXECUTABLE := $(shell which $(PYTHON_COMPILER))
+SET_PYTHONPATH = @PYTHONPATH=$(OR_TOOLS_PYTHONPATH)
+endif
+
+# Detect python3
+ifneq ($(PYTHON_EXECUTABLE),)
+ifeq ($(shell "$(PYTHON_EXECUTABLE)" -c "from sys import version_info as v; print (str(v[0]))"),3)
+PYTHON3 := true
+SWIG_PYTHON3_FLAG := -py3 -DPY3
+PYTHON3_CFLAGS := -DPY3
+endif
+endif
+
+.PHONY: python # Build Python OR-Tools.
+.PHONY: test_python # Test Python OR-Tools using various examples.
+.PHONY: install_python # Install Python OR-Tools on the host system
+ifneq ($(PYTHON_EXECUTABLE),)
 python: \
+	ortoolslibs \
 	install_python_modules \
 	pyinit \
 	pycp \
@@ -40,10 +52,21 @@ python: \
 	pyrcpsp
 
 test_python: test_python_examples
-BUILT_LANGUAGES +=, python
+
+install_python: pypi_archive
+	@cd "$(PYPI_ARCHIVE_TEMP_DIR)$Sortools" &&  "$(PYTHON_EXECUTABLE)" setup.py install --user
+
+BUILT_LANGUAGES +=, Python$(PYTHON_VERSION)
+else
+python:
+	@echo PYTHON_EXECUTABLE = "${PYTHON_EXECUTABLE}"
+	$(warning Cannot find '$(PYTHON_COMPILER)' command which is needed for build. Please make sure it is installed and in system path.)
+
+test_python: python
+install_python: python
 endif
 
-# Clean target
+.PHONY: clean_python # Clean Python output from previous build.
 clean_python:
 	-$(DEL) $(GEN_DIR)$Sortools$S__init__.py
 	-$(DEL) $(GEN_DIR)$Sortools$Salgorithms$S*python_wrap*
@@ -78,16 +101,18 @@ clean_python:
 	-$(DEL) $(OBJ_DIR)$Sswig$S*python_wrap.$O
 	-$(DELREC) $(PYPI_ARCHIVE_TEMP_DIR)
 
-install_python_modules: dependencies/sources/protobuf-$(PROTOBUF-TAG)/python/google/protobuf/descriptor_pb2.py
+.PHONY:	install_python_modules pypi_archive pypi_archive_dir pyinit pycp pyalgorithms pygraph pylp pysat pydata
 
-dependencies/sources/protobuf-$(PROTOBUF-TAG)/python/google/protobuf/descriptor_pb2.py: \
+install_python_modules: dependencies/sources/protobuf-$(PROTOBUF_TAG)/python/google/protobuf/descriptor_pb2.py
+
+dependencies/sources/protobuf-$(PROTOBUF_TAG)/python/google/protobuf/descriptor_pb2.py: \
 dependencies/sources/protobuf-$(PROTOBUF_TAG)/python/setup.py
-ifeq ("$(SYSTEM)", "win")
+ifeq ($(SYSTEM),win)
 	copy dependencies$Sinstall$Sbin$Sprotoc.exe dependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Ssrc
 else
 	cp dependencies$Sinstall$Sbin$Sprotoc dependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Ssrc
 endif
-	cd dependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Spython && $(PYTHON_EXECUTABLE) setup.py build
+	cd dependencies$Ssources$Sprotobuf-$(PROTOBUF_TAG)$Spython && "$(PYTHON_EXECUTABLE)" setup.py build
 
 pyinit: $(GEN_DIR)$Sortools$S__init__.py
 
@@ -111,7 +136,7 @@ $(OBJ_DIR)/swig/knapsack_solver_python_wrap.$O: $(GEN_DIR)/ortools/algorithms/kn
 
 $(LIB_DIR)/_pywrapknapsack_solver.$(SWIG_LIB_SUFFIX): $(OBJ_DIR)/swig/knapsack_solver_python_wrap.$O $(OR_TOOLS_LIBS)
 	$(DYNAMIC_LD) $(LDOUT)$(LIB_DIR)$S_pywrapknapsack_solver.$(SWIG_LIB_SUFFIX) $(OBJ_DIR)$Sswig$Sknapsack_solver_python_wrap.$O $(OR_TOOLS_LNK) $(SYS_LNK) $(PYTHON_LNK)
-ifeq "$(SYSTEM)" "win"
+ifeq ($(SYSTEM),win)
 	copy $(LIB_DIR)\\_pywrapknapsack_solver.dll $(GEN_DIR)\\ortools\\algorithms\\_pywrapknapsack_solver.pyd
 else
 	cp $(LIB_DIR)/_pywrapknapsack_solver.$(SWIG_LIB_SUFFIX) $(GEN_DIR)/ortools/algorithms
@@ -137,7 +162,7 @@ $(OBJ_DIR)/swig/graph_python_wrap.$O: $(GEN_DIR)/ortools/graph/graph_python_wrap
 
 $(LIB_DIR)/_pywrapgraph.$(SWIG_LIB_SUFFIX): $(OBJ_DIR)/swig/graph_python_wrap.$O $(OR_TOOLS_LIBS)
 	$(DYNAMIC_LD) $(LDOUT)$(LIB_DIR)$S_pywrapgraph.$(SWIG_LIB_SUFFIX) $(OBJ_DIR)$Sswig$Sgraph_python_wrap.$O $(OR_TOOLS_LNK) $(SYS_LNK) $(PYTHON_LNK)
-ifeq "$(SYSTEM)" "win"
+ifeq ($(SYSTEM),win)
 	copy $(LIB_DIR)\\_pywrapgraph.dll $(GEN_DIR)\\ortools\\graph\\_pywrapgraph.pyd
 else
 	cp $(LIB_DIR)/_pywrapgraph.$(SWIG_LIB_SUFFIX) $(GEN_DIR)/ortools/graph
@@ -195,7 +220,7 @@ $(LIB_DIR)/_pywrapcp.$(SWIG_LIB_SUFFIX): \
 		$(OBJ_DIR)/swig/constraint_solver_python_wrap.$O \
 			$(OR_TOOLS_LIBS)
 	$(DYNAMIC_LD) $(LDOUT)$(LIB_DIR)$S_pywrapcp.$(SWIG_LIB_SUFFIX) $(OBJ_DIR)$Sswig$Sconstraint_solver_python_wrap.$O $(OR_TOOLS_LNK) $(SYS_LNK) $(PYTHON_LNK)
-ifeq "$(SYSTEM)" "win"
+ifeq ($(SYSTEM),win)
 	copy $(LIB_DIR)\\_pywrapcp.dll $(GEN_DIR)\\ortools\\constraint_solver\\_pywrapcp.pyd
 else
 	cp $(LIB_DIR)/_pywrapcp.$(SWIG_LIB_SUFFIX) $(GEN_DIR)/ortools/constraint_solver
@@ -205,7 +230,10 @@ endif
 
 pylp: $(LIB_DIR)/_pywraplp.$(SWIG_LIB_SUFFIX) $(GEN_DIR)/ortools/linear_solver/pywraplp.py
 
-$(GEN_DIR)/ortools/linear_solver/linear_solver_pb2.py: $(SRC_DIR)/ortools/linear_solver/linear_solver.proto
+$(GEN_DIR)/ortools/util/optional_boolean_pb2.py: $(SRC_DIR)/ortools/util/optional_boolean.proto
+	$(PROTOBUF_DIR)/bin/protoc --proto_path=$(INC_DIR) --python_out=$(GEN_DIR) $(SRC_DIR)/ortools/util/optional_boolean.proto
+
+$(GEN_DIR)/ortools/linear_solver/linear_solver_pb2.py: $(SRC_DIR)/ortools/linear_solver/linear_solver.proto $(GEN_DIR)/ortools/util/optional_boolean_pb2.py
 	$(PROTOBUF_DIR)/bin/protoc --proto_path=$(INC_DIR) --python_out=$(GEN_DIR) $(SRC_DIR)/ortools/linear_solver/linear_solver.proto
 
 $(GEN_DIR)/ortools/linear_solver/pywraplp.py: \
@@ -226,7 +254,7 @@ $(LIB_DIR)/_pywraplp.$(SWIG_LIB_SUFFIX): \
 		$(OBJ_DIR)/swig/linear_solver_python_wrap.$O \
 			$(OR_TOOLS_LIBS)
 	$(DYNAMIC_LD) $(LDOUT)$(LIB_DIR)$S_pywraplp.$(SWIG_LIB_SUFFIX) $(OBJ_DIR)$Sswig$Slinear_solver_python_wrap.$O $(OR_TOOLS_LNK) $(SYS_LNK) $(PYTHON_LNK)
-ifeq "$(SYSTEM)" "win"
+ifeq ($(SYSTEM),win)
 	copy $(LIB_DIR)\\_pywraplp.dll $(GEN_DIR)\\ortools\\linear_solver\\_pywraplp.pyd
 else
 	cp $(LIB_DIR)/_pywraplp.$(SWIG_LIB_SUFFIX) $(GEN_DIR)/ortools/linear_solver
@@ -260,7 +288,7 @@ $(LIB_DIR)/_pywrapsat.$(SWIG_LIB_SUFFIX): \
 		$(OBJ_DIR)/swig/sat_python_wrap.$O \
 			$(OR_TOOLS_LIBS)
 	$(DYNAMIC_LD) $(LDOUT)$(LIB_DIR)$S_pywrapsat.$(SWIG_LIB_SUFFIX) $(OBJ_DIR)$Sswig$Ssat_python_wrap.$O $(OR_TOOLS_LNK) $(SYS_LNK) $(PYTHON_LNK)
-ifeq "$(SYSTEM)" "win"
+ifeq ($(SYSTEM),win)
 	copy $(LIB_DIR)\\_pywrapsat.dll $(GEN_DIR)\\ortools\\sat\\_pywrapsat.pyd
 else
 	cp $(LIB_DIR)/_pywrapsat.$(SWIG_LIB_SUFFIX) $(GEN_DIR)/ortools/sat
@@ -290,7 +318,7 @@ $(LIB_DIR)/_pywraprcpsp.$(SWIG_LIB_SUFFIX): \
 		$(OBJ_DIR)/swig/rcpsp_python_wrap.$O \
 			$(OR_TOOLS_LIBS)
 	$(DYNAMIC_LD) $(LDOUT)$(LIB_DIR)$S_pywraprcpsp.$(SWIG_LIB_SUFFIX) $(OBJ_DIR)$Sswig$Srcpsp_python_wrap.$O $(OR_TOOLS_LNK) $(SYS_LNK) $(PYTHON_LNK)
-ifeq "$(SYSTEM)" "win"
+ifeq ($(SYSTEM),win)
 	copy $(LIB_DIR)\\_pywraprcpsp.dll $(GEN_DIR)\\ortools\\data\\_pywraprcpsp.pyd
 else
 	cp $(LIB_DIR)/_pywraprcpsp.$(SWIG_LIB_SUFFIX) $(GEN_DIR)/ortools/data
@@ -300,10 +328,9 @@ endif
 
 rpy: $(LIB_DIR)/_pywraplp.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywrapcp.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywrapgraph.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywrapknapsack_solver.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywrapsat.$(SWIG_LIB_SUFFIX) $(LIB_DIR)/_pywraprcpsp.$(SWIG_LIB_SUFFIX)  $(EX)
 	@echo Running $(EX)
-	$(SET_PYTHONPATH) $(PYTHON_EXECUTABLE) $(EX) $(ARGS)
+	$(SET_PYTHONPATH) "$(PYTHON_EXECUTABLE)" $(EX) $(ARGS)
 
-# Build stand-alone archive file for redistribution.
-
+.PHONY: python_examples_archive # Build stand-alone Python examples archive file for redistribution.
 python_examples_archive:
 	-$(DELREC) temp
 	$(MKDIR) temp
@@ -318,10 +345,10 @@ python_examples_archive:
 	$(COPY) tools$SREADME.examples.python temp$Sortools_examples$SREADME.txt
 	$(COPY) LICENSE-2.0.txt temp$Sortools_examples
 ifeq ($(SYSTEM),win)
-	cd temp\ortools_examples && ..\..\tools\tar.exe -C ..\.. -c -v --exclude *svn* --exclude *roadef* examples\data | ..\..\tools\tar.exe xvm
+	cd temp\ortools_examples && ..\..\tools\tar.exe -C ..\.. -c -v --exclude *svn* --exclude *roadef* --exclude *vector_packing* examples\data | ..\..\tools\tar.exe xvm
 	cd temp && ..\tools\zip.exe -r ..\or-tools_python_examples_v$(OR_TOOLS_VERSION).zip ortools_examples
 else
-	cd temp/ortools_examples && tar -C ../.. -c -v --exclude *svn* --exclude *roadef* examples/data | tar xvm
+	cd temp/ortools_examples && tar -C ../.. -c -v --exclude *svn* --exclude *roadef* --exclude *vector_packing* examples/data | tar xvm
 	cd temp && tar -c -v -z --no-same-owner -f ../or-tools_python_examples$(PYPI_OS)_v$(OR_TOOLS_VERSION).tar.gz ortools_examples
 endif
 
@@ -357,7 +384,7 @@ $(PYPI_ARCHIVE_TEMP_DIR) : $(OR_TOOLS_PYTHON_GEN_SCRIPTS)
 	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sgraph
 	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Salgorithms
 	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sdata
-	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sdummy
+	$(MKDIR) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil
 	$(COPY) ortools$Sgen$Sortools$Sconstraint_solver$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sconstraint_solver
 	$(COPY) ortools$Slinear_solver$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Slinear_solver
 	$(COPY) ortools$Sgen$Sortools$Slinear_solver$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Slinear_solver
@@ -367,6 +394,7 @@ $(PYPI_ARCHIVE_TEMP_DIR) : $(OR_TOOLS_PYTHON_GEN_SCRIPTS)
 	$(COPY) ortools$Sgen$Sortools$Sgraph$Spywrapgraph.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sgraph
 	$(COPY) ortools$Sgen$Sortools$Salgorithms$Spywrapknapsack_solver.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Salgorithms
 	$(COPY) ortools$Sgen$Sortools$Sdata$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sdata
+	$(COPY) ortools$Sgen$Sortools$Sutil$S*.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil
 	$(COPY) $(GEN_DIR)$Sortools$S__init__.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S__init__.py
 ifeq ($(SYSTEM),win)
 	echo __version__ = "$(OR_TOOLS_VERSION)" >> $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$S__init__.py
@@ -380,7 +408,7 @@ endif
 	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sgraph$S__init__.py
 	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Salgorithms$S__init__.py
 	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sdata$S__init__.py
-	$(COPY) tools$Sdummy_ortools_dependency.cc $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sdummy
+	$(TOUCH) $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$Sortools$Sutil$S__init__.py
 	$(COPY) tools$SREADME.pypi $(PYPI_ARCHIVE_TEMP_DIR)$Sortools$SREADME.txt
 	$(COPY) LICENSE-2.0.txt $(PYPI_ARCHIVE_TEMP_DIR)$Sortools
 	$(COPY) tools$Ssetup.py $(PYPI_ARCHIVE_TEMP_DIR)$Sortools
@@ -412,23 +440,36 @@ else
 endif
 
 pypi_upload: pypi_archive
-	@echo Uploading Pypi module for $(PYTHON_EXECUTABLE).
+	@echo Uploading Pypi module for "$(PYTHON_EXECUTABLE)".
 ifeq ($(SYSTEM),win)
-	cd $(PYPI_ARCHIVE_TEMP_DIR)\ortools && $(PYTHON_EXECUTABLE) setup.py bdist_wheel bdist_wininst
+	cd $(PYPI_ARCHIVE_TEMP_DIR)\ortools && "$(PYTHON_EXECUTABLE)" setup.py bdist_wheel bdist_wininst
 else
   ifeq ($(PLATFORM),MACOSX)
-	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && $(PYTHON_EXECUTABLE) setup.py bdist_wheel
+	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && "$(PYTHON_EXECUTABLE)" setup.py bdist_wheel
   else
-	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && $(PYTHON_EXECUTABLE) setup.py bdist_egg
+	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && "$(PYTHON_EXECUTABLE)" setup.py bdist_egg
   endif
 endif
 	cd $(PYPI_ARCHIVE_TEMP_DIR)/ortools && twine upload dist/*
 
+.PHONY: detect_python # Show variables used to build Python OR-Tools.
 detect_python:
+	@echo Relevant info for the Python build:
+ifeq ($(SYSTEM),win)
+	@echo WINDOWS_PATH_TO_PYTHON = "$(WINDOWS_PATH_TO_PYTHON)"
+else
+	@echo UNIX_PYTHON_VER = "$(UNIX_PYTHON_VER)"
+endif
+	@echo PYTHON_COMPILER = $(PYTHON_COMPILER)
+	@echo PYTHON_EXECUTABLE = "$(PYTHON_EXECUTABLE)"
 	@echo PYTHON_VERSION = $(PYTHON_VERSION)
-	@echo PYTHON_EXECUTABLE = $(PYTHON_EXECUTABLE)
+	@echo PYTHON3 = $(PYTHON3)
+	@echo SET_PYTHONPATH = "$(SET_PYTHONPATH)"
 	@echo PYTHON_INC = $(PYTHON_INC)
 	@echo PYTHON_LNK = $(PYTHON_LNK)
-	@echo PYTHON3 = $(PYTHON3)
 	@echo SWIG_PYTHON3_FLAG = $(SWIG_PYTHON3_FLAG)
-	@echo SET_PYTHONPATH = $(SET_PYTHONPATH)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif

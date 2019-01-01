@@ -15,7 +15,7 @@
 #include <iostream>  // NOLINT
 #include <utility>
 
-namespace operations_research {
+namespace absl {
 
 std::ostream& operator<<(std::ostream& o, const string_view& piece) {
   o.write(piece.data(), piece.size());
@@ -93,7 +93,8 @@ int string_view::rfind(const string_view& s, size_type pos) const {
 
 int string_view::rfind(char c, size_type pos) const {
   if (length_ <= 0) return npos;
-  for (int i = std::min(pos, static_cast<size_type>(length_ - 1)); i >= 0; --i) {
+  for (int i = std::min(pos, static_cast<size_type>(length_ - 1)); i >= 0;
+       --i) {
     if (ptr_[i] == c) {
       return i;
     }
@@ -109,4 +110,4 @@ string_view string_view::substr(size_type pos, size_type n) const {
 
 const string_view::size_type string_view::npos = size_type(-1);
 
-}  // namespace operations_research
+}  // namespace absl

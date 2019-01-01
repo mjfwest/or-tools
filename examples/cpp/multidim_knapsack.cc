@@ -26,7 +26,7 @@
 #include "ortools/base/split.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/hybrid.h"
-#include "ortools/util/filelineiter.h"
+#include "ortools/base/filelineiter.h"
 
 DEFINE_string(
     data_file, "",
@@ -91,7 +91,7 @@ class MultiDimKnapsackData {
   // Used internally.
   void ProcessNewLine(const std::string& line) {
     const std::vector<std::string> words =
-        strings::Split(line, ' ', strings::SkipEmpty());
+        absl::StrSplit(line, ' ', absl::SkipEmpty());
     line_read_++;
     if (problem_type_ == -1) {
       if (words.size() == 1) {
@@ -326,7 +326,7 @@ void SolveKnapsack(MultiDimKnapsackData* const data) {
         assigned_items += ", " + std::to_string(i);
       }
     }
-    if (assigned_items == "") {
+    if (assigned_items.empty()) {
       LOG(INFO) << "No items were assigned";
     } else {
       assigned_items.erase(0, 2);

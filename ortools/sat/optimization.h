@@ -24,6 +24,7 @@
 
 #include "ortools/sat/boolean_problem.pb.h"
 #include "ortools/sat/integer.h"
+#include "ortools/sat/integer_search.h"
 #include "ortools/sat/model.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_solver.h"
@@ -45,6 +46,8 @@ void MinimizeCore(SatSolver* solver, std::vector<Literal>* core);
 // each literal of the initial core "last" at least once, so if such literal can
 // be infered by propagation by any subset of the other literal, it will be
 // removed.
+//
+// Note that this function doest NOT preserve the order of Literal in the core.
 void MinimizeCoreWithPropagation(SatSolver* solver, std::vector<Literal>* core);
 
 // Because the Solve*() functions below are also used in scripts that requires a
@@ -154,7 +157,6 @@ SatSolver::Status MinimizeWithCoreAndLazyEncoding(
     const std::function<void(const Model&)>& feasible_solution_observer,
     Model* model);
 
-#if defined(USE_CBC) || defined(USE_SCIP)
 // Generalization of the max-HS algorithm (HS stands for Hitting Set). This is
 // similar to MinimizeWithCoreAndLazyEncoding() but it uses an hybrid approach
 // with a MIP solver to handle the discovered infeasibility cores.
@@ -176,7 +178,6 @@ SatSolver::Status MinimizeWithHittingSetAndLazyEncoding(
     const std::function<LiteralIndex()>& next_decision,
     const std::function<void(const Model&)>& feasible_solution_observer,
     Model* model);
-#endif  // defined(USE_CBC) || defined(USE_SCIP)
 
 }  // namespace sat
 }  // namespace operations_research

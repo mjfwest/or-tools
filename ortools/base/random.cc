@@ -18,6 +18,7 @@
 #endif
 #endif
 #if defined(_MSC_VER)
+#include <Winsock2.h>
 #include <windows.h>
 #define PATH_MAX 4096
 #else

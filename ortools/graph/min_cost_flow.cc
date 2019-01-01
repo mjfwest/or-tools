@@ -20,6 +20,7 @@
 
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/stringprintf.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/graph/graph.h"
 #include "ortools/base/mathutil.h"
 #include "ortools/graph/graphs.h"
@@ -272,7 +273,7 @@ std::string GenericMinCostFlow<Graph, ArcFlowType, ArcScaledCostType>::DebugStri
   // ReducedCost fails.
   const CostValue reduced_cost = scaled_arc_unit_cost_[arc] +
                                  node_potential_[tail] - node_potential_[head];
-  return StringPrintf(
+  return absl::StrFormat(
       "%s Arc %d, from %d to %d, "
       "Capacity = %lld, Residual capacity = %lld, "
       "Flow = residual capacity for reverse arc = %lld, "
@@ -596,7 +597,7 @@ void GenericMinCostFlow<Graph, ArcFlowType,
     // We just saturated all the admissible arcs, so there are no arcs with a
     // positive residual capacity that are incident to the current node.
     // Moreover, during the course of the algorithm, if the residual capacity of
-    // such an arc becomes postive again, then the arc is still not admissible
+    // such an arc becomes positive again, then the arc is still not admissible
     // until we relabel the node (because the reverse arc was admissible for
     // this to happen). In conclusion, the optimization below is correct.
     first_admissible_arc_[node] = Graph::kNilArc;
@@ -978,10 +979,10 @@ bool GenericMinCostFlow<Graph, ArcFlowType, ArcScaledCostType>::IsArcDirect(
 // TODO(user): Move this code out of a .cc file and include it at the end of
 // the header so it can work with any graph implementation?
 template class GenericMinCostFlow<StarGraph>;
-template class GenericMinCostFlow<::util::ReverseArcListGraph<> >;
-template class GenericMinCostFlow<::util::ReverseArcStaticGraph<> >;
-template class GenericMinCostFlow<::util::ReverseArcMixedGraph<> >;
-template class GenericMinCostFlow<::util::ReverseArcStaticGraph<uint16, int32> >;
+template class GenericMinCostFlow<::util::ReverseArcListGraph<>>;
+template class GenericMinCostFlow<::util::ReverseArcStaticGraph<>>;
+template class GenericMinCostFlow<::util::ReverseArcMixedGraph<>>;
+template class GenericMinCostFlow<::util::ReverseArcStaticGraph<uint16, int32>>;
 
 // A more memory-efficient version for large graphs.
 template class GenericMinCostFlow<::util::ReverseArcStaticGraph<uint16, int32>,

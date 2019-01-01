@@ -41,11 +41,11 @@ void DualEdgeNorms::UpdateDataOnBasisPermutation(
 
 void DualEdgeNorms::UpdateBeforeBasisPivot(
     ColIndex entering_col, RowIndex leaving_row,
-    ScatteredColumnReference direction,
-    ScatteredColumnReference unit_row_left_inverse) {
+    const ScatteredColumn& direction,
+    const ScatteredRow& unit_row_left_inverse) {
   // No need to update if we will recompute it from scratch later.
   if (recompute_edge_squared_norms_) return;
-  DenseColumn* tau = ComputeTau(unit_row_left_inverse);
+  const DenseColumn& tau = ComputeTau(TransposedView(unit_row_left_inverse));
   SCOPED_TIME_STAT(&stats_);
 
   // ||unit_row_left_inverse||^2 is the same as
@@ -55,7 +55,7 @@ void DualEdgeNorms::UpdateBeforeBasisPivot(
   // Note that we use the PreciseSquaredNorms() because it is a small price to
   // pay for more precise update below.
   const Fractional leaving_squared_norm =
-      PreciseSquaredNorm(unit_row_left_inverse);
+      PreciseSquaredNorm(TransposedView(unit_row_left_inverse));
   const Fractional old_squared_norm = edge_squared_norms_[leaving_row];
   const Fractional estimated_edge_norms_accuracy =
       (sqrt(leaving_squared_norm) - sqrt(old_squared_norm)) /
@@ -75,12 +75,12 @@ void DualEdgeNorms::UpdateBeforeBasisPivot(
 
   // Update the norm.
   int stat_lower_bounded_norms = 0;
-  for (const RowIndex row : direction.non_zero_rows) {
+  for (const RowIndex row : direction.non_zeros) {
     // Note that the update formula used is important to maximize the precision.
     // See Koberstein's PhD section 8.2.2.1.
     edge_squared_norms_[row] +=
         direction[row] *
-        (direction[row] * new_leaving_squared_norm - 2.0 / pivot * (*tau)[row]);
+        (direction[row] * new_leaving_squared_norm - 2.0 / pivot * tau[row]);
 
     // Avoid 0.0 norms (The 1e-4 is the value used by Koberstein).
     // TODO(user): use a more precise lower bound depending on the column norm?
@@ -111,12 +111,12 @@ void DualEdgeNorms::ComputeEdgeSquaredNorms() {
   recompute_edge_squared_norms_ = false;
 }
 
-DenseColumn* DualEdgeNorms::ComputeTau(
-    ScatteredColumnReference unit_row_left_inverse) {
+const DenseColumn& DualEdgeNorms::ComputeTau(
+    const ScatteredColumn& unit_row_left_inverse) {
   SCOPED_TIME_STAT(&stats_);
-  DenseColumn* result =
+  const DenseColumn& result =
       basis_factorization_.RightSolveForTau(unit_row_left_inverse);
-  IF_STATS_ENABLED(stats_.tau_density.Add(Density(Transpose(*result))));
+  IF_STATS_ENABLED(stats_.tau_density.Add(Density(Transpose(result))));
   return result;
 }
 

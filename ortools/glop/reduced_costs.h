@@ -62,7 +62,7 @@ class ReducedCosts {
   // or false if this column is actually not good and ChooseEnteringColumn()
   // need to be called again.
   bool TestEnteringReducedCostPrecision(ColIndex entering_col,
-                                        ScatteredColumnReference direction,
+                                        const ScatteredColumn& direction,
                                         Fractional* reduced_cost);
 
   // Computes the current dual residual and infeasibility. Note that these
@@ -80,7 +80,7 @@ class ReducedCosts {
   // - The index in B of the leaving basic variable.
   // - The 'direction', i.e. the right inverse of the entering column.
   void UpdateBeforeBasisPivot(ColIndex entering_col, RowIndex leaving_row,
-                              const DenseColumn& direction,
+                              const ScatteredColumn& direction,
                               UpdateRow* update_row);
 
   // Once a pivot has been done, this need to be called on the column that just
@@ -273,7 +273,7 @@ class ReducedCosts {
   // algorithm, but may gives us a good idea of the current precision of our
   // estimates. It is also faster to compute the unit_row_left_inverse_ because
   // of sparsity.
-  DenseRow basic_objective_left_inverse_;
+  ScatteredRow basic_objective_left_inverse_;
 
   // This is usually parameters_.dual_feasibility_tolerance() except when the
   // dual residual error |y.B - c_B| is higher than it and we have to increase

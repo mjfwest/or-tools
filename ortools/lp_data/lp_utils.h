@@ -43,13 +43,33 @@ static inline Fractional Fractionality(Fractional f) {
 
 // Returns the scalar product between u and v.
 // The precise versions use KahanSum and are about two times slower.
-template <class DenseRowOrColumn, class DenseRowOrColumn2>
-Fractional ScalarProduct(const DenseRowOrColumn& u,
+template <class DenseRowOrColumn1, class DenseRowOrColumn2>
+Fractional ScalarProduct(const DenseRowOrColumn1& u,
                          const DenseRowOrColumn2& v) {
   DCHECK_EQ(u.size().value(), v.size().value());
   Fractional sum(0.0);
-  for (typename DenseRowOrColumn::IndexType i(0); i < u.size(); ++i) {
-    sum += u[i] * v[typename DenseRowOrColumn2::IndexType(i.value())];
+  typename DenseRowOrColumn1::IndexType i(0);
+  typename DenseRowOrColumn2::IndexType j(0);
+  const size_t num_blocks = u.size().value() / 4;
+  for (size_t block = 0; block < num_blocks; ++block) {
+    // Computing the sum of 4 elements at once may allow the compiler to
+    // generate more efficient code, e.g. using SIMD and checking the loop
+    // condition much less frequently.
+    //
+    // This produces different results from the case where each multiplication
+    // is added to sum separately. An extreme example of this can be derived
+    // using the fact that 1e11 + 2e-6 == 1e11, but 1e11 + 8e-6 > 1e11.
+    //
+    // While the results are different, they aren't necessarily better or worse.
+    // Typically, sum will be of larger magnitude than any individual
+    // multiplication, so one might expect, in practice, this method to yield
+    // more accurate results. However, if accuracy is vital, use the precise
+    // version.
+    sum += (u[i++] * v[j++]) + (u[i++] * v[j++]) + (u[i++] * v[j++]) +
+           (u[i++] * v[j++]);
+  }
+  while (i < u.size()) {
+    sum += u[i++] * v[j++];
   }
   return sum;
 }
@@ -92,15 +112,13 @@ Fractional PreciseScalarProduct(const DenseRowOrColumn& u,
 
 template <class DenseRowOrColumn>
 Fractional PreciseScalarProduct(const DenseRowOrColumn& u,
-                                ScatteredColumnReference v) {
-  DCHECK_EQ(u.size().value(), v.dense_column.size().value());
-  if (v.non_zero_rows.size() >
-      ScatteredColumnReference::kDenseThresholdForPreciseSum *
-          v.dense_column.size().value()) {
-    return PreciseScalarProduct(u, v.dense_column);
+                                const ScatteredColumn& v) {
+  DCHECK_EQ(u.size().value(), v.values.size().value());
+  if (ShouldUseDenseIteration(v)) {
+    return PreciseScalarProduct(u, v.values);
   }
   KahanSum sum;
-  for (const RowIndex row : v.non_zero_rows) {
+  for (const RowIndex row : v.non_zeros) {
     sum.Add(u[typename DenseRowOrColumn::IndexType(row.value())] * v[row]);
   }
   return sum.Value();
@@ -112,13 +130,16 @@ Fractional SquaredNorm(const SparseColumn& v);
 Fractional SquaredNorm(const DenseColumn& v);
 Fractional PreciseSquaredNorm(const SparseColumn& v);
 Fractional PreciseSquaredNorm(const DenseColumn& v);
-Fractional PreciseSquaredNorm(ScatteredColumnReference v);
+Fractional PreciseSquaredNorm(const ScatteredColumn& v);
 
 // Returns the maximum of the |coefficients| of 'v'.
 Fractional InfinityNorm(const DenseColumn& v);
 Fractional InfinityNorm(const SparseColumn& v);
 
 // Returns the fraction of non-zero entries of the given row.
+//
+// TODO(user): Take a Scattered row/col instead. This is only used to report
+// stats, but we should still have a sparse version to do it faster.
 double Density(const DenseRow& row);
 
 // Sets to 0.0 all entries of the given row whose fabs() is lower than the given
@@ -187,35 +208,31 @@ inline bool IsAllZero(const Container& input) {
   return true;
 }
 
-// Permutes the given dense vector and computes the positions of its non-zeros.
-// It uses for this an all zero dense vector (zero_scratchpad).
-// This operation is efficient for a sparse vector because:
-// - It combines two iterations in one.
-// - It avoids cache pollution by not looking at unecessary permuted locations.
-// Note that the produced non_zeros is not ordered which may be a drawback.
-// TODO(user): Investigate alternatives with an ordered non_zeros.
-template <typename IndexType, typename PermutationIndexType,
-          typename NonZeroIndexType>
-inline void PermuteAndComputeNonZeros(
+// Returns true if the given vector of bool is all false.
+template <typename BoolVector>
+bool IsAllFalse(const BoolVector& v) {
+  return std::all_of(v.begin(), v.end(), [](bool value) { return !value; });
+}
+
+// Permutes the given dense vector. It uses for this an all zero scratchpad.
+template <typename IndexType, typename PermutationIndexType>
+inline void PermuteWithScratchpad(
     const Permutation<PermutationIndexType>& permutation,
     StrictITIVector<IndexType, Fractional>* zero_scratchpad,
-    StrictITIVector<IndexType, Fractional>* output,
-    std::vector<NonZeroIndexType>* non_zeros) {
-  non_zeros->clear();
+    StrictITIVector<IndexType, Fractional>* input_output) {
   DCHECK(IsAllZero(*zero_scratchpad));
-  zero_scratchpad->swap(*output);
-  output->resize(zero_scratchpad->size(), 0.0);
-  const IndexType end = zero_scratchpad->size();
-  for (IndexType index(0); index < end; ++index) {
+  const IndexType size = input_output->size();
+  zero_scratchpad->swap(*input_output);
+  input_output->resize(size, 0.0);
+  for (IndexType index(0); index < size; ++index) {
     const Fractional value = (*zero_scratchpad)[index];
     if (value != 0.0) {
-      (*zero_scratchpad)[index] = 0.0;
       const IndexType permuted_index(
           permutation[PermutationIndexType(index.value())].value());
-      (*output)[permuted_index] = value;
-      non_zeros->push_back(NonZeroIndexType(permuted_index.value()));
+      (*input_output)[permuted_index] = value;
     }
   }
+  zero_scratchpad->assign(size, 0.0);
 }
 
 // Same as PermuteAndComputeNonZeros() except that we assume that the given
@@ -231,7 +248,6 @@ inline void PermuteWithKnownNonZeros(
   output->resize(zero_scratchpad->size(), 0.0);
   for (IndexType& index_ref : *non_zeros) {
     const Fractional value = (*zero_scratchpad)[index_ref];
-    DCHECK_NE(value, 0.0);
     (*zero_scratchpad)[index_ref] = 0.0;
     const IndexType permuted_index(permutation[index_ref]);
     (*output)[permuted_index] = value;
@@ -239,44 +255,26 @@ inline void PermuteWithKnownNonZeros(
   }
 }
 
-// Same algorithm as PermuteAndComputeNonZeros() above when the non-zeros are
-// not needed. This should be faster than a simple ApplyPermutation() if the
-// input vector is relatively sparse. The input is the initial value of output.
-inline void ApplyPermutationWhenInputIsProbablySparse(
-    const Permutation<RowIndex>& permutation, DenseColumn* zero_scratchpad,
-    DenseColumn* output) {
-  const RowIndex num_rows(permutation.size());
-  DCHECK(IsAllZero(*zero_scratchpad));
-  zero_scratchpad->swap(*output);
-  output->resize(num_rows, 0.0);
-  for (RowIndex row(0); row < num_rows; ++row) {
-    const Fractional value = (*zero_scratchpad)[row];
-    if (value != 0.0) {
-      (*zero_scratchpad)[row] = 0.0;
-      (*output)[permutation[row]] = value;
-    }
-  }
-}
-
 // Sets a dense vector for which the non zeros are known to be non_zeros.
-template <typename Vector, typename IndexType>
-inline void ClearAndResizeVectorWithNonZeros(
-    IndexType size, Vector* v, std::vector<IndexType>* non_zeros) {
+template <typename IndexType, typename ScatteredRowOrCol>
+inline void ClearAndResizeVectorWithNonZeros(IndexType size,
+                                             ScatteredRowOrCol* v) {
   // Only use the sparse version if there is less than 5% non-zeros positions
   // compared to the wanted size. Note that in most cases the vector will
   // already be of the correct size.
   const double kSparseThreshold = 0.05;
-  if (non_zeros->size() < kSparseThreshold * size.value()) {
-    for (const IndexType index : *non_zeros) {
-      DCHECK_LT(index, v->size());
+  if (!v->non_zeros.empty() &&
+      v->non_zeros.size() < kSparseThreshold * size.value()) {
+    for (const IndexType index : v->non_zeros) {
+      DCHECK_LT(index, v->values.size());
       (*v)[index] = 0.0;
     }
-    v->resize(size, 0.0);
-    DCHECK(IsAllZero(*v));
+    v->values.resize(size, 0.0);
+    DCHECK(IsAllZero(v->values));
   } else {
-    v->AssignToZero(size);
+    v->values.AssignToZero(size);
   }
-  non_zeros->clear();
+  v->non_zeros.clear();
 }
 
 // Changes the sign of all the entries in the given vector.

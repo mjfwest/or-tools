@@ -18,6 +18,7 @@
 #define OR_TOOLS_SAT_CLAUSE_H_
 
 #include <deque>
+#include <unordered_map>
 #include <unordered_set>
 #include <string>
 #include <utility>
@@ -30,6 +31,7 @@
 #include "ortools/base/int_type.h"
 #include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/hash.h"
+#include "ortools/sat/drat.h"
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/util/bitset.h"
@@ -39,34 +41,17 @@
 namespace operations_research {
 namespace sat {
 
-// Forward declarations.
-// TODO(user): This cyclic dependency can be relatively easily removed.
-class LiteralWatchers;
-
-// Variable information. This is updated each time we attach/detach a clause.
-struct VariableInfo {
-  VariableInfo()
-      : num_positive_clauses(0),
-        num_negative_clauses(0),
-        num_appearances(0),
-        weighted_num_appearances(0.0) {}
-
-  int num_positive_clauses;
-  int num_negative_clauses;
-  int num_appearances;
-  double weighted_num_appearances;
-};
-
 // This is how the SatSolver stores a clause. A clause is just a disjunction of
-// literals. In many places, we just use std::vector<literal> to encode one. However,
-// the solver needs to keep a few extra fields attached to each clause.
+// literals. In many places, we just use std::vector<literal> to encode one. But in
+// the critical propagation code, we use this class to remove one memory
+// indirection.
 class SatClause {
  public:
   // Creates a sat clause. There must be at least 2 literals. Smaller clause are
-  // treated separatly and never constructed. A redundant clause can be removed
-  // without changing the problem.
-  static SatClause* Create(const std::vector<Literal>& literals,
-                           bool is_redundant);
+  // treated separatly and never constructed. In practice, we do use
+  // BinaryImplicationGraph for the clause of size 2, so this is mainly used for
+  // size at least 3.
+  static SatClause* Create(const std::vector<Literal>& literals);
 
   // Non-sized delete because this is a tail-padded class.
   void operator delete(void* p) {
@@ -79,7 +64,6 @@ class SatClause {
   // Allows for range based iteration: for (Literal literal : clause) {}.
   const Literal* const begin() const { return &(literals_[0]); }
   const Literal* const end() const { return &(literals_[size_]); }
-  Literal* literals() { return &(literals_[0]); }
 
   // Returns the first and second literals. These are always the watched
   // literals if the clause is attached in the LiteralWatchers.
@@ -92,10 +76,15 @@ class SatClause {
   Literal PropagatedLiteral() const { return literals_[0]; }
 
   // Returns the reason for the last unit propagation of this clause. The
-  // preconditions are the same as for PropagatedLiteral().
-  gtl::Span<Literal> PropagationReason() const {
-    // Note that we don't need to include the propagated literal.
-    return gtl::Span<Literal>(&(literals_[1]), size_ - 1);
+  // preconditions are the same as for PropagatedLiteral(). Note that we don't
+  // need to include the propagated literal.
+  absl::Span<Literal> PropagationReason() const {
+    return absl::Span<Literal>(&(literals_[1]), size_ - 1);
+  }
+
+  // Returns a Span<> representation of the clause.
+  absl::Span<Literal> AsSpan() const {
+    return absl::Span<Literal>(&(literals_[0]), size_);
   }
 
   // Removes literals that are fixed. This should only be called at level 0
@@ -106,46 +95,36 @@ class SatClause {
   // old_size) of literals().
   bool RemoveFixedLiteralsAndTestIfTrue(const VariablesAssignment& assignment);
 
-  // True if the clause can be safely removed without changing the current
-  // problem. Usually the clause we learn during the search are redundant since
-  // the original clauses are enough to define the problem.
-  bool IsRedundant() const { return is_redundant_; }
+  // Rewrites a clause with another shorter one. Note that the clause shouldn't
+  // be attached when this is called.
+  void Rewrite(absl::Span<Literal> new_clause) {
+    size_ = 0;
+    for (const Literal l : new_clause) literals_[size_++] = l;
+  }
 
   // Returns true if the clause is satisfied for the given assignment. Note that
   // the assignment may be partial, so false does not mean that the clause can't
   // be satisfied by completing the assignment.
   bool IsSatisfied(const VariablesAssignment& assignment) const;
 
-  // Sorts the literals of the clause depending on the given parameters and
-  // statistics. Do not call this on an attached clause.
-  void SortLiterals(const ITIVector<BooleanVariable, VariableInfo>& statistics,
-                    const SatParameters& parameters);
-
-  // Sets up the 2-watchers data structure. It selects two non-false literals
-  // and attaches the clause to the event: one of the watched literals become
-  // false. It returns false if the clause only contains literals assigned to
-  // false. If only one literals is not false, it propagates it to true if it
-  // is not already assigned.
-  bool AttachAndEnqueuePotentialUnitPropagation(Trail* trail,
-                                                LiteralWatchers* demons);
-
   // Returns true if the clause is attached to a LiteralWatchers.
-  bool IsAttached() const { return is_attached_; }
-
-  // Marks the clause so that the next call to CleanUpWatchers() can identify it
-  // and actually detach it.
-  void LazyDetach() { is_attached_ = false; }
+  bool IsAttached() const { return size_ > 0; }
 
   std::string DebugString() const;
 
  private:
-  // The data is packed so that only 4 bytes are used for these fields.
-  //
-  // TODO(user): It should be possible to remove one or both of the Booleans.
-  // That may speed up the code slightly.
-  bool is_redundant_ : 1;
-  bool is_attached_ : 1;
-  unsigned int size_ : 30;
+  // LiteralWatchers need to permute the order of literals in the clause and
+  // call LazyDetach().
+  friend class LiteralWatchers;
+
+  Literal* literals() { return &(literals_[0]); }
+
+  // Marks the clause so that the next call to CleanUpWatchers() can identify it
+  // and actually detach it. We use size_ = 0 for this since the clause will
+  // never be used afterwards.
+  void LazyDetach() { size_ = 0; }
+
+  int32 size_;
 
   // This class store the literals inline, and literals_ mark the starts of the
   // variable length portion.
@@ -154,34 +133,81 @@ class SatClause {
   DISALLOW_COPY_AND_ASSIGN(SatClause);
 };
 
+// Clause information used for the clause database management. Note that only
+// the clauses that can be removed have an info. The problem clauses and
+// the learned one that we wants to keep forever do not have one.
+struct ClauseInfo {
+  double activity = 0.0;
+  int32 lbd = 0;
+  bool protected_during_next_cleanup = false;
+};
+
 // Stores the 2-watched literals data structure.  See
 // http://www.cs.berkeley.edu/~necula/autded/lecture24-sat.pdf for
 // detail.
+//
+// This class is also responsible for owning the clause memory and all related
+// information.
 class LiteralWatchers : public SatPropagator {
  public:
   LiteralWatchers();
   ~LiteralWatchers() override;
 
-  bool Propagate(Trail* trail) final;
-  gtl::Span<Literal> Reason(const Trail& trail,
-                                   int trail_index) const final;
-
-  // Resizes the data structure.
+  // Must be called before adding clauses refering to such variables.
   void Resize(int num_variables);
 
-  // Attaches the given clause. This eventually propagates a literal which is
-  // enqueued on the trail. Returns false if a contradiction was encountered.
-  bool AttachAndPropagate(SatClause* clause, Trail* trail);
+  // SatPropagator API.
+  bool Propagate(Trail* trail) final;
+  absl::Span<Literal> Reason(const Trail& trail,
+                                   int trail_index) const final;
+
+  // Returns the reason of the variable at given trail_index. This only works
+  // for variable propagated by this class and is almost the same as Reason()
+  // with a different return format.
+  SatClause* ReasonClause(int trail_index) const;
+
+  // Adds a new clause and perform initial propagation for this clause only.
+  bool AddClause(const std::vector<Literal>& literals, Trail* trail);
+
+  // Same as AddClause() for a removable clause. This is only called on learned
+  // conflict, so this should never have all its literal at false (CHECKED).
+  SatClause* AddRemovableClause(const std::vector<Literal>& literals,
+                                Trail* trail);
 
   // Lazily detach the given clause. The deletion will actually occur when
   // CleanUpWatchers() is called. The later needs to be called before any other
   // function in this class can be called. This is DCHECKed.
+  //
+  // Note that we remove the clause from clauses_info_ right away.
   void LazyDetach(SatClause* clause);
   void CleanUpWatchers();
 
-  // Returns the reason of the variable at given trail_index.
-  // This only works for variable propagated by this class.
-  SatClause* ReasonClause(int trail_index) const;
+  // Detaches the given clause right away.
+  void Detach(SatClause* clause);
+
+  // Attaches the given clause. The first two literal of the clause must
+  // be unassigned and the clause must not be already attached.
+  void Attach(SatClause* clause, Trail* trail);
+
+  // Reclaims the memory of the detached clauses and remove them from
+  // AllClausesInCreationOrder() this work in O(num_clauses()).
+  void DeleteDetachedClauses();
+  int64 num_clauses() const { return clauses_.size(); }
+  const std::vector<SatClause*>& AllClausesInCreationOrder() const {
+    return clauses_;
+  }
+
+  // True if removing this clause will not change the set of feasible solution.
+  // This is the case for clauses that were learned during search. Note however
+  // that some learned clause are kept forever (heuristics) and do not appear
+  // here.
+  bool IsRemovable(SatClause* const clause) const {
+    return ContainsKey(clauses_info_, clause);
+  }
+  int64 num_removable_clauses() const { return clauses_info_.size(); }
+  std::unordered_map<SatClause*, ClauseInfo>* mutable_clauses_info() {
+    return &clauses_info_;
+  }
 
   // Total number of clauses inspected during calls to PropagateOnFalse().
   int64 num_inspected_clauses() const { return num_inspected_clauses_; }
@@ -192,18 +218,29 @@ class LiteralWatchers : public SatPropagator {
   // Number of clauses currently watched.
   int64 num_watched_clauses() const { return num_watched_clauses_; }
 
-  // Returns some statistics on the number of appearance of this variable in
-  // all the attached clauses.
-  const VariableInfo& VariableStatistic(BooleanVariable var) const {
-    return statistics_[var];
+  void SetDratWriter(DratWriter* drat_writer) { drat_writer_ = drat_writer; }
+
+  // Really basic algorithm to return a clause to try to minimize. We simply
+  // loop over the clause that we keep forever, in creation order. This starts
+  // by the problem clauses and then the learned one that we keep forever.
+  SatClause* NextClauseToMinimize() {
+    for (; to_minimize_index_ < clauses_.size(); ++to_minimize_index_) {
+      if (!clauses_[to_minimize_index_]->IsAttached()) continue;
+      if (!IsRemovable(clauses_[to_minimize_index_])) {
+        return clauses_[to_minimize_index_++];
+      }
+    }
+    return nullptr;
   }
 
-  // Parameters management.
-  void SetParameters(const SatParameters& parameters) {
-    parameters_ = parameters;
-  }
+  // Restart the scan in NextClauseToMinimize() from the first problem clause.
+  void ResetToMinimizeIndex() { to_minimize_index_ = 0; }
 
  private:
+  // Attaches the given clause. This eventually propagates a literal which is
+  // enqueued on the trail. Returns false if a contradiction was encountered.
+  bool AttachAndPropagate(SatClause* clause, Trail* trail);
+
   // Launches all propagation when the given literal becomes false.
   // Returns false if a contradiction was encountered.
   bool PropagateOnFalse(Literal false_literal, Trail* trail);
@@ -214,19 +251,8 @@ class LiteralWatchers : public SatPropagator {
   void AttachOnFalse(Literal literal, Literal blocking_literal,
                      SatClause* clause);
 
-  // AttachOnFalse and SetReasonClause() need to be called from
-  // SatClause::AttachAndEnqueuePotentialUnitPropagation().
-  //
-  // TODO(user): This is not super clean, find a better way.
-  friend bool SatClause::AttachAndEnqueuePotentialUnitPropagation(
-      Trail* trail, LiteralWatchers* demons);
-  void SetReasonClause(int trail_index, SatClause* clause) {
-    reasons_[trail_index] = clause;
-  }
-
-  // Updates statistics_ for the literals in the given clause. added indicates
-  // if we are adding the clause or deleting it.
-  void UpdateStatistics(const SatClause& clause, bool added);
+  // Common code between LazyDetach() and Detach().
+  void InternalDetach(SatClause* clause);
 
   // Contains, for each literal, the list of clauses that need to be inspected
   // when the corresponding literal becomes false.
@@ -236,7 +262,7 @@ class LiteralWatchers : public SatPropagator {
     SatClause* clause;
     Literal blocking_literal;
   };
-  ITIVector<LiteralIndex, std::vector<Watcher> > watchers_on_false_;
+  ITIVector<LiteralIndex, std::vector<Watcher>> watchers_on_false_;
 
   // SatClause reasons by trail_index.
   std::vector<SatClause*> reasons_;
@@ -246,12 +272,27 @@ class LiteralWatchers : public SatPropagator {
   SparseBitset<LiteralIndex> needs_cleaning_;
   bool is_clean_;
 
-  ITIVector<BooleanVariable, VariableInfo> statistics_;
-  SatParameters parameters_;
   int64 num_inspected_clauses_;
   int64 num_inspected_clause_literals_;
   int64 num_watched_clauses_;
   mutable StatsGroup stats_;
+
+  // All the clauses currently in memory. This vector has ownership of the
+  // pointers. We currently do not use std::unique_ptr<SatClause> because it
+  // can't be used with some STL algorithms like std::partition.
+  //
+  // Note that the unit clauses are not kept here and if the parameter
+  // treat_binary_clauses_separately is true, the binary clause are not kept
+  // here either.
+  std::vector<SatClause*> clauses_;
+
+  int to_minimize_index_ = 0;
+
+  // Only contains removable clause.
+  std::unordered_map<SatClause*, ClauseInfo> clauses_info_;
+
+  DratWriter* drat_writer_ = nullptr;
+
   DISALLOW_COPY_AND_ASSIGN(LiteralWatchers);
 };
 
@@ -344,7 +385,7 @@ class BinaryImplicationGraph : public SatPropagator {
   }
 
   bool Propagate(Trail* trail) final;
-  gtl::Span<Literal> Reason(const Trail& trail,
+  absl::Span<Literal> Reason(const Trail& trail,
                                    int trail_index) const final;
 
   // Resizes the data structure.
@@ -440,7 +481,7 @@ class BinaryImplicationGraph : public SatPropagator {
   //
   // TODO(user): We could be even more efficient since a size of int32 is enough
   // for us and we could store in common the inlined/not-inlined size.
-  ITIVector<LiteralIndex, gtl::InlinedVector<Literal, 6>> implications_;
+  ITIVector<LiteralIndex, absl::InlinedVector<Literal, 6>> implications_;
   int64 num_implications_;
 
   // Some stats.

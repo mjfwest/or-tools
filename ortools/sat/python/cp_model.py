@@ -34,6 +34,8 @@ from ortools.sat import pywrapsat
 
 INT_MIN = -9223372036854775808  # hardcoded to be platform independent.
 INT_MAX = 9223372036854775807
+INT32_MIN = -2147483648
+INT32_MAX = 2147483647
 
 
 # Cp Solver status (exported to avoid importing cp_model_cp2).
@@ -50,6 +52,14 @@ def AssertIsInt64(x):
     raise TypeError('Not an integer: %s' % x)
   if x < INT_MIN or x > INT_MAX:
     raise OverflowError('Does not fit in an int64: %s' % x)
+
+
+def AssertIsInt32(x):
+  """Asserts that x is integer and x is in [min_int_32, max_int_32]."""
+  if not isinstance(x, numbers.Integral):
+    raise TypeError('Not an integer: %s' % x)
+  if x < INT32_MIN or x > INT32_MAX:
+    raise OverflowError('Does not fit in an int32: %s' % x)
 
 
 def AssertIsBoolean(x):
@@ -538,6 +548,10 @@ class CpModel(object):
       coeffs_map, constant = ct.Expression().GetVarValueMap()
       bounds = [CapSub(x, constant) for x in ct.Bounds()]
       return self.AddLinearConstraintWithBounds(iteritems(coeffs_map), bounds)
+    elif ct and isinstance(ct, bool):
+      pass  # Nothing to do, was already evaluated to true.
+    elif not ct and isinstance(ct, bool):
+      return self.AddBoolOr([])  # Evaluate to false.
     else:
       raise TypeError('Not supported: CpModel.Add(' + str(ct) + ')')
 
@@ -561,13 +575,35 @@ class CpModel(object):
     model_ct.element.target = self.GetOrMakeIndex(target)
     return ct
 
-  def AddCircuit(self, nexts):
-    """Adds Circuit(nexts)."""
-    if not nexts:
-      raise ValueError('AddCircuit expects a non empty nexts array')
+  def AddCircuit(self, arcs):
+    """Adds Circuit(arcs).
+
+    Adds a circuit constraints from a sparse list of arcs that encode the graph.
+
+    Args:
+      arcs: a list of arcs. An arc is a tuple
+            (source_node, destination_node, literal).
+            The arc is selected in the circuit if the literal is true.
+            Both source_node and destination_node must be integer value between
+            0 and the number of nodes - 1.
+
+    Returns:
+      The constraint proto.
+
+    Raises:
+      ValueError: If the list of arc is empty.
+    """
+    if not arcs:
+      raise ValueError('AddCircuit expects a non empty array of arcs')
     ct = Constraint(self.__model.constraints)
     model_ct = self.__model.constraints[ct.Index()]
-    model_ct.circuit.nexts.extend([self.GetOrMakeIndex(x) for x in nexts])
+    for arc in arcs:
+      AssertIsInt32(arc[0])
+      AssertIsInt32(arc[1])
+      lit = self.GetOrMakeBooleanIndex(arc[2])
+      model_ct.circuit.tails.append(arc[0])
+      model_ct.circuit.heads.append(arc[1])
+      model_ct.circuit.literals.append(lit)
     return ct
 
   def AddAllowedAssignments(self, variables, tuples):
@@ -640,9 +676,9 @@ class CpModel(object):
       AssertIsInt64(t[0])
       AssertIsInt64(t[1])
       AssertIsInt64(t[2])
-      model_ct.automata.transition_head.append(t[0])
-      model_ct.automata.transition_label.append(t[0])
       model_ct.automata.transition_tail.append(t[0])
+      model_ct.automata.transition_label.append(t[1])
+      model_ct.automata.transition_head.append(t[2])
 
   def AddInverse(self, variables, inverse_variables):
     """Adds Inverse(variables, inverse_variables)."""
@@ -934,6 +970,9 @@ class CpModel(object):
           self.__model.objective.vars.append(v.Index())
         else:
           self.__model.objective.vars.append(self.Negated(v.Index()))
+    elif isinstance(obj, numbers.Integral):
+      self.__model.objective.offset = obj
+      self.__model.objective.scaling_factor = 1
     else:
       raise TypeError('TypeError: ' + str(obj) + ' is not a valid objective')
 
@@ -957,7 +996,7 @@ class CpModel(object):
       raise TypeError('TypeError: ' + str(x) + ' is not a boolean variable')
 
 
-def EvaluateExpression(expression, solution):
+def EvaluateIntegerExpression(expression, solution):
   """Evaluate an integer expression against a solution."""
   value = 0
   to_process = [(expression, 1)]
@@ -976,6 +1015,18 @@ def EvaluateExpression(expression, solution):
   return value
 
 
+def EvaluateBooleanExpression(literal, solution):
+  """Evaluate an boolean expression against a solution."""
+  if isinstance(literal, IntVar) or isinstance(literal, _NotBooleanVariable):
+    index = literal.Index()
+    if index >= 0:
+      return bool(solution.solution[index])
+    else:
+      return not solution.solution[-index - 1]
+  else:
+    raise TypeError('Cannot interpret %s as a boolean expression.' % literal)
+
+
 class CpSolverSolutionCallback(pywrapsat.PySolutionCallback):
   """Nicer solution callback that uses the CpSolver class."""
 
@@ -986,11 +1037,16 @@ class CpSolverSolutionCallback(pywrapsat.PySolutionCallback):
     self.__current_solution = solution_proto
     self.NewSolution()
 
+  def BooleanValue(self, literal):
+    if not self.__current_solution:
+      raise RuntimeError('Solve() has not be called.')
+    return EvaluateBooleanExpression(literal, self.__current_solution)
+
   def Value(self, expression):
     """Returns the value of an integer expression."""
     if not self.__current_solution:
       raise RuntimeError('Solve() has not be called.')
-    return EvaluateExpression(expression, self.__current_solution)
+    return EvaluateIntegerExpression(expression, self.__current_solution)
 
   def ObjectiveValue(self):
     """Returns the value of the objective."""
@@ -1011,15 +1067,14 @@ class CpSolver(object):
   def Solve(self, model):
     """Solves the given model and returns the solve status."""
     self.__solution = pywrapsat.SatHelper.SolveWithParameters(
-      model.ModelProto(), self.parameters)
+        model.ModelProto(), self.parameters)
     return self.__solution.status
 
   def SolveWithSolutionObserver(self, model, callback):
     """Solves a problem and pass each solution found to the callback."""
-    parameters = sat_parameters_pb2.SatParameters()
     self.__solution = (
         pywrapsat.SatHelper.SolveWithParametersAndSolutionObserver(
-            model.ModelProto(), parameters, callback))
+            model.ModelProto(), self.parameters, callback))
     return self.__solution.status
 
   def SearchForAllSolutions(self, model, callback):
@@ -1044,7 +1099,12 @@ class CpSolver(object):
     """Returns the value of an integer expression."""
     if not self.__solution:
       raise RuntimeError('Solve() has not be called.')
-    return EvaluateExpression(expression, self.__solution)
+    return EvaluateIntegerExpression(expression, self.__solution)
+
+  def BooleanValue(self, literal):
+    if not self.__solution:
+      raise RuntimeError('Solve() has not be called.')
+    return EvaluateBooleanExpression(literal, self.__solution)
 
   def ObjectiveValue(self):
     """Returns the objective value found after solve."""

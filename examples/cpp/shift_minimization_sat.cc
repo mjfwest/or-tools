@@ -36,7 +36,7 @@
 #include "ortools/base/commandlineflags.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/strtoint.h"
-#include "ortools/util/filelineiter.h"
+#include "ortools/base/filelineiter.h"
 #include "ortools/base/split.h"
 #include "ortools/sat/cp_constraints.h"
 #include "ortools/sat/cp_model_solver.h"
@@ -90,16 +90,11 @@ class ShiftMinimizationParser {
       return false;
     }
 
-    File* file = nullptr;
-    if (!file::Open(file_name, "r", &file, file::Defaults()).ok()) {
-      LOG(WARNING) << "Can't open " << file_name;
-      return false;
-    }
-
     load_status_ = STARTED;
 
     for (const std::string& line :
-         FileLines(file_name, FileLineIterator::REMOVE_INLINE_CR)) {
+         FileLines(file_name, FileLineIterator::REMOVE_LINEFEED |
+                                  FileLineIterator::REMOVE_INLINE_CR)) {
       ProcessLine(line);
     }
 
@@ -118,8 +113,8 @@ class ShiftMinimizationParser {
       return;
     }
 
-    const std::vector<std::string> words = strings::Split(
-        line, strings::delimiter::AnyOf(" :\t"), strings::SkipEmpty());
+    const std::vector<std::string> words =
+        absl::StrSplit(line, absl::delimiter::AnyOf(" :\t"), absl::SkipEmpty());
 
     switch (load_status_) {
       case NOT_STARTED: {
@@ -335,6 +330,7 @@ void LoadAndSolve(const std::string& file_name) {
 }  // namespace operations_research
 
 int main(int argc, char** argv) {
+  base::SetFlag(&FLAGS_logtostderr, true);
   gflags::ParseCommandLineFlags( &argc, &argv, true);
   if (FLAGS_input.empty()) {
     LOG(FATAL) << "Please supply a data file with --input=";

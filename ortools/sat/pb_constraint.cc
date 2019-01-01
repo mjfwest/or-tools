@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "ortools/base/stringprintf.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/base/thorough_hash.h"
 #include "ortools/util/saturated_arithmetic.h"
 
@@ -276,10 +277,10 @@ std::string MutableUpperBoundedLinearConstraint::DebugString() {
   std::string result;
   for (BooleanVariable var : PossibleNonZeros()) {
     if (!result.empty()) result += " + ";
-    result += StringPrintf("%lld[%s]", GetCoefficient(var).value(),
-                           GetLiteral(var).DebugString().c_str());
+    result += absl::StrFormat("%lld[%s]", GetCoefficient(var).value(),
+                              GetLiteral(var).DebugString().c_str());
   }
-  result += StringPrintf(" <= %lld", rhs_.value());
+  result += absl::StrFormat(" <= %lld", rhs_.value());
   return result;
 }
 
@@ -724,7 +725,7 @@ void UpperBoundedLinearConstraint::ResolvePBConflict(
 
   // When we add the two constraints together, the slack of the result for the
   // trail < limit_trail_index - 1 must be negative. We know that its value is
-  // <= slack1 + slack2 - std::min(coeffs), so we have nothing to do if this bound is
+  // <= slack1 + slack2 - min(coeffs), so we have nothing to do if this bound is
   // already negative.
   const Coefficient conflict_var_coeff = conflict->GetCoefficient(var);
   const Coefficient min_coeffs = std::min(var_coeff, conflict_var_coeff);
@@ -743,7 +744,7 @@ void UpperBoundedLinearConstraint::ResolvePBConflict(
   // slack bound:
   //
   //   (slack - diff) + (conflict_slack - conflict_diff)
-  //      - std::min(var_coeff - diff, conflict_var_coeff - conflict_diff).
+  //      - min(var_coeff - diff, conflict_var_coeff - conflict_diff).
   //
   // For all diff in [0, slack)
   // For all conflict_diff in [0, conflict_slack)
@@ -961,7 +962,7 @@ void PbConstraints::Untrail(const Trail& trail, int trail_index) {
   }
 }
 
-gtl::Span<Literal> PbConstraints::Reason(const Trail& trail,
+absl::Span<Literal> PbConstraints::Reason(const Trail& trail,
                                                 int trail_index) const {
   SCOPED_TIME_STAT(&stats_);
   const PbConstraintsEnqueueHelper::ReasonInfo& reason_info =

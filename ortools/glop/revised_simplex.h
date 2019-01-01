@@ -110,7 +110,6 @@
 #include "ortools/lp_data/lp_data.h"
 #include "ortools/lp_data/lp_print_utils.h"
 #include "ortools/lp_data/lp_types.h"
-#include "ortools/lp_data/matrix_scaler.h"
 #include "ortools/lp_data/sparse_row.h"
 #include "ortools/util/random_engine.h"
 #include "ortools/util/time_limit.h"
@@ -232,7 +231,8 @@ class RevisedSimplex {
   // Computes the dictionary B^-1*N on-the-fly row by row. Returns the resulting
   // matrix as a vector of sparse rows so that it is easy to use it on the left
   // side in the matrix multiplication. Runs in O(num_non_zeros_in_matrix).
-  RowMajorSparseMatrix ComputeDictionary(const SparseMatrixScaler* scaler);
+  // TODO(user): Use row scales as well.
+  RowMajorSparseMatrix ComputeDictionary(const DenseRow* column_scales);
 
  private:
   // Propagates parameters_ to all the other classes that need it.
@@ -469,9 +469,9 @@ class RevisedSimplex {
   //   along this dual edge.
   // - target_bound: the bound at which the leaving variable should go when
   //   leaving the basis.
-  Status DualChooseLeavingVariableRow(RowIndex* leaving_row,
-                                      Fractional* cost_variation,
-                                      Fractional* target_bound) MUST_USE_RESULT;
+  Status DualChooseLeavingVariableRow(
+      RowIndex* leaving_row, Fractional* cost_variation,
+      Fractional* target_bound) MUST_USE_RESULT;
 
   // Updates the prices used by DualChooseLeavingVariableRow() after a simplex
   // iteration by using direction_. The prices are stored in
@@ -635,11 +635,8 @@ class RevisedSimplex {
   DenseColumn dual_pricing_vector_;
   DenseBitColumn is_dual_entering_candidate_;
 
-  // A temporary dense column that is always reset to all zero after use.
-  DenseColumn initially_all_zero_scratchpad_;
-
-  // A temporary RowIndexVector used to hold the non-zero positions of a column.
-  RowIndexVector row_index_vector_scratchpad_;
+  // A temporary scattered column that is always reset to all zero after use.
+  ScatteredColumn initially_all_zero_scratchpad_;
 
   // Array of column index, giving the column number corresponding
   // to a given basis row.
@@ -665,10 +662,9 @@ class RevisedSimplex {
 
   // This is known as 'd' in the literature and is set during each pivot to the
   // right inverse of the basic entering column of A by ComputeDirection().
-  // ComputeDirection() also fills direction_non_zero_ with the position of the
+  // ComputeDirection() also fills direction_.non_zeros with the position of the
   // non-zero.
-  DenseColumn direction_;
-  std::vector<RowIndex> direction_non_zero_;
+  ScatteredColumn direction_;
   Fractional direction_infinity_norm_;
 
   // Subpart of direction_ that was ignored during the ratio test. This is only
@@ -807,9 +803,13 @@ class RevisedSimplexDictionary {
 
   // RevisedSimplex cannot be passed const because we have to call a non-const
   // method ComputeDictionary.
-  RevisedSimplexDictionary(const SparseMatrixScaler* scaler,
+  // TODO(user): Overload this to take RevisedSimplex* alone when the
+  // caller would normally pass a nullptr for col_scales so this and
+  // ComputeDictionary can take a const& argument.
+  RevisedSimplexDictionary(const DenseRow* col_scales,
                            RevisedSimplex* revised_simplex)
-      : dictionary_(CHECK_NOTNULL(revised_simplex)->ComputeDictionary(scaler)),
+      : dictionary_(
+            CHECK_NOTNULL(revised_simplex)->ComputeDictionary(col_scales)),
         basis_vars_(CHECK_NOTNULL(revised_simplex)->GetBasisVector()) {}
 
   ConstIterator begin() const { return dictionary_.begin(); }

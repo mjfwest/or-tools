@@ -1,4 +1,6 @@
 from sys import executable
+from os.path import join as pjoin
+from os.path import dirname
 
 setuptools_import_error_message = """setuptools is not installed for """ + executable + """
 Please follow this link for installing instructions :
@@ -6,12 +8,9 @@ https://pypi.python.org/pypi/setuptools
 make sure you use \"""" + executable + """\" during the installation"""
 
 try:
-    from setuptools import setup, Extension
+    from setuptools import setup, Distribution
 except ImportError:
     raise ImportError(setuptools_import_error_message)
-
-from os.path import join as pjoin
-from os.path import dirname
 
 # Utility function to read the README file.
 # Used for the long_description.  It's nice, because now 1) we have a top level
@@ -20,10 +19,17 @@ from os.path import dirname
 def read(fname):
     return open(pjoin(dirname(__file__), fname)).read()
 
-dummy_module = Extension('dummy_ortools_dependency',
-                         sources = ['dummy/dummy_ortools_dependency.cc'],
-DELETEUNIX               extra_link_args=['/MANIFEST'],
-                        )
+class BinaryDistribution(Distribution):
+    def is_pure(self):
+        return False
+    def has_ext_modules(self):
+        return True
+
+from setuptools.command.install import install
+class InstallPlatlib(install):
+    def finalize_options(self):
+        install.finalize_options(self)
+        self.install_lib = self.install_platlib
 
 setup(
     name='ORTOOLS_PYTHON_VERSION',
@@ -36,13 +42,14 @@ setup(
         'ortools.graph',
         'ortools.linear_solver',
         'ortools.sat',
-        'ortools.sat.python',],
-    ext_modules = [dummy_module],
-    install_requires = [
+        'ortools.sat.python',
+        'ortools.util',
+    ],
+    install_requires=[
         'protobuf >= PROTOBUF_TAG',
         'six >= 1.10',
     ],
-    package_data = {
+    package_data={
         'ortools.constraint_solver' : ['_pywrapcp.dll'],
         'ortools.data' : ['_pywraprcpsp.dll'],
         'ortools.linear_solver' : ['_pywraplp.dll'],
@@ -51,16 +58,17 @@ setup(
         'ortools.sat' : ['_pywrapsat.dll'],
         DELETEWIN 'ortools' : ['libortools.DLL']
     },
+    include_package_data=True,
     license='Apache 2.0',
-    author = 'Google Inc',
-    author_email = 'lperron@google.com',
-    description = 'Google OR-Tools python libraries and modules',
-    keywords = ('operations research, constraint programming, ' +
-                'linear programming,' + 'flow algorithms,' +
-                'python'),
-    url = 'https://developers.google.com/optimization/',
-    download_url = 'https://github.com/google/or-tools/releases',
-    classifiers = [
+    author='Google Inc',
+    author_email='lperron@google.com',
+    description='Google OR-Tools python libraries and modules',
+    keywords=('operations research, constraint programming, ' +
+              'linear programming,' + 'flow algorithms,' +
+              'python'),
+    url='https://developers.google.com/optimization/',
+    download_url='https://github.com/google/or-tools/releases',
+    classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: Apache Software License',
@@ -76,5 +84,7 @@ setup(
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Topic :: Software Development :: Libraries :: Python Modules'],
-    long_description = read('README.txt'),
+    distclass=BinaryDistribution,
+    cmdclass={'install': InstallPlatlib},
+    long_description=read('README.txt'),
 )

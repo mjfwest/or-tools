@@ -28,11 +28,15 @@ using System.Collections;
 #include "ortools/sat/swig_helper.h"
 %}
 
+%module(directors="1") operations_research_sat
+
 PROTO_INPUT(operations_research::sat::CpModelProto,
             Google.OrTools.Sat.CpModelProto,
             model_proto);
 
-//PROTO_INPUT(operations_research::sat::SatParameters, parameters);
+PROTO_INPUT(operations_research::sat::SatParameters,
+            Google.OrTools.Sat.SatParameters,
+            parameters);
 
 PROTO2_RETURN(
     operations_research::sat::CpSolverResponse,
@@ -40,11 +44,35 @@ PROTO2_RETURN(
 
 %ignoreall
 
+// SatParameters are proto2, thus not compatible with C# Protobufs.
+// We will use API with string parameters.
+
 %unignore operations_research;
 %unignore operations_research::sat;
 %unignore operations_research::sat::SatHelper;
 %unignore operations_research::sat::SatHelper::Solve;
-//%unignore operations_research::sat::SatHelper::SolveWithParameters;
+%unignore operations_research::sat::SatHelper::SolveWithStringParameters;
+// We use the director version of the API.
+%unignore operations_research::sat::SatHelper::SolveWithStringParametersAndSolutionCallback;
+
+// --------- Include the swig helpers file to create the director classes ------
+// We cannot use %ignoreall/%unignoreall as this is not compatible with nested
+// swig files.
+
+%feature("director") operations_research::sat::SolutionCallback;
+
+%unignore operations_research::sat::SolutionCallback;
+%unignore operations_research::sat::SolutionCallback::NumBinaryPropagations;
+%unignore operations_research::sat::SolutionCallback::NumBooleans;
+%unignore operations_research::sat::SolutionCallback::NumBranches;
+%unignore operations_research::sat::SolutionCallback::NumConflicts;
+%unignore operations_research::sat::SolutionCallback::NumIntegerPropagations;
+%unignore operations_research::sat::SolutionCallback::ObjectiveValue;
+%unignore operations_research::sat::SolutionCallback::OnSolutionCallback;
+%unignore operations_research::sat::SolutionCallback::SolutionBooleanValue;
+%unignore operations_research::sat::SolutionCallback::SolutionIntegerValue;
+%unignore operations_research::sat::SolutionCallback::UserTime;
+%unignore operations_research::sat::SolutionCallback::WallTime;
 
 %include "ortools/sat/swig_helper.h"
 

@@ -24,6 +24,7 @@
 #include "ortools/base/join.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/hash.h"
+#include "ortools/port/proto_utils.h"
 #include "ortools/sat/cp_model_utils.h"
 #include "ortools/util/saturated_arithmetic.h"
 #include "ortools/util/sorted_interval_list.h"
@@ -52,23 +53,6 @@ bool DomainInProtoIsValid(const ProtoWithDomain& proto) {
   return IntervalsAreSortedAndDisjoint(domain);
 }
 
-std::string ValidateIntegerVariable(const CpModelProto& model, int v) {
-  const IntegerVariableProto& proto = model.variables(v);
-  if (proto.domain_size() == 0) {
-    return StrCat("var #", v,
-                        " has no domain(): ", proto.ShortDebugString());
-  }
-  if (proto.domain_size() % 2 != 0) {
-    return StrCat(
-        "var #", v, " has an odd domain() size: ", proto.ShortDebugString());
-  }
-  if (!DomainInProtoIsValid(proto)) {
-    return StrCat("var #", v, " has and invalid domain() format: ",
-                        proto.ShortDebugString());
-  }
-  return "";
-}
-
 bool VariableReferenceIsValid(const CpModelProto& model, int reference) {
   return std::max(-reference - 1, reference) < model.variables_size();
 }
@@ -83,6 +67,34 @@ bool LiteralReferenceIsValid(const CpModelProto& model, int reference) {
   return min_domain >= 0 && max_domain <= 1;
 }
 
+std::string ValidateIntegerVariable(const CpModelProto& model, int v) {
+  const IntegerVariableProto& proto = model.variables(v);
+  if (proto.domain_size() == 0) {
+    return absl::StrCat("var #", v,
+                        " has no domain(): ", ProtobufShortDebugString(proto));
+  }
+  if (proto.domain_size() % 2 != 0) {
+    return absl::StrCat("var #", v, " has an odd domain() size: ",
+                        ProtobufShortDebugString(proto));
+  }
+  if (!DomainInProtoIsValid(proto)) {
+    return absl::StrCat("var #", v, " has and invalid domain() format: ",
+                        ProtobufShortDebugString(proto));
+  }
+  if (!proto.enforcement_literal().empty()) {
+    if (proto.enforcement_literal_size() > 1) {
+      return absl::StrCat("var #", v,
+                          " has more than one enforcement_literal: ",
+                          ProtobufShortDebugString(proto));
+    }
+    if (!LiteralReferenceIsValid(model, proto.enforcement_literal(0))) {
+      return absl::StrCat("var #", v, " has an invalid enforcement_literal: ",
+                          ProtobufShortDebugString(proto));
+    }
+  }
+  return "";
+}
+
 std::string ValidateArgumentReferencesInConstraint(const CpModelProto& model,
                                               int c) {
   const ConstraintProto& ct = model.constraints(c);
@@ -90,38 +102,40 @@ std::string ValidateArgumentReferencesInConstraint(const CpModelProto& model,
   AddReferencesUsedByConstraint(ct, &references);
   for (const int v : references.variables) {
     if (!VariableReferenceIsValid(model, v)) {
-      return StrCat("Out of bound integer variable ", v,
-                          " in constraint #", c, " : ", ct.ShortDebugString());
+      return absl::StrCat("Out of bound integer variable ", v,
+                          " in constraint #", c, " : ",
+                          ProtobufShortDebugString(ct));
     }
   }
   if (ct.enforcement_literal_size() > 1) {
-    return StrCat("More than one enforcement_literal in constraint #", c,
-                        " : ", ct.ShortDebugString());
+    return absl::StrCat("More than one enforcement_literal in constraint #", c,
+                        " : ", ProtobufShortDebugString(ct));
   }
   if (ct.enforcement_literal_size() == 1) {
     const int lit = ct.enforcement_literal(0);
     if (!LiteralReferenceIsValid(model, lit)) {
-      return StrCat("Invalid enforcement literal ", lit,
-                          " in constraint #", c, " : ", ct.ShortDebugString());
+      return absl::StrCat("Invalid enforcement literal ", lit,
+                          " in constraint #", c, " : ",
+                          ProtobufShortDebugString(ct));
     }
   }
   for (const int lit : references.literals) {
     if (!LiteralReferenceIsValid(model, lit)) {
-      return StrCat("Invalid literal ", lit, " in constraint #", c, " : ",
-                          ct.ShortDebugString());
+      return absl::StrCat("Invalid literal ", lit, " in constraint #", c, " : ",
+                          ProtobufShortDebugString(ct));
     }
   }
   for (const int i : references.intervals) {
     if (i < 0 || i >= model.constraints_size()) {
-      return StrCat("Out of bound interval ", i, " in constraint #", c,
-                          " : ", ct.ShortDebugString());
+      return absl::StrCat("Out of bound interval ", i, " in constraint #", c,
+                          " : ", ProtobufShortDebugString(ct));
     }
     if (model.constraints(i).constraint_case() !=
         ConstraintProto::ConstraintCase::kInterval) {
-      return StrCat(
+      return absl::StrCat(
           "Interval ", i,
           " does not refer to an interval constraint. Problematic constraint #",
-          c, " : ", ct.ShortDebugString());
+          c, " : ", ProtobufShortDebugString(ct));
     }
   }
   return "";
@@ -148,7 +162,8 @@ std::string ValidateLinearConstraint(const CpModelProto& model,
     sum_max = CapAdd(sum_max, std::max(0ll, std::max(prod1, prod2)));
     for (const int64 v : {prod1, prod2, sum_min, sum_max}) {
       if (v == kint64max || v == kint64min) {
-        return "Possible integer overflow in constraint: " + ct.DebugString();
+        return "Possible integer overflow in constraint: " +
+               ProtobufDebugString(ct);
       }
     }
   }
@@ -161,8 +176,8 @@ std::string ValidateReservoirConstraint(const CpModelProto& model,
     const IntegerVariableProto& time = model.variables(t);
     for (const int64 bound : time.domain()) {
       if (bound < 0) {
-        return StrCat("Time variables must be >= 0 in constraint ",
-                            ct.ShortDebugString());
+        return absl::StrCat("Time variables must be >= 0 in constraint ",
+                            ProtobufShortDebugString(ct));
       }
     }
   }
@@ -170,7 +185,8 @@ std::string ValidateReservoirConstraint(const CpModelProto& model,
   for (const int64 demand : ct.reservoir().demands()) {
     sum_abs = CapAdd(sum_abs, std::abs(demand));
     if (sum_abs == kint64max) {
-      return "Possible integer overflow in constraint: " + ct.DebugString();
+      return "Possible integer overflow in constraint: " +
+             ProtobufDebugString(ct);
     }
   }
   return "";
@@ -180,7 +196,7 @@ std::string ValidateCircuitCoveringConstraint(const ConstraintProto& ct) {
   const int num_nodes = ct.circuit_covering().nexts_size();
   for (const int d : ct.circuit_covering().distinguished_nodes()) {
     if (d < 0 || d >= num_nodes) {
-      return StrCat("Distinguished node ", d, " not in [0, ", num_nodes,
+      return absl::StrCat("Distinguished node ", d, " not in [0, ", num_nodes,
                           ").");
     }
   }
@@ -212,7 +228,8 @@ std::string ValidateObjective(const CpModelProto& model,
       // need to be more defensive here to make sure no overflow can happen in
       // linear constraint propagator.
       if (v == kint64max / 2 || v == kint64min / 2) {
-        return "Possible integer overflow in objective: " + obj.DebugString();
+        return "Possible integer overflow in objective: " +
+               ProtobufDebugString(obj);
       }
     }
   }
@@ -235,21 +252,21 @@ std::string ValidateCpModel(const CpModelProto& model) {
     switch (type) {
       case ConstraintProto::ConstraintCase::kLinear:
         if (!DomainInProtoIsValid(ct.linear())) {
-          return StrCat("Invalid domain in constraint #", c, " : ",
-                              ct.ShortDebugString());
+          return absl::StrCat("Invalid domain in constraint #", c, " : ",
+                              ProtobufShortDebugString(ct));
         }
         if (ct.linear().coeffs_size() != ct.linear().vars_size()) {
-          return StrCat("coeffs_size() != vars_size() in constraint #", c,
-                              " : ", ct.ShortDebugString());
+          return absl::StrCat("coeffs_size() != vars_size() in constraint #", c,
+                              " : ", ProtobufShortDebugString(ct));
         }
         RETURN_IF_NOT_EMPTY(ValidateLinearConstraint(model, ct));
         break;
       case ConstraintProto::ConstraintCase::kCumulative:
         if (ct.cumulative().intervals_size() !=
             ct.cumulative().demands_size()) {
-          return StrCat(
+          return absl::StrCat(
               "intervals_size() != demands_size() in constraint #", c, " : ",
-              ct.ShortDebugString());
+              ProtobufShortDebugString(ct));
         }
         break;
       case ConstraintProto::ConstraintCase::kReservoir:
@@ -266,7 +283,7 @@ std::string ValidateCpModel(const CpModelProto& model) {
     for (const int v : model.objective().vars()) {
       if (!VariableReferenceIsValid(model, v)) {
         return StrCat("Out of bound objective variable ", v, " : ",
-                      model.objective().ShortDebugString());
+                      ProtobufShortDebugString(model.objective()));
       }
     }
     RETURN_IF_NOT_EMPTY(ValidateObjective(model, model.objective()));
@@ -530,28 +547,45 @@ class ConstraintChecker {
   }
 
   bool CircuitConstraintIsFeasible(const ConstraintProto& ct) {
-    const int num_nodes = ct.circuit().nexts_size();
-    int num_inactive = 0;
-    int last_active = 0;
-    for (int i = 0; i < num_nodes; ++i) {
-      const int value = Value(ct.circuit().nexts(i));
-      if (value < 0 || value == i || value >= num_nodes) {
-        ++num_inactive;
-      } else {
-        last_active = i;
+    const int num_arcs = ct.circuit().tails_size();
+    std::vector<int> nexts;
+    int first_node = kint32max;
+    for (int i = 0; i < num_arcs; ++i) {
+      const int tail = ct.circuit().tails(i);
+      const int head = ct.circuit().heads(i);
+      first_node = std::min(first_node, std::min(tail, head));
+      const int min_size = std::max(tail, head) + 1;
+      if (min_size > nexts.size()) nexts.resize(min_size, -1);
+
+      if (LiteralIsFalse(ct.circuit().literals(i))) continue;
+
+      if (nexts[tail] != -1) return false;  // duplicate.
+      nexts[tail] = head;
+    }
+
+    // All node must have a next.
+    int in_cycle = -1;
+    int cycle_size = 0;
+    for (int i = first_node; i < nexts.size(); ++i) {
+      if (nexts[i] == -1) return false;
+      if (nexts[i] != i) {
+        in_cycle = i;
+        ++cycle_size;
       }
     }
-    if (num_inactive == num_nodes) return true;
 
-    std::vector<bool> visited(num_nodes, false);
-    int current = last_active;
+    if (cycle_size == 0) return true;
+
+    // Check that we have only one cycle.
+    std::vector<bool> visited(nexts.size(), false);
+    int current = in_cycle;
     int num_visited = 0;
     while (!visited[current]) {
       ++num_visited;
       visited[current] = true;
-      current = Value(ct.circuit().nexts(current));
+      current = nexts[current];
     }
-    return num_visited + num_inactive == num_nodes;
+    return num_visited == cycle_size;
   }
 
   bool RoutesConstraintIsFeasible(const ConstraintProto& ct) {
@@ -702,7 +736,7 @@ bool SolutionIsFeasible(const CpModelProto& model,
     if (!DomainInProtoContains(model.variables(i), variable_values[i])) {
       VLOG(1) << "Variable #" << i << " has value " << variable_values[i]
               << " which do not fall in its domain: "
-              << model.variables(i).ShortDebugString();
+              << ProtobufShortDebugString(model.variables(i));
       return false;
     }
   }
@@ -794,7 +828,7 @@ bool SolutionIsFeasible(const CpModelProto& model,
     }
     if (!is_feasible) {
       VLOG(1) << "Failing constraint #" << c << " : "
-              << model.constraints(c).ShortDebugString();
+              << ProtobufShortDebugString(model.constraints(c));
       return false;
     }
   }

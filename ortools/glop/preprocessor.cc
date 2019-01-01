@@ -40,7 +40,10 @@ double trunc(double d) { return d > 0 ? floor(d) : ceil(d); }
 // Preprocessor
 // --------------------------------------------------------
 Preprocessor::Preprocessor()
-    : status_(ProblemStatus::INIT), parameters_(), in_mip_context_(false) {}
+    : status_(ProblemStatus::INIT),
+      parameters_(),
+      in_mip_context_(false),
+      time_limit_(TimeLimit::Infinite().get()) {}
 Preprocessor::~Preprocessor() {}
 
 // --------------------------------------------------------
@@ -49,9 +52,9 @@ Preprocessor::~Preprocessor() {}
 
 #define RUN_PREPROCESSOR(name)                                           \
   RunAndPushIfRelevant(std::unique_ptr<Preprocessor>(new name()), #name, \
-                       time_limit, lp)
+                       time_limit_, lp)
 
-bool MainLpPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
+bool MainLpPreprocessor::Run(LinearProgram* lp) {
   RETURN_VALUE_IF_NULL(lp, false);
   initial_num_rows_ = lp->num_constraints();
   initial_num_cols_ = lp->num_variables();
@@ -129,6 +132,7 @@ void MainLpPreprocessor::RunAndPushIfRelevant(
 
   const double start_time = time_limit->GetElapsedTime();
   preprocessor->SetParameters(parameters_);
+  preprocessor->SetTimeLimit(time_limit);
 
   // No need to run the preprocessor if the lp is empty.
   // TODO(user): without this test, the code is failing as of 2013-03-18.
@@ -137,7 +141,7 @@ void MainLpPreprocessor::RunAndPushIfRelevant(
     return;
   }
 
-  if (preprocessor->Run(lp, time_limit)) {
+  if (preprocessor->Run(lp)) {
     const EntryIndex new_num_entries = lp->num_entries();
     const double preprocess_time = time_limit->GetElapsedTime() - start_time;
     VLOG(1) << StringPrintf(
@@ -165,7 +169,7 @@ void MainLpPreprocessor::RunAndPushIfRelevant(
 }
 
 void MainLpPreprocessor::RecoverSolution(ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   while (!preprocessors_.empty()) {
     preprocessors_.back()->RecoverSolution(solution);
     preprocessors_.pop_back();
@@ -334,20 +338,17 @@ Fractional ComputeMaxVariableBoundsMagnitude(const LinearProgram& lp) {
 
 }  // namespace
 
-bool EmptyColumnPreprocessor::Run(LinearProgram* linear_program,
-                                  TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
-  RETURN_VALUE_IF_NULL(linear_program, false);
+bool EmptyColumnPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
+  RETURN_VALUE_IF_NULL(lp, false);
   column_deletion_helper_.Clear();
-  const ColIndex num_cols = linear_program->num_variables();
+  const ColIndex num_cols = lp->num_variables();
   for (ColIndex col(0); col < num_cols; ++col) {
-    if (linear_program->GetSparseColumn(col).IsEmpty()) {
-      const Fractional lower_bound =
-          linear_program->variable_lower_bounds()[col];
-      const Fractional upper_bound =
-          linear_program->variable_upper_bounds()[col];
+    if (lp->GetSparseColumn(col).IsEmpty()) {
+      const Fractional lower_bound = lp->variable_lower_bounds()[col];
+      const Fractional upper_bound = lp->variable_upper_bounds()[col];
       const Fractional objective_coefficient =
-          linear_program->GetObjectiveCoefficientForMinimizationVersion(col);
+          lp->GetObjectiveCoefficientForMinimizationVersion(col);
       Fractional value;
       if (objective_coefficient == 0) {
         // Any feasible value will do.
@@ -370,20 +371,19 @@ bool EmptyColumnPreprocessor::Run(LinearProgram* linear_program,
           status_ = ProblemStatus::INFEASIBLE_OR_UNBOUNDED;
           return false;
         }
-        linear_program->SetObjectiveOffset(
-            linear_program->objective_offset() +
-            value * linear_program->objective_coefficients()[col]);
+        lp->SetObjectiveOffset(lp->objective_offset() +
+                               value * lp->objective_coefficients()[col]);
       }
       column_deletion_helper_.MarkColumnForDeletionWithState(
           col, value, ComputeVariableStatus(value, lower_bound, upper_bound));
     }
   }
-  linear_program->DeleteColumns(column_deletion_helper_.GetMarkedColumns());
+  lp->DeleteColumns(column_deletion_helper_.GetMarkedColumns());
   return !column_deletion_helper_.IsEmpty();
 }
 
 void EmptyColumnPreprocessor::RecoverSolution(ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   column_deletion_helper_.RestoreDeletedColumns(solution);
 }
@@ -436,9 +436,8 @@ struct ColumnWithRepresentativeAndScaledCost {
 
 }  // namespace
 
-bool ProportionalColumnPreprocessor::Run(LinearProgram* lp,
-                                         TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool ProportionalColumnPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   ColMapping mapping = FindProportionalColumns(
       lp->GetSparseMatrix(), parameters_.preprocessor_zero_tolerance());
@@ -668,7 +667,7 @@ bool ProportionalColumnPreprocessor::Run(LinearProgram* lp,
 
 void ProportionalColumnPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   column_deletion_helper_.RestoreDeletedColumns(solution);
 
@@ -781,9 +780,8 @@ void ProportionalColumnPreprocessor::RecoverSolution(
 // ProportionalRowPreprocessor
 // --------------------------------------------------------
 
-bool ProportionalRowPreprocessor::Run(LinearProgram* lp,
-                                      TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool ProportionalRowPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const RowIndex num_rows = lp->num_constraints();
   const SparseMatrix& transpose = lp->GetTransposeSparseMatrix();
@@ -805,7 +803,7 @@ bool ProportionalRowPreprocessor::Run(LinearProgram* lp,
   DenseColumn upper_bounds(num_rows, +kInfinity);
 
   // Where the new bounds are coming from. Only for the constraints that stay
-  // in the linear_program and are modified, kInvalidRow otherwise.
+  // in the lp and are modified, kInvalidRow otherwise.
   upper_bound_sources_.assign(num_rows, kInvalidRow);
   lower_bound_sources_.assign(num_rows, kInvalidRow);
 
@@ -959,7 +957,7 @@ bool ProportionalRowPreprocessor::Run(LinearProgram* lp,
 
 void ProportionalRowPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   row_deletion_helper_.RestoreDeletedRows(solution);
 
@@ -1031,8 +1029,8 @@ void ProportionalRowPreprocessor::RecoverSolution(
 // FixedVariablePreprocessor
 // --------------------------------------------------------
 
-bool FixedVariablePreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool FixedVariablePreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const ColIndex num_cols = lp->num_variables();
   for (ColIndex col(0); col < num_cols; ++col) {
@@ -1055,7 +1053,7 @@ bool FixedVariablePreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
 
 void FixedVariablePreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   column_deletion_helper_.RestoreDeletedColumns(solution);
 }
@@ -1064,9 +1062,8 @@ void FixedVariablePreprocessor::RecoverSolution(
 // ForcingAndImpliedFreeConstraintPreprocessor
 // --------------------------------------------------------
 
-bool ForcingAndImpliedFreeConstraintPreprocessor::Run(LinearProgram* lp,
-                                                      TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool ForcingAndImpliedFreeConstraintPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const RowIndex num_rows = lp->num_constraints();
 
@@ -1215,7 +1212,7 @@ bool ForcingAndImpliedFreeConstraintPreprocessor::Run(LinearProgram* lp,
 
 void ForcingAndImpliedFreeConstraintPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   column_deletion_helper_.RestoreDeletedColumns(solution);
   row_deletion_helper_.RestoreDeletedRows(solution);
@@ -1298,8 +1295,8 @@ struct ColWithDegree {
 };
 }  // namespace
 
-bool ImpliedFreePreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool ImpliedFreePreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const RowIndex num_rows = lp->num_constraints();
   const ColIndex num_cols = lp->num_variables();
@@ -1486,7 +1483,7 @@ bool ImpliedFreePreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
 }
 
 void ImpliedFreePreprocessor::RecoverSolution(ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   const ColIndex num_cols = solution->variable_statuses.size();
   for (ColIndex col(0); col < num_cols; ++col) {
@@ -1509,13 +1506,12 @@ void ImpliedFreePreprocessor::RecoverSolution(ProblemSolution* solution) const {
 // DoubletonFreeColumnPreprocessor
 // --------------------------------------------------------
 
-bool DoubletonFreeColumnPreprocessor::Run(LinearProgram* lp,
-                                          TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool DoubletonFreeColumnPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   // We will modify the matrix transpose and then push the change to the linear
-  // program by calling lp->UseTransposeMatrixAsReference(). Note that
-  // original_matrix will not change during this preprocessor run.
+  // program by calling lp->UseTransposeMatrixAsReference(). Note
+  // that original_matrix will not change during this preprocessor run.
   const SparseMatrix& original_matrix = lp->GetSparseMatrix();
   SparseMatrix* transpose = lp->GetMutableTransposeSparseMatrix();
 
@@ -1621,7 +1617,7 @@ bool DoubletonFreeColumnPreprocessor::Run(LinearProgram* lp,
 
 void DoubletonFreeColumnPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   row_deletion_helper_.RestoreDeletedRows(solution);
   for (const RestoreInfo& r : Reverse(restore_stack_)) {
     // Correct the constraint status.
@@ -1689,11 +1685,10 @@ namespace {
 // Does the constraint block the variable to go to infinity in the given
 // direction? direction is either positive or negative and row is the index of
 // the constraint.
-bool IsConstraintBlockingVariable(const LinearProgram& linear_program,
-                                  Fractional direction, RowIndex row) {
-  return direction > 0.0
-             ? linear_program.constraint_upper_bounds()[row] != kInfinity
-             : linear_program.constraint_lower_bounds()[row] != -kInfinity;
+bool IsConstraintBlockingVariable(const LinearProgram& lp, Fractional direction,
+                                  RowIndex row) {
+  return direction > 0.0 ? lp.constraint_upper_bounds()[row] != kInfinity
+                         : lp.constraint_lower_bounds()[row] != -kInfinity;
 }
 
 }  // namespace
@@ -1745,9 +1740,8 @@ void UnconstrainedVariablePreprocessor::RemoveZeroCostUnconstrainedVariable(
                             lp->variable_upper_bounds()[col]));
 }
 
-bool UnconstrainedVariablePreprocessor::Run(LinearProgram* lp,
-                                            TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool UnconstrainedVariablePreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const Fractional tolerance = parameters_.preprocessor_zero_tolerance();
 
@@ -1967,7 +1961,7 @@ bool UnconstrainedVariablePreprocessor::Run(LinearProgram* lp,
 
 void UnconstrainedVariablePreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   column_deletion_helper_.RestoreDeletedColumns(solution);
   row_deletion_helper_.RestoreDeletedRows(solution);
@@ -2033,27 +2027,24 @@ void UnconstrainedVariablePreprocessor::RecoverSolution(
 // FreeConstraintPreprocessor
 // --------------------------------------------------------
 
-bool FreeConstraintPreprocessor::Run(LinearProgram* linear_program,
-                                     TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
-  RETURN_VALUE_IF_NULL(linear_program, false);
-  const RowIndex num_rows = linear_program->num_constraints();
+bool FreeConstraintPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
+  RETURN_VALUE_IF_NULL(lp, false);
+  const RowIndex num_rows = lp->num_constraints();
   for (RowIndex row(0); row < num_rows; ++row) {
-    const Fractional lower_bound =
-        linear_program->constraint_lower_bounds()[row];
-    const Fractional upper_bound =
-        linear_program->constraint_upper_bounds()[row];
+    const Fractional lower_bound = lp->constraint_lower_bounds()[row];
+    const Fractional upper_bound = lp->constraint_upper_bounds()[row];
     if (lower_bound == -kInfinity && upper_bound == kInfinity) {
       row_deletion_helper_.MarkRowForDeletion(row);
     }
   }
-  linear_program->DeleteRows(row_deletion_helper_.GetMarkedRows());
+  lp->DeleteRows(row_deletion_helper_.GetMarkedRows());
   return !row_deletion_helper_.IsEmpty();
 }
 
 void FreeConstraintPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   row_deletion_helper_.RestoreDeletedRows(solution);
 }
@@ -2062,9 +2053,8 @@ void FreeConstraintPreprocessor::RecoverSolution(
 // EmptyConstraintPreprocessor
 // --------------------------------------------------------
 
-bool EmptyConstraintPreprocessor::Run(LinearProgram* lp,
-                                      TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool EmptyConstraintPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const RowIndex num_rows(lp->num_constraints());
   const ColIndex num_cols(lp->num_variables());
@@ -2102,7 +2092,7 @@ bool EmptyConstraintPreprocessor::Run(LinearProgram* lp,
 
 void EmptyConstraintPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   row_deletion_helper_.RestoreDeletedRows(solution);
 }
@@ -2623,8 +2613,8 @@ bool SingletonPreprocessor::MakeConstraintAnEqualityIfPossible(
   return false;
 }
 
-bool SingletonPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool SingletonPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const SparseMatrix& matrix = lp->GetSparseMatrix();
   const SparseMatrix& transpose = lp->GetTransposeSparseMatrix();
@@ -2697,7 +2687,7 @@ bool SingletonPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
 }
 
 void SingletonPreprocessor::RecoverSolution(ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
 
   // Note that the two deletion helpers must restore 0.0 values in the positions
@@ -2749,9 +2739,8 @@ MatrixEntry SingletonPreprocessor::GetSingletonRowMatrixEntry(
 // RemoveNearZeroEntriesPreprocessor
 // --------------------------------------------------------
 
-bool RemoveNearZeroEntriesPreprocessor::Run(LinearProgram* lp,
-                                            TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool RemoveNearZeroEntriesPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   const ColIndex num_cols = lp->num_variables();
   if (num_cols == 0) return false;
@@ -2824,28 +2813,26 @@ void RemoveNearZeroEntriesPreprocessor::RecoverSolution(
 // SingletonColumnSignPreprocessor
 // --------------------------------------------------------
 
-bool SingletonColumnSignPreprocessor::Run(LinearProgram* linear_program,
-                                          TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
-  RETURN_VALUE_IF_NULL(linear_program, false);
-  const ColIndex num_cols = linear_program->num_variables();
+bool SingletonColumnSignPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
+  RETURN_VALUE_IF_NULL(lp, false);
+  const ColIndex num_cols = lp->num_variables();
   if (num_cols == 0) return false;
 
   changed_columns_.clear();
   int num_singletons = 0;
   for (ColIndex col(0); col < num_cols; ++col) {
-    SparseColumn* sparse_column = linear_program->GetMutableSparseColumn(col);
-    const Fractional cost = linear_program->objective_coefficients()[col];
+    SparseColumn* sparse_column = lp->GetMutableSparseColumn(col);
+    const Fractional cost = lp->objective_coefficients()[col];
     if (sparse_column->num_entries() == 1) {
       ++num_singletons;
     }
     if (sparse_column->num_entries() == 1 &&
         sparse_column->GetFirstCoefficient() < 0) {
       sparse_column->MultiplyByConstant(-1.0);
-      linear_program->SetVariableBounds(
-          col, -linear_program->variable_upper_bounds()[col],
-          -linear_program->variable_lower_bounds()[col]);
-      linear_program->SetObjectiveCoefficient(col, -cost);
+      lp->SetVariableBounds(col, -lp->variable_upper_bounds()[col],
+                            -lp->variable_lower_bounds()[col]);
+      lp->SetObjectiveCoefficient(col, -cost);
       changed_columns_.push_back(col);
     }
   }
@@ -2856,7 +2843,7 @@ bool SingletonColumnSignPreprocessor::Run(LinearProgram* linear_program,
 
 void SingletonColumnSignPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   for (int i = 0; i < changed_columns_.size(); ++i) {
     const ColIndex col = changed_columns_[i];
@@ -2874,9 +2861,8 @@ void SingletonColumnSignPreprocessor::RecoverSolution(
 // DoubletonEqualityRowPreprocessor
 // --------------------------------------------------------
 
-bool DoubletonEqualityRowPreprocessor::Run(LinearProgram* lp,
-                                           TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool DoubletonEqualityRowPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   // Note that we don't update the transpose during this preprocessor run.
   const SparseMatrix& original_transpose = lp->GetTransposeSparseMatrix();
@@ -3042,7 +3028,7 @@ bool DoubletonEqualityRowPreprocessor::Run(LinearProgram* lp,
 
 void DoubletonEqualityRowPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   column_deletion_helper_.RestoreDeletedColumns(solution);
   row_deletion_helper_.RestoreDeletedRows(solution);
@@ -3131,8 +3117,8 @@ void DoubletonEqualityRowPreprocessor::
 // DualizerPreprocessor
 // --------------------------------------------------------
 
-bool DualizerPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool DualizerPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   if (parameters_.solve_dual_problem() == GlopParameters::NEVER_DO) {
     return false;
@@ -3248,7 +3234,7 @@ bool DualizerPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
 // the first ColIndex and RowIndex for the rows and columns of the given
 // problem.
 void DualizerPreprocessor::RecoverSolution(ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
 
   DenseRow new_primal_values(primal_num_cols_, 0.0);
@@ -3381,9 +3367,8 @@ ProblemStatus DualizerPreprocessor::ChangeStatusToDualStatus(
 // ShiftVariableBoundsPreprocessor
 // --------------------------------------------------------
 
-bool ShiftVariableBoundsPreprocessor::Run(LinearProgram* lp,
-                                          TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool ShiftVariableBoundsPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
 
   // Save the linear program bounds before shifting them.
@@ -3452,7 +3437,7 @@ bool ShiftVariableBoundsPreprocessor::Run(LinearProgram* lp,
 
 void ShiftVariableBoundsPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
   const ColIndex num_cols = solution->variable_statuses.size();
   for (ColIndex col(0); col < num_cols; ++col) {
@@ -3482,8 +3467,8 @@ void ShiftVariableBoundsPreprocessor::RecoverSolution(
 // ScalingPreprocessor
 // --------------------------------------------------------
 
-bool ScalingPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool ScalingPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   if (!parameters_.use_scaling()) return false;
 
@@ -3498,7 +3483,7 @@ bool ScalingPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
 
   // See the doc of these functions for more details.
   // It is important to call Scale() before the other two.
-  lp->Scale(&scaler_);
+  Scale(lp, &scaler_, parameters_.scaling_method());
   cost_scaling_factor_ = lp->ScaleObjective();
   bound_scaling_factor_ = lp->ScaleBounds();
 
@@ -3507,7 +3492,7 @@ bool ScalingPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
 }
 
 void ScalingPreprocessor::RecoverSolution(ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
 
   scaler_.ScaleRowVector(false, &(solution->primal_values));
@@ -3546,8 +3531,8 @@ void ScalingPreprocessor::RecoverSolution(ProblemSolution* solution) const {
 // ToMinimizationPreprocessor
 // --------------------------------------------------------
 
-bool ToMinimizationPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool ToMinimizationPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
   if (lp->IsMaximizationProblem()) {
     for (ColIndex col(0); col < lp->num_variables(); ++col) {
@@ -3570,18 +3555,18 @@ void ToMinimizationPreprocessor::RecoverSolution(
 // AddSlackVariablesPreprocessor
 // --------------------------------------------------------
 
-bool AddSlackVariablesPreprocessor::Run(LinearProgram* lp,
-                                        TimeLimit* time_limit) {
-  SCOPED_INSTRUCTION_COUNT;
+bool AddSlackVariablesPreprocessor::Run(LinearProgram* lp) {
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_VALUE_IF_NULL(lp, false);
-  lp->AddSlackVariablesWhereNecessary(/*detect_integer_constraints=*/true);
+  lp->AddSlackVariablesWhereNecessary(
+      /*detect_integer_constraints=*/true);
   first_slack_col_ = lp->GetFirstSlackVariable();
   return true;
 }
 
 void AddSlackVariablesPreprocessor::RecoverSolution(
     ProblemSolution* solution) const {
-  SCOPED_INSTRUCTION_COUNT;
+  SCOPED_INSTRUCTION_COUNT(time_limit_);
   RETURN_IF_NULL(solution);
 
   // Compute constraint statuses from statuses of slack variables.
@@ -3615,7 +3600,7 @@ void AddSlackVariablesPreprocessor::RecoverSolution(
 // --------------------------------------------------------
 // SolowHalimPreprocessor
 // --------------------------------------------------------
-bool SolowHalimPreprocessor::Run(LinearProgram* lp, TimeLimit* time_limit) {
+bool SolowHalimPreprocessor::Run(LinearProgram* lp) {
   RETURN_VALUE_IF_NULL(lp, false);
   if (!parameters_.use_solowhalim()){
     return false;

@@ -32,7 +32,8 @@
 #include "ortools/lp_data/proto_utils.h"
 #include "ortools/util/fp_utils.h"
 
-#ifndef ANDROID_JNI
+// TODO(user): abstract this in some way to the port directory.
+#ifndef __PORTABLE_PLATFORM__
 #include "ortools/util/file_util.h"
 #endif
 
@@ -66,10 +67,17 @@ namespace {
 // number of times Solve() was called.
 // For a LinearProgram whose name is "LinPro", and num = 48, the default output
 // file will be /tmp/LinPro-000048.pb.gz.
-#ifndef ANDROID_JNI
+//
+// Warning: is a no-op on portable platforms (android, ios, etc).
 void DumpLinearProgramIfRequiredByFlags(const LinearProgram& linear_program,
                                         int num) {
   if (!FLAGS_lp_dump_to_proto_file) return;
+#ifdef __PORTABLE_PLATFORM__
+  LOG(WARNING) << "DumpLinearProgramIfRequiredByFlags(linear_program, num) "
+                  "requested for linear_program.name()='"
+               << linear_program.name() << "', num=" << num
+               << " but is not implemented for this platform.";
+#else
   std::string filename = FLAGS_lp_dump_file_basename;
   if (filename.empty()) {
     if (linear_program.name().empty()) {
@@ -91,8 +99,8 @@ void DumpLinearProgramIfRequiredByFlags(const LinearProgram& linear_program,
                         FLAGS_lp_dump_compressed_file)) {
     LOG(DFATAL) << "Could not write " << filespec;
   }
-}
 #endif
+}
 
 }  // anonymous namespace
 
@@ -122,9 +130,7 @@ ProblemStatus LPSolver::SolveWithTimeLimit(const LinearProgram& lp,
   }
   ++num_solves_;
   num_revised_simplex_iterations_ = 0;
-#ifndef ANDROID_JNI
   DumpLinearProgramIfRequiredByFlags(lp, num_solves_);
-#endif
   // Check some preconditions.
   if (!lp.IsCleanedUp()) {
     LOG(DFATAL) << "The columns of the given linear program should be ordered "
@@ -169,9 +175,9 @@ ProblemStatus LPSolver::SolveWithTimeLimit(const LinearProgram& lp,
   // Preprocess.
   MainLpPreprocessor preprocessor;
   preprocessor.SetParameters(parameters_);
+  preprocessor.SetTimeLimit(time_limit);
 
-  const bool postsolve_is_needed = preprocessor.Run(&current_linear_program_,
-                                                    time_limit);
+  const bool postsolve_is_needed = preprocessor.Run(&current_linear_program_);
 
   // At this point, we need to initialize a ProblemSolution with the correct
   // size and status.
@@ -297,8 +303,8 @@ ProblemStatus LPSolver::LoadAndVerifySolution(const LinearProgram& lp,
   // The tolerance used is the parameter solution_feasibility_tolerance. To be
   // somewhat independent of the original problem scaling, the thresholds used
   // depend of the quantity involved and of its coordinates:
-  // - tolerance * std::max(1.0, abs(cost[col])) when a reduced cost is infeasible.
-  // - tolerance * std::max(1.0, abs(bound)) when a bound is crossed.
+  // - tolerance * max(1.0, abs(cost[col])) when a reduced cost is infeasible.
+  // - tolerance * max(1.0, abs(bound)) when a bound is crossed.
   // - tolerance for an infeasible dual value (because the limit is always 0.0).
   bool rhs_perturbation_is_too_large = false;
   bool cost_perturbation_is_too_large = false;

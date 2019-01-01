@@ -176,7 +176,7 @@ class HungarianOptimizer {
   // Return to Step 4 without altering any stars, primes, or covered lines.
   void AugmentPath();
 
-  // The size of the problem, i.e. std::max(#agents, #tasks).
+  // The size of the problem, i.e. max(#agents, #tasks).
   int matrix_size_;
 
   // The expanded cost matrix.
@@ -311,7 +311,7 @@ void HungarianOptimizer::FindAssignments(std::vector<int>* preimage,
     }
   }
   // TODO(user)
-  // result_size = std::min(width_, height_);
+  // result_size = min(width_, height_);
   // CHECK image.size() == result_size
   // CHECK preimage.size() == result_size
 }
@@ -645,9 +645,10 @@ void HungarianOptimizer::AugmentPath() {
   state_ = &HungarianOptimizer::PrimeZeroes;
 }
 
-void MinimizeLinearAssignment(const std::vector<std::vector<double> >& cost,
-                              std::unordered_map<int, int>* direct_assignment,
-                              std::unordered_map<int, int>* reverse_assignment) {
+void MinimizeLinearAssignment(
+    const std::vector<std::vector<double> >& cost,
+    std::unordered_map<int, int>* direct_assignment,
+    std::unordered_map<int, int>* reverse_assignment) {
   std::vector<int> agent;
   std::vector<int> task;
   HungarianOptimizer hungarian_optimizer(cost);
@@ -658,9 +659,10 @@ void MinimizeLinearAssignment(const std::vector<std::vector<double> >& cost,
   }
 }
 
-void MaximizeLinearAssignment(const std::vector<std::vector<double> >& cost,
-                              std::unordered_map<int, int>* direct_assignment,
-                              std::unordered_map<int, int>* reverse_assignment) {
+void MaximizeLinearAssignment(
+    const std::vector<std::vector<double> >& cost,
+    std::unordered_map<int, int>* direct_assignment,
+    std::unordered_map<int, int>* reverse_assignment) {
   std::vector<int> agent;
   std::vector<int> task;
   HungarianOptimizer hungarian_optimizer(cost);

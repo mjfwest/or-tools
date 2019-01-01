@@ -64,7 +64,7 @@ class SparseMatrix {
   //    {1, 2, 3},
   //    {4, 5, 6},
   //    {7, 8, 9}};
-#if !defined(__ANDROID__) && (!defined(_MSC_VER) || _MSC_VER >= 1800)
+#if (!defined(_MSC_VER) || _MSC_VER >= 1800)
   SparseMatrix(
       std::initializer_list<std::initializer_list<Fractional>> init_list);
 #endif
@@ -167,7 +167,7 @@ class SparseMatrix {
   // Returns, in min_magnitude and max_magnitude, the minimum and maximum
   // magnitudes of the non-zero coefficients of the calling object.
   void ComputeMinAndMaxMagnitudes(Fractional* min_magnitude,
-                                  Fractional* max_magnitude);
+                                  Fractional* max_magnitude) const;
 
   // Return the matrix dimension.
   RowIndex num_rows() const { return num_rows_; }
@@ -267,6 +267,15 @@ class MatrixView {
   RowIndex num_rows_;
   StrictITIVector<ColIndex, SparseColumn const*> columns_;
 };
+
+extern template void SparseMatrix::PopulateFromTranspose<SparseMatrix>(
+    const SparseMatrix& input);
+extern template void SparseMatrix::PopulateFromPermutedMatrix<SparseMatrix>(
+    const SparseMatrix& a, const RowPermutation& row_perm,
+    const ColumnPermutation& inverse_col_perm);
+extern template void SparseMatrix::PopulateFromPermutedMatrix<MatrixView>(
+    const MatrixView& a, const RowPermutation& row_perm,
+    const ColumnPermutation& inverse_col_perm);
 
 // Another matrix representation which is more efficient than a SparseMatrix but
 // doesn't allow matrix modification. It is faster to construct, uses less
@@ -409,20 +418,20 @@ class CompactSparseMatrix {
   // Same as ColumnAddMultipleToDenseColumn() but also adds the new non-zeros to
   // the non_zeros vector. A non-zero is "new" if is_non_zero[row] was false,
   // and we update dense_column[row]. This functions also updates is_non_zero.
-  void ColumnAddMultipleToDenseColumnAndUpdateNonZeros(
-      ColIndex col, Fractional multiplier, DenseColumn* dense_column,
-      StrictITIVector<RowIndex, bool>* is_non_zero,
-      std::vector<RowIndex>* non_zeros) const {
+  void ColumnAddMultipleToSparseScatteredColumn(ColIndex col,
+                                                Fractional multiplier,
+                                                ScatteredColumn* column) const {
     if (multiplier == 0.0) return;
-    RETURN_IF_NULL(dense_column);
+    RETURN_IF_NULL(column);
     for (const EntryIndex i : Column(col)) {
       const RowIndex row = EntryRow(i);
-      (*dense_column)[row] += multiplier * EntryCoefficient(i);
-      if (!(*is_non_zero)[row]) {
-        (*is_non_zero)[row] = true;
-        non_zeros->push_back(row);
+      (*column)[row] += multiplier * EntryCoefficient(i);
+      if (!column->is_non_zero[row]) {
+        column->is_non_zero[row] = true;
+        column->non_zeros.push_back(row);
       }
     }
+    column->non_zeros_are_sorted = false;
   }
 
   // Copies the given column of this matrix into the given dense_column.
@@ -579,10 +588,6 @@ class TriangularMatrix : private CompactSparseMatrix {
   // This also computes the last non-zero row position (if not nullptr).
   void TransposeLowerSolve(DenseColumn* rhs, RowIndex* last_non_zero_row) const;
 
-  // This also computes the non-zero row positions (if not nullptr).
-  void UpperSolveWithNonZeros(DenseColumn* rhs,
-                              RowIndexVector* non_zero_rows) const;
-
   // Hyper-sparse version of the triangular solve functions. The passed
   // non_zero_rows should contain the positions of the symbolic non-zeros of the
   // result in the order in which they need to be accessed (or in the reverse
@@ -705,9 +710,8 @@ class TriangularMatrix : private CompactSparseMatrix {
   // Internal versions of some Solve() functions to avoid code duplication.
   template <bool diagonal_of_ones>
   void LowerSolveStartingAtInternal(ColIndex start, DenseColumn* rhs) const;
-  template <bool diagonal_of_ones, bool with_non_zeros>
-  void UpperSolveWithNonZerosInternal(DenseColumn* rhs,
-                                      RowIndexVector* non_zero_rows) const;
+  template <bool diagonal_of_ones>
+  void UpperSolveInternal(DenseColumn* rhs) const;
   template <bool diagonal_of_ones>
   void TransposeLowerSolveInternal(DenseColumn* rhs,
                                    RowIndex* last_non_zero_row) const;

@@ -19,6 +19,8 @@
 
 #include "ortools/base/logging.h"
 #include "ortools/base/stringprintf.h"
+#if !defined(__PORTABLE_PLATFORM__)
+#endif  // !__PORTABLE_PLATFORM__
 #include "ortools/base/int_type.h"
 #include "ortools/base/status.h"
 
@@ -27,8 +29,10 @@ namespace sat {
 
 DratWriter::~DratWriter() {
   if (output_ != nullptr) {
+#if !defined(__PORTABLE_PLATFORM__)
     CHECK_OK(file::WriteString(output_, buffer_, file::Defaults()));
     CHECK_OK(output_->Close(file::Defaults()));
+#endif  // !__PORTABLE_PLATFORM__
   }
 }
 
@@ -60,18 +64,16 @@ void DratWriter::AddOneVariable() {
   reverse_mapping_.push_back(BooleanVariable(variable_index_++));
 }
 
-void DratWriter::AddClause(gtl::Span<Literal> clause) {
+void DratWriter::AddClause(absl::Span<Literal> clause) {
   WriteClause(clause);
 }
 
-void DratWriter::DeleteClause(gtl::Span<Literal> clause,
-                              bool ignore_call) {
-  if (ignore_call) return;
+void DratWriter::DeleteClause(absl::Span<Literal> clause) {
   buffer_ += "d ";
   WriteClause(clause);
 }
 
-void DratWriter::WriteClause(gtl::Span<Literal> clause) {
+void DratWriter::WriteClause(absl::Span<Literal> clause) {
   values_.clear();
   for (const Literal l : clause) {
     CHECK_LT(l.Variable(), reverse_mapping_.size());
@@ -89,7 +91,9 @@ void DratWriter::WriteClause(gtl::Span<Literal> clause) {
   for (const int v : values_) StringAppendF(&buffer_, "%d ", v);
   buffer_ += "0\n";
   if (buffer_.size() > 10000) {
+#if !defined(__PORTABLE_PLATFORM__)
     CHECK_OK(file::WriteString(output_, buffer_, file::Defaults()));
+#endif  // !__PORTABLE_PLATFORM__
     buffer_.clear();
   }
 }

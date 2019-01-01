@@ -21,8 +21,7 @@ namespace operations_research {
 namespace sat {
 
 void SolveFzWithCpModelProto(const fz::Model& model,
-                             const fz::FlatzincParameters& p,
-                             bool* interrupt_solve);
+                             const fz::FlatzincParameters& p);
 
 }  // namespace sat
 }  // namespace operations_research

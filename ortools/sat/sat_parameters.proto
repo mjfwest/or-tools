@@ -18,7 +18,7 @@ package operations_research.sat;
 // Contains the definitions for all the sat algorithm parameters and their
 // default values.
 //
-// NEXT TAG: 94
+// NEXT TAG: 98
 message SatParameters {
   // ==========================================================================
   // Branching and polarity
@@ -65,7 +65,7 @@ message SatParameters {
   // Satisfiability Testing, 2007.
   optional bool use_phase_saving = 44 [default = true];
 
-  // The proportion of polarity choosen at random. Note that this take
+  // The proportion of polarity chosen at random. Note that this take
   // precedence over the phase saving heuristic. This is different from
   // initial_polarity:POLARITY_RANDOM because it will select a new random
   // polarity each time the variable is branched upon instead of selecting one
@@ -76,19 +76,6 @@ message SatParameters {
   // variables that are selected randomly instead of choosing the first variable
   // from the given variable_ordering strategy.
   optional double random_branches_ratio = 32 [default = 0];
-
-  // Specifies how literals should be initially sorted in a clause.
-  enum LiteralOrdering {
-    // Do nothing and keep literals in their current order.
-    LITERAL_IN_ORDER = 0;
-    // Sort the literals by increasing order of their variable appearance in the
-    // problem.
-    VAR_MIN_USAGE = 1;
-    // Sort the literals by decreasing order of their variable appearance in the
-    // problem.
-    VAR_MAX_USAGE = 2;
-  }
-  optional LiteralOrdering literal_ordering = 3 [default = LITERAL_IN_ORDER];
 
   // Whether we use the ERWA (Exponential Recency Weighted Average) heuristic as
   // described in "Learning Rate Based Branching Heuristic for SAT solvers",
@@ -209,11 +196,6 @@ message SatParameters {
   // Clause activity parameters (same effect as the one on the variables).
   optional double clause_activity_decay = 17 [default = 0.999];
   optional double max_clause_activity_value = 18 [default = 1e20];
-
-  // To try to reward good variables, Glucose bumps again the variable from the
-  // last decision level and with a learned reason of smaller LBD than the 1 UIP
-  // conflict. This needs use_lbd() to be true.
-  optional bool use_glucose_bump_again_strategy = 21 [ default = false];
 
   // ==========================================================================
   // Restart
@@ -479,14 +461,6 @@ message SatParameters {
   optional bool use_disjunctive_constraint_in_cumulative_constraint = 80
       [default = true];
 
-  // When this is true, then we extract all the linear constraints of the
-  // CpModel and linearly encode some other constraints in an extra "linear
-  // programming" constraint that will run a LP solver to detect infeasibility
-  // and propagates the bounds on the objective.
-  //
-  // TODO(user): remove and rely only on linearization_level.
-  optional bool use_global_lp_constraint = 81 [default = true];
-
   // A non-negative level indicating the type of constraints we consider in the
   // LP relaxation. At level zero, no LP relaxation is used. At level 1, only
   // the linear constraint and full encoding are added. At level 2, we also add
@@ -498,13 +472,34 @@ message SatParameters {
   optional int32 max_num_cuts = 91 [default = 1000];
   optional bool only_add_cuts_at_level_zero = 92 [default = false];
 
-  // If true then all decisions taken by the solver are made using a fixed order
-  // as specified in the API or in the cp_model.proto search_order field.
-  //
-  // TODO(user): This is not working in all situation yet. The time limit is not
-  // really enforced properly, we don't support assumptions, and all the
-  // decisions variables must be integers.
-  optional bool use_fixed_search = 82 [default = false];
+  // The search branching will be used to decide how to branch on unfixed nodes.
+  enum SearchBranching {
+    // Try to fix all literals using the underlying SAT solver's heuristics,
+    // then generate and fix literals until integer variables are fixed.
+    AUTOMATIC_SEARCH = 0;
+
+    // If used then all decisions taken by the solver are made using a fixed
+    // order as specified in the API or in the cp_model.proto search_order
+    // field.
+    //
+    // TODO(user): This is not working in all situation yet. The time limit is
+    // not really enforced properly, we don't support assumptions, and all the
+    // decisions variables must be integers.
+    FIXED_SEARCH = 1;
+
+    // If used, the solver will use various generic heuristics in turn.
+    PORTFOLIO_SEARCH = 2;
+
+    // If used, the solver will use heuristics from the LP relaxation.
+    LP_SEARCH = 3;
+  }
+  optional SearchBranching search_branching = 82 [default = AUTOMATIC_SEARCH];
+
+  // If true and the Lp relaxation of the problem has an integer optimal
+  // solution, try to exploit it. Note that since the LP relaxation may not
+  // contain all the constraints, such a solution is not necessarily a solution
+  // of the full problem.
+  optional bool exploit_integer_lp_solution = 94 [default = true];
 
   // The default optimization method is a simple "linear scan", each time trying
   // to find a better solution than the previous one. If this is true, then we
@@ -533,4 +528,26 @@ message SatParameters {
   // look at this parameter and only guarantee the existence of one feasible
   // solution to the presolved problem.
   optional bool enumerate_all_solutions = 87 [default = false];
+
+  // If true, then the precedences propagator try to detect for each variable if
+  // it has a set of "optional incoming arc" for which at least one of them is
+  // present. This is usually useful to have but can be slow on model with a lot
+  // of precedence.
+  optional bool auto_detect_greater_than_at_least_one_of = 95 [default = true];
+
+  // Parameters for an heuristic similar to the one descibed in "An effective
+  // learnt clause minimization approach for CDCL Sat Solvers",
+  // https://www.ijcai.org/proceedings/2017/0098.pdf
+  //
+  // For now, we have a somewhat simpler implementation where every x restart we
+  // spend y decisions on clause minimization. The minimization technique is the
+  // same as the one used to minimize core in max-sat. We also minimize problem
+  // clauses and not just the learned clause that we keep forever like in the
+  // paper.
+  //
+  // Changing these parameters or the kind of clause we minimize seems to have
+  // a big impact on the overall perf on our benchmarks. So this technique seems
+  // definitely useful, but it is hard to tune properly.
+  optional int32 minimize_with_propagation_restart_period = 96 [default = 10];
+  optional int32 minimize_with_propagation_num_decisions = 97 [default = 1000];
 }

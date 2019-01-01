@@ -74,12 +74,7 @@ inline uint32 LeastSignificantBitWord32(uint32 n) { return n & ~(n - 1); }
 
 #if defined(USE_FAST_LEAST_SIGNIFICANT_BIT)
 inline int LeastSignificantBitPosition64Fast(uint64 n) {
-  // Note(user): Do not change the order of instructions. Other patterns were
-  // tried, and the second best was:
-  // return n == 0 ? 0 : __builtin_ctzll(n) which results in an 2x increase of
-  // computation time.
-  const int lsb = __builtin_ctzll(n);
-  return n == 0 ? 0 : lsb;
+  return n == 0 ? 0 : __builtin_ctzll(n);
 }
 #endif
 
@@ -141,8 +136,7 @@ inline int LeastSignificantBitPosition64(uint64 n) {
 
 #if defined(USE_FAST_LEAST_SIGNIFICANT_BIT)
 inline int LeastSignificantBitPosition32Fast(uint32 n) {
-  const int lsb = __builtin_ctzl(n);
-  return n == 0 ? 0 : lsb;
+  return n == 0 ? 0 : __builtin_ctzl(n);
 }
 #endif
 
@@ -201,8 +195,7 @@ inline int MostSignificantBitPosition64Fast(uint64 n) {
   // __builtin_clzll(1) should always return 63. There is no penalty in
   // using offset, and the code looks more like its uint32 counterpart.
   const int offset = __builtin_clzll(1);
-  const int msb = offset - __builtin_clzll(n);
-  return n == 0 ? 0 : msb;
+  return n == 0 ? 0 : (offset - __builtin_clzll(n));
 }
 #endif
 
@@ -248,8 +241,7 @@ inline int MostSignificantBitPosition32Fast(uint32 n) {
   // __builtin_clzl(1) returns 63 on a 64-bit machine and 31 on a 32-bit
   // machine.
   const int offset = __builtin_clzl(1);
-  const int msb = offset - __builtin_clzl(n);
-  return n == 0 ? 0 : msb;
+  return n == 0 ? 0 : (offset - __builtin_clzl(n));
 }
 #endif
 
@@ -334,7 +326,7 @@ inline uint32 IntervalDown32(uint32 s) {
 // corresponding to the bit at position pos in the bitset.
 // Note: '& 63' is faster than '% 64'
 // TODO(user): rename BitPos and BitOffset to something more understandable.
-inline uint64 BitPos64(uint64 pos) { return (pos & 63); }
+inline uint32 BitPos64(uint64 pos) { return (pos & 63); }
 inline uint32 BitPos32(uint32 pos) { return (pos & 31); }
 
 // Returns the word number corresponding to bit number pos.
@@ -721,7 +713,7 @@ class BitQueue64 {
     DCHECK_GE(i, 0);
     DCHECK_LT(i, size_);
     top_ = std::max(top_, i - 1);
-    int bucket_index = BitOffset64(i);
+    int bucket_index = static_cast<int>(BitOffset64(i));
     data_[bucket_index] |= OneBit64(BitPos64(i)) - 1;
     for (--bucket_index; bucket_index >= 0; --bucket_index) {
       data_[bucket_index] = kAllBits64;
@@ -734,7 +726,7 @@ class BitQueue64 {
   // Clears the Top() bit and recomputes the position of the next Top().
   void ClearTop() {
     DCHECK_NE(top_, -1);
-    int bucket_index = BitOffset64(top_);
+    int bucket_index = static_cast<int>(BitOffset64(top_));
     uint64 bucket = data_[bucket_index] &= ~OneBit64(BitPos64(top_));
     while (!bucket) {
       if (bucket_index == 0) {
@@ -747,7 +739,8 @@ class BitQueue64 {
     // Note(user): I experimented with reversing the bit order in a bucket to
     // use LeastSignificantBitPosition64() and it is only slightly faster at the
     // cost of a lower Set() speed. So I prefered this version.
-    top_ = BitShift64(bucket_index) + MostSignificantBitPosition64(bucket);
+    top_ = static_cast<int>(BitShift64(bucket_index) +
+                            MostSignificantBitPosition64(bucket));
   }
 
  private:

@@ -27,6 +27,7 @@
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
+#include "ortools/base/port.h"
 #include "ortools/base/inlined_vector.h"
 #include "ortools/base/join.h"
 #include "ortools/base/span.h"
@@ -139,8 +140,8 @@ struct IntegerLiteral {
 
   std::string DebugString() const {
     return VariableIsPositive(var)
-               ? StrCat("I", var.value() / 2, ">=", bound.value())
-               : StrCat("I", var.value() / 2, "<=", -bound.value());
+               ? absl::StrCat("I", var.value() / 2, ">=", bound.value())
+               : absl::StrCat("I", var.value() / 2, "<=", -bound.value());
   }
 
   // Note that bound should be in [kMinIntegerValue, kMaxIntegerValue + 1].
@@ -153,14 +154,21 @@ inline std::ostream& operator<<(std::ostream& os, IntegerLiteral i_lit) {
   return os;
 }
 
-using InlinedIntegerLiteralVector = gtl::InlinedVector<IntegerLiteral, 2>;
+using InlinedIntegerLiteralVector = absl::InlinedVector<IntegerLiteral, 2>;
 
 // A singleton that holds the INITIAL integer variable domains.
 struct IntegerDomains
     : public ITIVector<IntegerVariable,
-                       gtl::InlinedVector<ClosedInterval, 1>> {
+                       absl::InlinedVector<ClosedInterval, 1>> {
   explicit IntegerDomains(Model* model) {}
 };
+
+// Some heuristics may be generated automatically, for instance by constraints.
+// Those will be stored in a SearchHeuristicsVector object owned by the model.
+//
+// TODO(user): Move this and other similar classes in a "model_singleton" file?
+class SearchHeuristicsVector
+    : public std::vector<std::function<LiteralIndex()>> {};
 
 // Each integer variable x will be associated with a set of literals encoding
 // (x >= v) for some values of v. This class maintains the relationship between
@@ -209,9 +217,23 @@ class IntegerEncoder {
   // search (for now). This is Checked.
   void FullyEncodeVariable(IntegerVariable var);
 
+  // Returns true iff FullyEncodeVariable(var) has been called. Note that
+  // PartialDomainEncoding() may actually return a full domain encoding, but if
+  // FullyEncodeVariable() was not called, this will still return false.
+  //
+  // TODO(user): Detect this case and mark such variable as fully encoded?
+  bool VariableIsFullyEncoded(IntegerVariable var) const {
+    if (var >= is_fully_encoded_.size()) return false;
+    return is_fully_encoded_[var];
+  }
+
   // Computes the full encoding of a variable on which FullyEncodeVariable() has
   // been called. The returned elements are always sorted by increasing
   // IntegerValue and we filter values associated to false literals.
+  //
+  // Performance note: This function is not particularly fast, however it should
+  // only be required during domain creation, so it should be ok. This allow us
+  // to not waste memory.
   struct ValueLiteralPair {
     ValueLiteralPair(IntegerValue v, Literal l) : value(v), literal(l) {}
     bool operator==(const ValueLiteralPair& o) const {
@@ -222,11 +244,11 @@ class IntegerEncoder {
   };
   std::vector<ValueLiteralPair> FullDomainEncoding(IntegerVariable var) const;
 
-  // Returns true if a variable is fully encoded.
-  bool VariableIsFullyEncoded(IntegerVariable var) const {
-    if (var >= is_fully_encoded_.size()) return false;
-    return is_fully_encoded_[var];
-  }
+  // Same as FullDomainEncoding() but only returns the list of value that are
+  // currently associated to a literal. In particular this has no guarantee to
+  // span the full domain of the given variable (but it might).
+  std::vector<ValueLiteralPair> PartialDomainEncoding(
+      IntegerVariable var) const;
 
   // Returns the "canonical" (i_lit, negation of i_lit) pair. This mainly
   // deal with domain with initial hole like [1,2][5,6] so that if one ask
@@ -288,6 +310,15 @@ class IntegerEncoder {
     return reverse_encoding_[lit.Index()];
   }
 
+  // If it exists, returns a [0,1] integer variable which is equal to 1 iff the
+  // given literal is true. Returns kNoIntegerVariable if such variable does not
+  // exist. Note that one can create one by creating a new IntegerVariable and
+  // calling AssociateToIntegerEqualValue().
+  const IntegerVariable GetLiteralView(Literal lit) const {
+    if (lit.Index() >= literal_view_.size()) return kNoIntegerVariable;
+    return literal_view_[lit.Index()];
+  }
+
   // Returns a Boolean literal associated with a bound lower than or equal to
   // the one of the given IntegerLiteral. If the given IntegerLiteral is true,
   // then the returned literal should be true too. Returns kNoLiteralIndex if no
@@ -298,7 +329,7 @@ class IntegerEncoder {
   // (x >= 2).
   LiteralIndex SearchForLiteralAtOrBefore(IntegerLiteral i) const;
 
-  // Get the literal always set to true, make it if it does not exist.
+  // Gets the literal always set to true, make it if it does not exist.
   Literal GetTrueLiteral() {
     DCHECK_EQ(0, sat_solver_->CurrentDecisionLevel());
     if (literal_index_true_ == kNoLiteralIndex) {
@@ -310,6 +341,17 @@ class IntegerEncoder {
     return Literal(literal_index_true_);
   }
   Literal GetFalseLiteral() { return GetTrueLiteral().Negated(); }
+
+  // Returns the set of Literal associated to IntegerLiteral of the form var >=
+  // value. We make a copy, because this can be easily invalidated when calling
+  // any function of this class. So it is less efficient but safer.
+  std::map<IntegerValue, Literal> PartialGreaterThanEncoding(
+      IntegerVariable var) const {
+    if (var >= encoding_by_var_.size()) {
+      return std::map<IntegerValue, Literal>();
+    }
+    return encoding_by_var_[var];
+  }
 
  private:
   // Only add the equivalence between i_lit and literal, if there is already an
@@ -335,6 +377,10 @@ class IntegerEncoder {
   // Store for a given LiteralIndex the list of its associated IntegerLiterals.
   const InlinedIntegerLiteralVector empty_integer_literal_vector_;
   ITIVector<LiteralIndex, InlinedIntegerLiteralVector> reverse_encoding_;
+
+  // Store for a given LiteralIndex its IntegerVariable view or kNoLiteralIndex
+  // if there is none.
+  ITIVector<LiteralIndex, IntegerVariable> literal_view_;
 
   // Mapping (variable == value) -> associated literal. Note that even if
   // there is more than one literal associated to the same fact, we just keep
@@ -373,7 +419,7 @@ class IntegerTrail : public SatPropagator {
   // correct state before calling any of its functions.
   bool Propagate(Trail* trail) final;
   void Untrail(const Trail& trail, int literal_trail_index) final;
-  gtl::Span<Literal> Reason(const Trail& trail,
+  absl::Span<Literal> Reason(const Trail& trail,
                                    int trail_index) const final;
 
   // Returns the number of created integer variables.
@@ -483,23 +529,23 @@ class IntegerTrail : public SatPropagator {
   // TODO(user): If the given bound is equal to the current bound, maybe the new
   // reason is better? how to decide and what to do in this case? to think about
   // it. Currently we simply don't do anything.
-  MUST_USE_RESULT bool Enqueue(IntegerLiteral i_lit,
-                               gtl::Span<Literal> literal_reason,
-                               gtl::Span<IntegerLiteral> integer_reason);
+  MUST_USE_RESULT bool Enqueue(
+      IntegerLiteral i_lit, absl::Span<Literal> literal_reason,
+      absl::Span<IntegerLiteral> integer_reason);
 
   // Same as Enqueue(), but takes an extra argument which if smaller than
   // integer_trail_.size() is interpreted as the trail index of an old Enqueue()
   // that had the same reason as this one. Note that the given Span must still
   // be valid as they are used in case of conflict.
-  MUST_USE_RESULT bool Enqueue(IntegerLiteral i_lit,
-                               gtl::Span<Literal> literal_reason,
-                               gtl::Span<IntegerLiteral> integer_reason,
-                               int trail_index_with_same_reason);
+  MUST_USE_RESULT bool Enqueue(
+      IntegerLiteral i_lit, absl::Span<Literal> literal_reason,
+      absl::Span<IntegerLiteral> integer_reason,
+      int trail_index_with_same_reason);
 
   // Enqueues the given literal on the trail.
   // See the comment of Enqueue() for the reason format.
-  void EnqueueLiteral(Literal literal, gtl::Span<Literal> literal_reason,
-                      gtl::Span<IntegerLiteral> integer_reason);
+  void EnqueueLiteral(Literal literal, absl::Span<Literal> literal_reason,
+                      absl::Span<IntegerLiteral> integer_reason);
 
   // Returns the reason (as set of Literal currently false) for a given integer
   // literal. Note that the bound must be less restrictive than the current
@@ -508,7 +554,7 @@ class IntegerTrail : public SatPropagator {
 
   // Appends the reason for the given integer literals to the output and call
   // STLSortAndRemoveDuplicates() on it.
-  void MergeReasonInto(gtl::Span<IntegerLiteral> bounds,
+  void MergeReasonInto(absl::Span<IntegerLiteral> bounds,
                        std::vector<Literal>* output) const;
 
   // Returns the number of enqueues that changed a variable bounds. We don't
@@ -529,14 +575,14 @@ class IntegerTrail : public SatPropagator {
 
   // Helper functions to report a conflict. Always return false so a client can
   // simply do: return integer_trail_->ReportConflict(...);
-  bool ReportConflict(gtl::Span<Literal> literal_reason,
-                      gtl::Span<IntegerLiteral> integer_reason) {
+  bool ReportConflict(absl::Span<Literal> literal_reason,
+                      absl::Span<IntegerLiteral> integer_reason) {
     std::vector<Literal>* conflict = trail_->MutableConflict();
     conflict->assign(literal_reason.begin(), literal_reason.end());
     MergeReasonInto(integer_reason, conflict);
     return false;
   }
-  bool ReportConflict(gtl::Span<IntegerLiteral> integer_reason) {
+  bool ReportConflict(absl::Span<IntegerLiteral> integer_reason) {
     std::vector<Literal>* conflict = trail_->MutableConflict();
     conflict->clear();
     MergeReasonInto(integer_reason, conflict);
@@ -559,7 +605,7 @@ class IntegerTrail : public SatPropagator {
  private:
   // Tests that all the literals in the given reason are assigned to false.
   // This is used to DCHECK the given reasons to the Enqueue*() functions.
-  bool AllLiteralsAreFalse(gtl::Span<Literal> literals) const;
+  bool AllLiteralsAreFalse(absl::Span<Literal> literals) const;
 
   // Does the work of MergeReasonInto() when queue_ is already initialized.
   void MergeReasonIntoInternal(std::vector<Literal>* output) const;
@@ -568,8 +614,8 @@ class IntegerTrail : public SatPropagator {
   // an integer literal and maintained by encoder_.
   bool EnqueueAssociatedLiteral(Literal literal,
                                 int trail_index_with_same_reason,
-                                gtl::Span<Literal> literal_reason,
-                                gtl::Span<IntegerLiteral> integer_reason,
+                                absl::Span<Literal> literal_reason,
+                                absl::Span<IntegerLiteral> integer_reason,
                                 BooleanVariable* variable_with_same_reason);
 
   // Returns a lower bound on the given var that will always be valid.
@@ -632,7 +678,7 @@ class IntegerTrail : public SatPropagator {
 
   // Start of each decision levels in integer_trail_.
   // TODO(user): use more general reversible mechanism?
-  std::vector<int> integer_decision_levels_;
+  std::vector<int> integer_search_levels_;
 
   // Buffer to store the reason of each trail entry.
   // Note that bounds_reason_buffer_ is an "union". It initially contains the
@@ -658,8 +704,10 @@ class IntegerTrail : public SatPropagator {
   //
   // TODO(user): We could share the std::vector<ClosedInterval> entry between a
   // variable and its negations instead of having duplicates.
-  RevMap<std::unordered_map<IntegerVariable, int>> var_to_current_lb_interval_index_;
-  std::unordered_map<IntegerVariable, int> var_to_end_interval_index_;  // const entries.
+  RevMap<std::unordered_map<IntegerVariable, int>>
+      var_to_current_lb_interval_index_;
+  std::unordered_map<IntegerVariable, int>
+      var_to_end_interval_index_;                             // const entries.
   std::vector<ClosedInterval> all_intervals_;                 // const entries.
 
   // Temporary data used by MergeReasonInto().
@@ -960,45 +1008,27 @@ inline std::function<IntegerVariable(Model*)> NewIntegerVariable(
   };
 }
 
-// Constraints might not accept Literals as input, forcing the user to pass
-// 0-1 integer views of a literal.
-// This class contains all such literal views of a given model, so that asking
-// for a view of a literal will always return the same IntegerVariable.
-class LiteralViews {
- public:
-  explicit LiteralViews(Model* model) : model_(model) {}
-
-  IntegerVariable GetIntegerView(const Literal lit) {
-    const LiteralIndex index = lit.Index();
-
-    if (!ContainsKey(literal_index_to_integer_, index)) {
-      const IntegerVariable int_var = model_->Add(NewIntegerVariable(0, 1));
-      model_->GetOrCreate<IntegerEncoder>()->AssociateToIntegerEqualValue(
-          lit, int_var, IntegerValue(1));
-      literal_index_to_integer_[index] = int_var;
-    }
-
-    return literal_index_to_integer_[index];
-  }
-
- private:
-  std::unordered_map<LiteralIndex, IntegerVariable> literal_index_to_integer_;
-  Model* model_;
-};
-
 // Creates a 0-1 integer variable "view" of the given literal. It will have a
 // value of 1 when the literal is true, and 0 when the literal is false.
 inline std::function<IntegerVariable(Model*)> NewIntegerVariableFromLiteral(
     Literal lit) {
   return [=](Model* model) {
+    auto* encoder = model->GetOrCreate<IntegerEncoder>();
+    const IntegerVariable candidate = encoder->GetLiteralView(lit);
+    if (candidate != kNoIntegerVariable) return candidate;
+
+    IntegerVariable var;
     const auto& assignment = model->GetOrCreate<SatSolver>()->Assignment();
     if (assignment.LiteralIsTrue(lit)) {
-      return model->Add(ConstantIntegerVariable(1));
+      var = model->Add(ConstantIntegerVariable(1));
     } else if (assignment.LiteralIsFalse(lit)) {
-      return model->Add(ConstantIntegerVariable(0));
+      var = model->Add(ConstantIntegerVariable(0));
     } else {
-      return model->GetOrCreate<LiteralViews>()->GetIntegerView(lit);
+      var = model->Add(NewIntegerVariable(0, 1));
     }
+
+    encoder->AssociateToIntegerEqualValue(lit, var, IntegerValue(1));
+    return var;
   };
 }
 
@@ -1116,46 +1146,6 @@ FullyEncodeVariable(IntegerVariable var) {
     return encoder->FullDomainEncoding(var);
   };
 }
-
-// A wrapper around SatSolver::Solve that handles integer variable with lazy
-// encoding. Repeatedly calls SatSolver::Solve() on the model until the given
-// next_decision() function return kNoLiteralIndex or the model is proved to
-// be UNSAT.
-//
-// Returns the status of the last call to SatSolver::Solve().
-//
-// Note that the next_decision() function must always return an unassigned
-// literal or kNoLiteralIndex to end the search.
-SatSolver::Status SolveIntegerProblemWithLazyEncoding(
-    const std::vector<Literal>& assumptions,
-    const std::function<LiteralIndex()>& next_decision, Model* model);
-
-// Shortcut for SolveIntegerProblemWithLazyEncoding() when there is no
-// assumption and we consider all variables in their index order for the next
-// search decision.
-SatSolver::Status SolveIntegerProblemWithLazyEncoding(Model* model);
-
-// Decision heuristic for SolveIntegerProblemWithLazyEncoding(). Returns a
-// function that will return the literal corresponding to the fact that the
-// first currently non-fixed variable value is <= its min. The function will
-// return kNoLiteralIndex if all the given variables are fixed.
-//
-// Note that this function will create the associated literal if needed.
-std::function<LiteralIndex()> FirstUnassignedVarAtItsMinHeuristic(
-    const std::vector<IntegerVariable>& vars, Model* model);
-
-// Decision heuristic for SolveIntegerProblemWithLazyEncoding(). Like
-// FirstUnassignedVarAtItsMinHeuristic() but the function will return the
-// literal corresponding to the fact that the currently non-assigned variable
-// with the lowest min has a value <= this min.
-std::function<LiteralIndex()> UnassignedVarWithLowestMinAtItsMinHeuristic(
-    const std::vector<IntegerVariable>& vars, Model* model);
-
-// Combines search heuristics in order: if the i-th one returns kNoLiteralIndex,
-// ask the (i+1)-th. If every heuristic returned kNoLiteralIndex,
-// returns kNoLiteralIndex.
-std::function<LiteralIndex()> SequentialSearch(
-    std::vector<std::function<LiteralIndex()>> heuristics);
 
 // Same as ExcludeCurrentSolutionAndBacktrack() but this version works for an
 // integer problem with optional variables. The issue is that an optional

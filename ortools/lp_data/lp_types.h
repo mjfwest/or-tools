@@ -149,7 +149,7 @@ enum class ProblemStatus : int8 {
   // solution.
   DUAL_FEASIBLE,
 
-  // An error occured during the solving process.
+  // An error occurred during the solving process.
   ABNORMAL,
 
   // The input problem was invalid (see LinearProgram.IsValid()).
@@ -343,44 +343,68 @@ typedef StrictITIVector<RowIndex, ColIndex> RowToColMapping;
 // Column of constraints (slack variables) statuses.
 typedef StrictITIVector<RowIndex, ConstraintStatus> ConstraintStatusColumn;
 
-// A simple wrapper that contains references to a DenseColumn and its non-zeros
-// indices. Passing such reference by value when calling a function is
-// equivalent to passing two const references (one to the DenseColumn and one to
-// the RowIndexVector).
+// Returns true if it is more advantageous to use a dense iteration rather than
+// using the non-zeros positions.
 //
-// TODO(user): Create a ScatteredColumn class and use a reference to it instead
-// of this. It will require more work since this class allows one to combine the
-// dense vector and its non-zero positions even if they come from two different
-// places.
-struct ScatteredColumnReference {
-  ScatteredColumnReference(const DenseColumn& _dense_column,
-                           const RowIndexVector& _non_zero_rows)
-      : dense_column(_dense_column), non_zero_rows(_non_zero_rows) {}
+// TODO(user): The constant should depend on what algorithm is used. Clearing a
+// dense vector is a lot more efficient than doing more complex stuff. Clean
+// this up by extracting all the currently used constants in one place with
+// meaningful names.
+template <typename ScatteredRowOrCol>
+bool ShouldUseDenseIteration(const ScatteredRowOrCol& v) {
+  if (v.non_zeros.empty()) return true;
+  const double kThresholdForUsingDenseRepresentation = 0.8;
+  return static_cast<double>(v.non_zeros.size()) >
+         kThresholdForUsingDenseRepresentation *
+             static_cast<double>(v.values.size().value());
+}
 
-  // For convenience, this constructor takes a column transpose.
-  // TODO(user): Move the Transpose() function in this file and use it here?
-  // Also introduce a function to transpose a RowIndexVector into a
-  // ColIndexVector.
-  ScatteredColumnReference(const DenseRow& dense_row,
-                           const ColIndexVector& non_zero_cols)
-      : dense_column(reinterpret_cast<const DenseColumn&>(dense_row)),
-        non_zero_rows(reinterpret_cast<const RowIndexVector&>(non_zero_cols)) {}
+// A simple struct that contains a DenseVector and its non-zeros indices.
+template <typename Index>
+struct ScatteredVector {
+  StrictITIVector<Index, Fractional> values;
 
-  Fractional operator[](RowIndex row) const { return dense_column[row]; }
-  const DenseColumn& dense_column;
-  const RowIndexVector& non_zero_rows;
+  // This can be left empty in which case we just have the dense representation
+  // above. Otherwise, it should always be a subset of the actual non-zeros.
+  bool non_zeros_are_sorted = false;
+  std::vector<Index> non_zeros;
 
-  // Density threshold past which a dense sum is used rather than a loop over
-  // the non-zero positions of a vector during a precise sum.
-  static const double kDenseThresholdForPreciseSum;
+  // Temporary vector used in some sparse computation on the ScatteredColumn.
+  // True indicate a possible non-zero value. Note that its state is not always
+  // consistent.
+  StrictITIVector<Index, bool> is_non_zero;
+
+  Fractional operator[](Index index) const { return values[index]; }
+  Fractional& operator[](Index index) { return values[index]; }
+
+  // Sorting the non-zeros is not always needed, but it allows us to have
+  // exactly the same behavior while using a sparse iteration or a dense one. So
+  // we always do it after a Solve().
+  void SortNonZerosIfNeeded() {
+    if (!non_zeros_are_sorted) {
+      std::sort(non_zeros.begin(), non_zeros.end());
+      non_zeros_are_sorted = true;
+    }
+  }
 };
+
+// Specialization used in the code.
+struct ScatteredColumn : public ScatteredVector<RowIndex> {};
+struct ScatteredRow : public ScatteredVector<ColIndex> {};
+
+inline const ScatteredRow& TransposedView(const ScatteredColumn& c) {
+  return reinterpret_cast<const ScatteredRow&>(c);
+}
+inline const ScatteredColumn& TransposedView(const ScatteredRow& r) {
+  return reinterpret_cast<const ScatteredColumn&>(r);
+}
 
 // This is used during the deterministic time computation to convert a given
 // number of floating-point operations to something in the same order of
 // magnitude as a second (on a 2014 desktop).
 static inline double DeterministicTimeForFpOperations(int64 n) {
-  const double kConvertionFactor = 2e-9;
-  return kConvertionFactor * static_cast<double>(n);
+  const double kConversionFactor = 2e-9;
+  return kConversionFactor * static_cast<double>(n);
 }
 
 }  // namespace glop

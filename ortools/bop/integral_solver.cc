@@ -289,9 +289,9 @@ std::string IntegralVariable::DebugString() const {
   std::string str;
   CHECK_EQ(bits_.size(), weights_.size());
   for (int i = 0; i < bits_.size(); ++i) {
-    str += StringPrintf("%lld [%d] ", weights_[i], bits_[i].value());
+    str += absl::StrFormat("%lld [%lld] ", weights_[i], bits_[i].value());
   }
-  str += StringPrintf(" Offset: %lld", offset_);
+  str += absl::StrFormat(" Offset: %lld", offset_);
   return str;
 }
 
@@ -1072,6 +1072,8 @@ BopSolveStatus IntegralSolver::SolveWithTimeLimit(
     LPDecomposer decomposer;
     decomposer.Decompose(lp);
     const int num_sub_problems = decomposer.GetNumberOfProblems();
+    VLOG(1) << "Problem is decomposable into " << num_sub_problems
+            << " components!";
     if (num_sub_problems > 1) {
       // The problem can be decomposed. Solve each sub-problem and aggregate the
       // result.

@@ -22,15 +22,15 @@
 #include "ortools/base/integral_types.h"
 #include "ortools/base/logging.h"
 #include "ortools/base/macros.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/base/join.h"
-#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/int_type.h"
+#include "ortools/base/int_type_indexed_vector.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/constraint_solver/constraint_solver.h"
 #include "ortools/constraint_solver/constraint_solveri.h"
 #include "ortools/util/vector_map.h"
-#include "ortools/base/stringprintf.h"
 
 namespace operations_research {
 namespace {
@@ -149,8 +149,8 @@ class PartialSum {
   std::string DebugString() const {
     return StringPrintf(
         "PartialSum(offset=%lld, last_value = %lld, sum = %s, ds = %s)",
-        offset_, last_value_, strings::Join(sum_, ", ").c_str(),
-        strings::Join(ds_, ", ").c_str());
+        offset_, last_value_, absl::StrJoin(sum_, ", ").c_str(),
+        absl::StrJoin(ds_, ", ").c_str());
   }
 
  private:

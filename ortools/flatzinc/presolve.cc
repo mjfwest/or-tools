@@ -20,8 +20,10 @@
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/join.h"
 #include "ortools/base/stringpiece_utils.h"
-#include "ortools/base/strutil.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/base/string_view.h"
+#include "ortools/base/stringpiece_utils.h"
+#include "ortools/base/strutil.h"
 #include "ortools/base/map_util.h"
 #include "ortools/flatzinc/logging.h"
 #include "ortools/graph/cliques.h"
@@ -1250,9 +1252,11 @@ Presolver::RuleStatus Presolver::PresolveArrayIntElement(Constraint* ct,
 
       if (last_index < ct->arguments[0].Var()->domain.Max() ||
           first_index > ct->arguments[0].Var()->domain.Min()) {
-        StringAppendF(log, "filter index to [%" GG_LL_FORMAT "d..%" GG_LL_FORMAT
-                           "d] and reduce array to size %" GG_LL_FORMAT "d",
-                      first_index, last_index, last_index);
+        absl::StrAppendFormat(log,
+                              "filter index to [%" GG_LL_FORMAT
+                              "d..%" GG_LL_FORMAT
+                              "d] and reduce array to size %" GG_LL_FORMAT "d",
+                              first_index, last_index, last_index);
         IntersectVarWithInterval(ct->arguments[0].Var(), first_index,
                                  last_index);
         ct->arguments[1].values.resize(last_index);
@@ -1536,7 +1540,8 @@ Presolver::RuleStatus Presolver::PropagatePositiveLinear(Constraint* ct,
         IntegerVariable* const var = ct->arguments[1].variables[i];
         const int64 bound = rhs / coef;
         if (bound < var->domain.Max()) {
-          StringAppendF(log, ", intersect %s with [0..%" GG_LL_FORMAT "d]",
+          StringAppendF(log,
+                                ", intersect %s with [0..%" GG_LL_FORMAT "d]",
                         var->DebugString().c_str(), bound);
           IntersectVarWithInterval(var, 0, bound);
         }
@@ -1549,8 +1554,9 @@ Presolver::RuleStatus Presolver::PropagatePositiveLinear(Constraint* ct,
     IntegerVariable* const var = ct->arguments[1].variables[0];
     const int64 bound = (rhs + coef - 1) / coef;
     if (bound > var->domain.Min()) {
-      StringAppendF(log, ", intersect %s with [%" GG_LL_FORMAT "d .. INT_MAX]",
-                    var->DebugString().c_str(), bound);
+      StringAppendF(
+          log, ", intersect %s with [%" GG_LL_FORMAT "d .. INT_MAX]",
+          var->DebugString().c_str(), bound);
       IntersectVarWithInterval(var, bound, kint64max);
       return CONSTRAINT_ALWAYS_TRUE;
     }
@@ -1783,7 +1789,7 @@ bool IsIncreasingAndContiguous(const std::vector<int64>& values) {
 //
 // Rule 4:
 // Input: array_int_element(x, [c1, .., cn], y)
-// Output array_int_element(x, [c1, .., c{std::max(x)}], y)
+// Output array_int_element(x, [c1, .., c{max(x)}], y)
 //
 // Rule 5:
 // Input : array_int_element(x, [c1, .., cn], y) with x0 ci = c0 + i

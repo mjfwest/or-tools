@@ -28,9 +28,6 @@
 #else
 #include <fenv.h>  // NOLINT
 #endif
-#if !defined(__ANDROID__) && !defined(__APPLE__) && !defined(_MSC_VER)
-#include <fpu_control.h>
-#endif
 
 #ifdef __SSE__
 #include <xmmintrin.h>
@@ -104,40 +101,6 @@ class ScopedFloatingPointEnv {
 #endif
 };
 
-// The following macro does not change "var", but forces gcc to consider it
-// being modified. This can be used to avoid wrong over-optimizations by gcc.
-// See http://gcc.gnu.org/bugzilla/show_bug.cgi?id=47617 for an explanation.
-#ifdef NDEBUG
-#define TOUCH(var) asm volatile("" : "+X"(var))
-#else
-#define TOUCH(var)
-#endif
-
-#if (defined(__i386__) || defined(__x86_64__)) && defined(__linux__) && \
-    !defined(__ANDROID__)
-inline fpu_control_t GetFPPrecision() {
-  fpu_control_t status = 0;  // Initialized to zero to please memory sanitizer.
-  _FPU_GETCW(status);
-  return status & (_FPU_EXTENDED | _FPU_DOUBLE | _FPU_SINGLE);
-}
-
-
-// CPU precision control. Parameters can be:
-// _FPU_EXTENDED, _FPU_DOUBLE or _FPU_SINGLE.
-inline void SetFPPrecision(fpu_control_t precision) {
-  fpu_control_t status = 0;  // Initialized to zero to please memory sanitizer.
-  _FPU_GETCW(status);
-  TOUCH(status);
-  status &= ~(_FPU_EXTENDED | _FPU_DOUBLE | _FPU_SINGLE);
-  status |= precision;
-  _FPU_SETCW(status);
-  DCHECK_EQ(precision, GetFPPrecision());
-}
-#endif  // (defined(__i386__) || defined(__x86_64__)) && defined(__linux__) && \
-        // !defined(__ANDROID__)
-
-#undef TOUCH
-
 template <typename FloatType>
 inline bool IsPositiveOrNegativeInfinity(FloatType x) {
   return x == std::numeric_limits<FloatType>::infinity() ||
@@ -148,7 +111,7 @@ inline bool IsPositiveOrNegativeInfinity(FloatType x) {
 // tolerances.
 // Returns true if |x - y| <= a (with a being the absolute_tolerance).
 // The above case is useful for values that are close to zero.
-// Returns true if |x - y| <= std::max(|x|, |y|) * r. (with r being the relative
+// Returns true if |x - y| <= max(|x|, |y|) * r. (with r being the relative
 //                                                tolerance.)
 // The cases for infinities are treated separately to avoid generating NaNs.
 template <typename FloatType>
@@ -243,8 +206,8 @@ void GetBestScalingOfDoublesToInt64(const std::vector<double>& x,
                                     double* max_relative_coeff_error);
 
 // Same as the function above, but enforces that
-//  -  The sum over i of std::min(0, round(factor * x[i])) >= -max_sum.
-//  -  The sum over i of std::max(0, round(factor * x[i])) <= max_sum.
+//  -  The sum over i of min(0, round(factor * x[i])) >= -max_sum.
+//  -  The sum over i of max(0, round(factor * x[i])) <= max_sum.
 // For any possible values of the x[i] such that x[i] is in [lb[i], ub[i]].
 //
 // This also computes the max_scaled_sum_error which is a bound on the maximum

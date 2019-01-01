@@ -1,14 +1,25 @@
-# Makefile targets.
+# ---------- C++ support ----------
+.PHONY: help_cc # Generate list of C++ targets with descriptions.
+help_cc:
+	@echo Use one of the following C++ targets:
+ifeq ($(SYSTEM),win)
+	@tools\grep.exe "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.cpp.mk | tools\sed.exe "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/"
+	@echo off & echo(
+else
+	@grep "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.cpp.mk | sed "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/" | expand -t20
+	@echo
+endif
 
 .PHONY: ccc rcc clean_cc clean_compat ccexe
 
 # Main target
+.PHONY: cc # Build C++ OR-Tools.
 cc: ortoolslibs ccexe
-
+.PHONY: test_cc # Test C++ OR-Tools using various examples.
+test_cc: test_cc_examples
 BUILT_LANGUAGES += C++
 
-# Clean target
-
+.PHONY: clean_cc # Clean C++ output from previous build.
 clean_cc:
 	-$(DEL) $(LIB_DIR)$S$(LIB_PREFIX)cvrptw_lib.$(LIB_SUFFIX)
 	-$(DEL) $(LIB_DIR)$S$(LIB_PREFIX)dimacs.$(LIB_SUFFIX)
@@ -61,7 +72,7 @@ include $(OR_ROOT)makefiles/Makefile.gen.mk
 
 OR_TOOLS_LIBS = $(LIB_DIR)/$(LIB_PREFIX)ortools.$(LIB_SUFFIX)
 OR_TOOLS_LNK = $(PRE_LIB)ortools$(POST_LIB)
-ortoolslibs: $(OR_TOOLS_LIBS)
+ortoolslibs: third_party_check $(OR_TOOLS_LIBS)
 
 # Specific libraries for examples, and flatzinc.
 
@@ -650,7 +661,23 @@ rcc: $(BIN_DIR)$S$(basename $(notdir $(EX)))$E
 	@echo running $(BIN_DIR)$S$(basename $(notdir $(EX)))$E
 	$(BIN_DIR)$S$(basename $(notdir $(EX)))$E $(ARGS)
 
+.PHONY: detect_cc # Show variables used to build C++ OR-Tools.
+detect_cc:
+	@echo Relevant info for the C++ build:
+	@echo CCC = $(CCC)
+	@echo CFLAGS = $(CFLAGS)
+	@echo OR_TOOLS_LIBS = $(OR_TOOLS_LIBS)
+	@echo OR_TOOLS_LNK = $(OR_TOOLS_LNK)
+	@echo OR_TOOLS_LD_FLAGS = $(OR_TOOLS_LD_FLAGS)
+	@echo DEPENDENCIES_LNK = $(DEPENDENCIES_LNK)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif
+
 # Debug
+.PHONY: printdir
 printdir:
 	@echo LIB_DIR = $(LIB_DIR)
 	@echo BIN_DIR = $(BIN_DIR)

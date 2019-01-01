@@ -30,28 +30,20 @@
 #include "ortools/base/stringprintf.h"
 #include "ortools/base/timer.h"
 
-#ifndef ANDROID_JNI
-#include "ortools/base/file.h"
-#endif
+#include "ortools/port/file.h"
 
 
-#ifdef ANDROID_JNI
-#include "ortools/base/numbers.h"
-#endif  /// ANDROID_JNI
-
+#include "ortools/base/join.h"
 #include "ortools/base/map_util.h"
 #include "ortools/base/stl_util.h"
 #include "ortools/base/hash.h"
 #include "ortools/base/accurate_sum.h"
 #include "ortools/linear_solver/linear_solver.pb.h"
+#include "ortools/base/stringprintf.h"
 #include "ortools/linear_solver/model_exporter.h"
 #include "ortools/linear_solver/model_validator.h"
 #include "ortools/util/fp_utils.h"
-#ifndef ANDROID_JNI
-#include "ortools/util/proto_tools.h"
-#endif
-
-// TODO(user): Clean up includes. E.g., parameters.pb.h seems not used.
+#include "ortools/base/canonical_errors.h"
 
 DEFINE_bool(verify_solution, false,
             "Systematically verify the solution when calling Solve()"
@@ -76,17 +68,6 @@ DEFINE_bool(mpsolver_bypass_model_validation, false,
 // operations_research namespace in open_source/base).
 namespace operations_research {
 
-#if defined(ANDROID_JNI) && (defined(__ANDROID__) || defined(__APPLE__))
-// Enum -> std::string conversions are not present in MessageLite that is being used
-// on Android.
-std::string MPSolverResponseStatus_Name(int status) {
-  return SimpleItoa(status);
-}
-
-std::string MPModelRequest_SolverType_Name(int type) {
-  return SimpleItoa(type);
-}
-#endif  // defined(ANDROID_JNI) && (defined(__ANDROID__) || defined(__APPLE__))
 
 double MPConstraint::GetCoefficient(const MPVariable* const var) const {
   DLOG_IF(DFATAL, !interface_->solver_->OwnsVariable(var)) << var;
@@ -331,6 +312,10 @@ bool MPSolver::SetSolverSpecificParametersAsString(const std::string& parameters
   return interface_->SetSolverSpecificParametersAsString(parameters);
 }
 
+void MPSolver::SetHint(const PartialVariableAssignment& hint) {
+  interface_->SetHint(hint);
+}
+
 // ----- Solver -----
 
 #if defined(USE_CLP) || defined(USE_CBC)
@@ -357,11 +342,10 @@ extern MPSolverInterface* BuildGurobiInterface(bool mip,
 #endif
 #if defined(USE_CPLEX)
 extern MPSolverInterface* BuildCplexInterface(bool mip, MPSolver* const solver);
-#endif
 
-#ifdef ANDROID_JNI
 extern MPSolverInterface* BuildGLOPInterface(MPSolver* const solver);
 #endif
+
 
 namespace {
 MPSolverInterface* BuildSolverInterface(MPSolver* const solver) {
@@ -409,19 +393,24 @@ MPSolverInterface* BuildSolverInterface(MPSolver* const solver) {
       // TODO(user): Revert to the best *available* interface.
       LOG(FATAL) << "Linear solver not recognized.";
   }
-  return NULL;
+  return nullptr;
 }
 }  // namespace
 
 namespace {
 int NumDigits(int n) {
 // Number of digits needed to write a non-negative integer in base 10.
-// Note(user): std::max(1, log(0) + 1) == std::max(1, -inf) == 1.
+// Note(user): max(1, log(0) + 1) == max(1, -inf) == 1.
 #if defined(_MSC_VER)
   return static_cast<int>(std::max(1.0L, log(1.0L * n) / log(10.0L) + 1.0));
 #else
   return static_cast<int>(std::max(1.0, log10(static_cast<double>(n)) + 1.0));
 #endif
+}
+
+MPSolver::OptimizationProblemType DetourProblemType(
+    MPSolver::OptimizationProblemType problem_type) {
+  return problem_type;
 }
 }  // namespace
 
@@ -537,8 +526,10 @@ void MPSolver::SetIndexConstraints(bool enabled) {
 
 MPConstraint* MPSolver::LookupConstraintOrNull(const std::string& constraint_name)
     const {
-  std::unordered_map<std::string, int>::const_iterator it =
-      constraint_name_to_index_->find(constraint_name);
+  if (!constraint_name_to_index_) {
+    return nullptr;
+  }
+  const auto it = constraint_name_to_index_->find(constraint_name);
   if (it == constraint_name_to_index_->end()) return nullptr;
   return constraints_[it->second];
 }
@@ -596,6 +587,11 @@ MPSolverResponseStatus MPSolver::LoadModelFromProtoInternal(
 
   for (int i = 0; i < input_model.constraint_size(); ++i) {
     const MPConstraintProto& ct_proto = input_model.constraint(i);
+    if (ct_proto.lower_bound() == -infinity() &&
+        ct_proto.upper_bound() == infinity()) {
+      continue;
+    }
+
     MPConstraint* const ct =
         MakeRowConstraint(ct_proto.lower_bound(), ct_proto.upper_bound(),
                           clear_names ? empty : ct_proto.name());
@@ -644,7 +640,7 @@ MPSolverResponseStatus ResultStatusToMPSolverResponseStatus(
 }  // namespace
 
 void MPSolver::FillSolutionResponseProto(MPSolutionResponse* response) const {
-  CHECK_NOTNULL(response);
+  CHECK(response != nullptr);
   response->Clear();
   response->set_status(
       ResultStatusToMPSolverResponseStatus(interface_->result_status_));
@@ -669,7 +665,7 @@ void MPSolver::FillSolutionResponseProto(MPSolutionResponse* response) const {
 // static
 void MPSolver::SolveWithProto(const MPModelRequest& model_request,
                               MPSolutionResponse* response) {
-  CHECK_NOTNULL(response);
+  CHECK(response != nullptr);
   const MPModelProto& model = model_request.model();
   MPSolver solver(model.name(), static_cast<MPSolver::OptimizationProblemType>(
                                     model_request.solver_type()));
@@ -681,7 +677,7 @@ void MPSolver::SolveWithProto(const MPModelRequest& model_request,
   if (response->status() != MPSOLVER_MODEL_IS_VALID) {
     LOG(WARNING)
         << "Loading model from protocol buffer failed, load status = "
-        << MPSolverResponseStatus_Name(response->status()) << " ("
+        << ProtoEnumToString<MPSolverResponseStatus>(response->status()) << " ("
         << response->status() << "); Error: " << error_message;
 
     return;
@@ -761,30 +757,33 @@ void MPSolver::ExportModelToProto(MPModelProto* output_model) const {
   output_model->set_objective_offset(Objective().offset());
 }
 
-bool MPSolver::LoadSolutionFromProto(const MPSolutionResponse& response) {
+util::Status MPSolver::LoadSolutionFromProto(
+    const MPSolutionResponse& response) {
   interface_->result_status_ = static_cast<ResultStatus>(response.status());
   if (response.status() != MPSOLVER_OPTIMAL &&
       response.status() != MPSOLVER_FEASIBLE) {
-    LOG(ERROR)
-        << "Cannot load a solution unless its status is OPTIMAL or FEASIBLE.";
-    return false;
+    return util::InvalidArgumentError(absl::StrCat(
+        "Cannot load a solution unless its status is OPTIMAL or FEASIBLE"
+        " (status was: ",
+        ProtoEnumToString<MPSolverResponseStatus>(response.status()), ")"));
   }
   // Before touching the variables, verify that the solution looks legit:
   // each variable of the MPSolver must have its value listed exactly once, and
   // each listed solution should correspond to a known variable.
   if (response.variable_value_size() != variables_.size()) {
-    LOG(ERROR) << "Trying to load a solution whose number of variables does not"
-               << " correspond to the Solver.";
-    return false;
+    return util::InvalidArgumentError(absl::StrCat(
+        "Trying to load a solution whose number of variables (",
+        response.variable_value_size(),
+        ") does not correspond to the Solver's (", variables_.size(), ")"));
   }
   double largest_error = 0;
   interface_->ExtractModel();
+
+  // Look further: verify that the variable values are within the bounds.
   int num_vars_out_of_bounds = 0;
   const double tolerance = MPSolverParameters::kDefaultPrimalTolerance;
+  int last_offending_var = -1;
   for (int i = 0; i < response.variable_value_size(); ++i) {
-    // Look further: verify the bounds. Since linear solvers yield (small)
-    // numerical errors, though, we just log a warning if the variables look
-    // like they are out of their bounds. The user should inspect the values.
     const double var_value = response.variable_value(i);
     MPVariable* var = variables_[i];
     // TODO(user): Use parameter when they become available in this class.
@@ -793,24 +792,31 @@ bool MPSolver::LoadSolutionFromProto(const MPSolutionResponse& response) {
     if (lb_error > tolerance || ub_error > tolerance) {
       ++num_vars_out_of_bounds;
       largest_error = std::max(largest_error, std::max(lb_error, ub_error));
+      last_offending_var = i;
     }
-    var->set_solution_value(var_value);
   }
   if (num_vars_out_of_bounds > 0) {
-    LOG(WARNING)
-        << "Loaded a solution whose variables matched the solver's, but "
-        << num_vars_out_of_bounds << " out of " << variables_.size()
-        << " exceed one of their bounds by more than the primal tolerance: "
-        << tolerance;
+    return util::InvalidArgumentError(absl::StrCat(
+        "Loaded a solution whose variables matched the solver's, but ",
+        num_vars_out_of_bounds, " of ", variables_.size(),
+        " variables were out of their bounds, by more than the primal"
+        " tolerance which is: ",
+        tolerance, ". Max error: ", largest_error, ", last offendir var is #",
+        last_offending_var, ": '", variables_[last_offending_var]->name(),
+        "'"));
+  }
+  for (int i = 0; i < response.variable_value_size(); ++i) {
+    variables_[i]->set_solution_value(response.variable_value(i));
   }
   // Set the objective value, if is known.
+  // NOTE(user): We do not verify the objective, even though we could!
   if (response.has_objective_value()) {
     interface_->objective_value_ = response.objective_value();
   }
   // Mark the status as SOLUTION_SYNCHRONIZED, so that users may inspect the
   // solution normally.
   interface_->sync_status_ = MPSolverInterface::SOLUTION_SYNCHRONIZED;
-  return true;
+  return util::OkStatus();
 }
 
 void MPSolver::Clear() {
@@ -1024,9 +1030,9 @@ std::string PrettyPrintVar(const MPVariable& var) {
     if (lb > ub) {
       return prefix + "∅";
     } else if (lb == ub) {
-      return StringPrintf("%s{ %lld }", prefix.c_str(), lb);
+      return absl::StrFormat("%s{ %lld }", prefix.c_str(), lb);
     } else {
-      return StringPrintf("%s{ %lld, %lld }", prefix.c_str(), lb, ub);
+      return absl::StrFormat("%s{ %lld, %lld }", prefix.c_str(), lb, ub);
     }
   }
   // Special case: single (non-infinite) real value.
@@ -1249,22 +1255,20 @@ bool MPSolver::OwnsVariable(const MPVariable* var) const {
   return variables_[var_index] == var;
 }
 
-#ifndef ANDROID_JNI
-bool MPSolver::ExportModelAsLpFormat(bool obfuscate, std::string* output) {
+bool MPSolver::ExportModelAsLpFormat(bool obfuscate, std::string* model_str) const {
   MPModelProto proto;
   ExportModelToProto(&proto);
   MPModelProtoExporter exporter(proto);
-  return exporter.ExportModelAsLpFormat(obfuscate, output);
+  return exporter.ExportModelAsLpFormat(obfuscate, model_str);
 }
 
 bool MPSolver::ExportModelAsMpsFormat(bool fixed_format, bool obfuscate,
-                                      std::string* output) {
+                                      std::string* model_str) const {
   MPModelProto proto;
   ExportModelToProto(&proto);
   MPModelProtoExporter exporter(proto);
-  return exporter.ExportModelAsMpsFormat(fixed_format, obfuscate, output);
+  return exporter.ExportModelAsMpsFormat(fixed_format, obfuscate, model_str);
 }
-#endif
 
 // ---------- MPSolverInterface ----------
 
@@ -1375,7 +1379,7 @@ void MPSolverInterface::InvalidateSolutionSynchronization() {
 double MPSolverInterface::ComputeExactConditionNumber() const {
   // Override this method in interfaces that actually support it.
   LOG(DFATAL) << "ComputeExactConditionNumber not implemented for "
-              << MPModelRequest_SolverType_Name(
+              << ProtoEnumToString<MPModelRequest::SolverType>(
                      static_cast<MPModelRequest::SolverType>(
                          solver_->ProblemType()));
   return 0.0;
@@ -1438,19 +1442,17 @@ void MPSolverInterface::SetIntegerParamToUnsupportedValue(
 
 bool MPSolverInterface::SetSolverSpecificParametersAsString(
     const std::string& parameters) {
-#ifdef ANDROID_JNI
-  // This is not implemented on Android because there is no default /tmp and a
-  // pointer to the Java environment is require to query for the application
-  // folder or the location of external storage (if any).
-  return false;
-#else
-  if (parameters.empty()) return true;
-
   // Note(user): this method needs to return a success/failure boolean
   // immediately, so we also perform the actual parameter parsing right away.
   // Some implementations will keep them forever and won't need to re-parse
   // them; some (eg. SCIP, Gurobi) need to re-parse the parameters every time
   // they do Solve(). We just store the parameters std::string anyway.
+  //
+  // Note(user): This is not implemented on Android because there is no
+  // temporary directory to write files to without a pointer to the Java
+  // environment.
+  if (parameters.empty()) return true;
+
   std::string extension = ValidFileExtensionForParameterFile();
   #if defined(__linux)
     int32 tid = static_cast<int32>(pthread_self());
@@ -1462,31 +1464,29 @@ bool MPSolverInterface::SetSolverSpecificParametersAsString(
   #else  // _MSC_VER
     int32 pid = 456;
   #endif  // _MSC_VER
-    int64 now = base::GetCurrentTimeNanos();
+    int64 now = absl::GetCurrentTimeNanos();
     std::string filename = StringPrintf("/tmp/parameters-tempfile-%x-%d-%llx%s",
         tid, pid, now, extension.c_str());
     bool no_error_so_far = true;
   if (no_error_so_far) {
-    no_error_so_far =
-        file::SetContents(filename, parameters, file::Defaults()).ok();
+    no_error_so_far = FileSetContents(filename, parameters).ok();
   }
   if (no_error_so_far) {
     no_error_so_far = ReadParameterFile(filename);
     // We need to clean up the file even if ReadParameterFile() returned
     // false. In production we can continue even if the deletion failed.
-    if (!file::Delete(filename, file::Defaults()).ok()) {
+    if (!DeleteFile(filename).ok()) {
       LOG(DFATAL) << "Couldn't delete temporary parameters file: " << filename;
     }
   }
   if (!no_error_so_far) {
     LOG(WARNING) << "Error in SetSolverSpecificParametersAsString() "
                  << "for solver type: "
-                 << MPModelRequest::SolverType_Name(
+                 << ProtoEnumToString<MPModelRequest::SolverType>(
                         static_cast<MPModelRequest::SolverType>(
                             solver_->ProblemType()));
   }
   return no_error_so_far;
-#endif
 }
 
 bool MPSolverInterface::ReadParameterFile(const std::string& filename) {

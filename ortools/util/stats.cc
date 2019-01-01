@@ -64,7 +64,7 @@ void StatsGroup::Reset() {
 
 namespace {
 
-bool CompareStatPointers(Stat* s1, Stat* s2) {
+bool CompareStatPointers(const Stat* s1, const Stat* s2) {
   if (s1->Priority() == s2->Priority()) {
     if (s1->Sum() == s2->Sum()) return s1->Name() < s2->Name();
     return (s1->Sum() > s2->Sum());
@@ -87,7 +87,19 @@ std::string StatsGroup::StatString() const {
     longest_name_size = std::max(longest_name_size, size);
     sorted_stats.push_back(stats_[i]);
   }
-  std::sort(sorted_stats.begin(), sorted_stats.end(), CompareStatPointers);
+  switch (print_order_) {
+    case SORT_BY_PRIORITY_THEN_VALUE:
+      std::sort(sorted_stats.begin(), sorted_stats.end(), CompareStatPointers);
+      break;
+    case SORT_BY_NAME:
+      std::sort(sorted_stats.begin(), sorted_stats.end(),
+                [](const Stat* s1, const Stat* s2) -> bool {
+                  return s1->Name() < s2->Name();
+                });
+      break;
+    default:
+      LOG(FATAL) << "Unknown print order: " << print_order_;
+  }
 
   // Do not display groups without print-worthy stats.
   if (sorted_stats.empty()) return "";
@@ -230,5 +242,20 @@ std::string IntegerDistribution::ValueAsString() const {
   return StringPrintf("%8llu [%8.lf, %8.lf] %8.2lf %8.2lf %8.lf\n", num_, min_,
                       max_, Average(), StdDeviation(), sum_);
 }
+
+#ifdef HAS_PERF_SUBSYSTEM
+EnabledScopedInstructionCounter::EnabledScopedInstructionCounter(
+    const std::string& name, TimeLimit* time_limit)
+    : time_limit_(time_limit), name_(name) {
+  starting_count_ =
+      time_limit_ != nullptr ? time_limit_->ReadInstructionCounter() : 0;
+}
+
+EnabledScopedInstructionCounter::~EnabledScopedInstructionCounter() {
+  ending_count_ =
+      time_limit_ != nullptr ? time_limit_->ReadInstructionCounter() : 0;
+  LOG(INFO) << name_ << ", Instructions: " << ending_count_ - starting_count_;
+}
+#endif  // HAS_PERF_SUBSYSTEM
 
 }  // namespace operations_research

@@ -24,4 +24,6 @@
 #include "ortools/base/integral_types.h"
 #include "ortools/base/macros.h"
 
+#define QCHECK CHECK
+
 #endif  // OR_TOOLS_BASE_LOGGING_H_

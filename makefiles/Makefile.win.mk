@@ -40,26 +40,37 @@ MKDIR = md
 MKDIR_P = tools\mkdir.exe -p
 COPY = copy
 TOUCH = tools\touch.exe
+GREP = tools\grep.exe
 SED = tools\sed.exe
-CMAKE = cmake
+WHICH = tools\which.exe
 ARCHIVE_EXT = .zip
 FZ_EXE = fzn-or-tools$E
+
+# We Can't force SHELL to cmd.exe if sh.exe is in the PATH
+# cf https://www.gnu.org/software/make/manual/html_node/Choosing-the-Shell.html
+SHCHECK := $(shell where sh.exe 2>plop & rm plop)
+ifneq ($(SHCHECK),)
+$(error Please remove sh.exe ($(SHCHECK)) from your PATH (e.g. set PATH=%PATH:C:\Program Files\Git\bin\;=%))
+else
+SHELL = cmd
+endif
+
+CMAKE := $(shell $(WHICH) cmake)
+ifeq ($(CMAKE),)
+$(error Please add "cmake" to your PATH)
+endif
 
 # Add some additional macros
 CD = cd
 ATTRIB = attrib
 TASKKILL = taskkill
-NUGET = nuget.exe
-NUGET_PACK = nuget.exe pack
-NUGET_PUSH = nuget.exe push
-NUGET_SRC = https://www.nuget.org/api/v2/package
 
 # Default paths for libraries and binaries.
 WINDOWS_ZLIB_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
 WINDOWS_ZLIB_NAME ?= zlib.lib
 WINDOWS_GFLAGS_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
 WINDOWS_PROTOBUF_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
-WINDOWS_SWIG_BINARY ?= $(OR_ROOT_FULL)\\dependencies\\install\\swigwin-$(SWIG_TAG)\\swig.exe
+WINDOWS_SWIG_BINARY ?= "$(OR_ROOT_FULL)\\dependencies\\install\\swigwin-$(SWIG_TAG)\\swig.exe"
 WINDOWS_CLP_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
 WINDOWS_CBC_DIR ?= $(OR_ROOT_FULL)\\dependencies\\install
 
@@ -77,7 +88,7 @@ PROTOBUF_INC = /I$(WINDOWS_PROTOBUF_DIR)\\include
 GLOG_INC = /I$(WINDOWS_GLOG_DIR)\\include /DGOOGLE_GLOG_DLL_DECL=
 
 PYTHON_VERSION = $(WINDOWS_PYTHON_VERSION)
-PYTHON_INC=/I"$(WINDOWS_PATH_TO_PYTHON)\\include"
+PYTHON_INC=/I$(WINDOWS_PATH_TO_PYTHON)\\include
 PYTHON_LNK="$(WINDOWS_PATH_TO_PYTHON)\\libs\\python$(PYTHON_VERSION).lib"
 
 # Define CLP_DIR if unset and if CBC_DIR is set.
@@ -130,10 +141,10 @@ endif
 
 SWIG_INC = $(GLPK_SWIG) $(CLP_SWIG) $(CBC_SWIG) $(SCIP_SWIG) $(GUROBI_SWIG) -DUSE_GLOP -DUSE_BOP
 
-JAVA_INC=/I"$(JDK_DIRECTORY)\\include" /I"$(JDK_DIRECTORY)\\include\\win32"
-JAVAC_BIN="$(JDK_DIRECTORY)/bin/javac"
-JAVA_BIN="$(JDK_DIRECTORY)/bin/java"
-JAR_BIN="$(JDK_DIRECTORY)/bin/jar"
+JAVA_INC=/I"$(JAVA_HOME)\\include" /I"$(JAVA_HOME)\\include\\win32"
+JAVAC_BIN="$(shell $(WHICH) "$(JAVA_HOME)\bin\javac")"
+JAVA_BIN="$(shell $(WHICH) "$(JAVA_HOME)\bin\java")"
+JAR_BIN="$(shell $(WHICH) "$(JAVA_HOME)\bin\jar")"
 
 CFLAGS= -nologo $(SYSCFLAGS) $(DEBUG) /I$(INC_DIR) /I$(GEN_DIR) \
         $(GFLAGS_INC) $(ZLIB_INC) $(MINISAT_INC) $(PROTOBUF_INC) $(GLOG_INC) \

@@ -20,7 +20,6 @@
 #define OR_TOOLS_SAT_SIMPLIFICATION_H_
 
 #include <deque>
-#include <unordered_map>
 #include <memory>
 #include <set>
 #include <vector>
@@ -34,6 +33,7 @@
 #include "ortools/sat/sat_base.h"
 #include "ortools/sat/sat_parameters.pb.h"
 #include "ortools/sat/sat_solver.h"
+#include "ortools/util/time_limit.h"
 #include "ortools/base/adjustable_priority_queue.h"
 
 namespace operations_research {
@@ -51,7 +51,7 @@ class SatPostsolver {
   // The postsolver will process the Add() calls in reverse order. If the given
   // clause has all its literals at false, it simply sets the literal x to true.
   // Note that x must be a literal of the given clause.
-  void Add(Literal x, const gtl::Span<Literal> clause);
+  void Add(Literal x, const absl::Span<Literal> clause);
 
   // Tells the postsolver that the given literal must be true in any solution.
   // We currently check that the variable is not already fixed.
@@ -82,7 +82,7 @@ class SatPostsolver {
   std::vector<Literal> Clause(int i) const {
     // TODO(user): we could avoid the copy here, but because clauses_literals_
     // is a deque, we do need a special return class and cannot juste use
-    // gtl::Span<Literal> for instance.
+    // absl::Span<Literal> for instance.
     const int begin = clauses_start_[i];
     const int end = i + 1 < clauses_start_.size() ? clauses_start_[i + 1]
                                                   : clauses_literals_.size();
@@ -153,7 +153,7 @@ class SatPresolver {
   // Adds new clause to the SatPresolver.
   void SetNumVariables(int num_variables);
   void AddBinaryClause(Literal a, Literal b);
-  void AddClause(gtl::Span<Literal> clause);
+  void AddClause(absl::Span<Literal> clause);
 
   // Presolves the problem currently loaded. Returns false if the model is
   // proven to be UNSAT during the presolving.
@@ -302,7 +302,8 @@ class SatPresolver {
   // Temporary data for SimpleBva().
   std::set<LiteralIndex> m_lit_;
   std::vector<ClauseIndex> m_cls_;
-  std::unordered_map<LiteralIndex, std::vector<ClauseIndex>> p_;
+  ITIVector<LiteralIndex, int> literal_to_p_size_;
+  std::vector<std::pair<LiteralIndex, ClauseIndex>> flattened_p_;
   std::vector<Literal> tmp_new_clause_;
 
   // List of clauses on which we need to call ProcessClauseToSimplifyOthers().
@@ -397,7 +398,7 @@ void ProbeAndFindEquivalentLiteral(
 // Note that the full presolve is only executed if the problem is a pure SAT
 // problem with only clauses.
 SatSolver::Status SolveWithPresolve(
-    std::unique_ptr<SatSolver>* solver,
+    std::unique_ptr<SatSolver>* solver, TimeLimit* time_limit,
     std::vector<bool>* solution /* only filled if SAT */,
     DratWriter* drat_writer /* can be nullptr */);
 

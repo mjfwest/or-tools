@@ -85,7 +85,7 @@ bool PrecedencesPropagator::Propagate() {
       const ArcInfo& arc = arcs_[arc_index];
       if (!ArcShouldPropagate(arc, *trail_)) continue;
       const IntegerValue new_head_lb =
-          CapAdd(integer_trail_->LowerBound(arc.tail_var), ArcOffset(arc));
+          integer_trail_->LowerBound(arc.tail_var) + ArcOffset(arc);
       if (new_head_lb > integer_trail_->LowerBound(arc.head_var)) {
         if (!EnqueueAndCheck(arc, new_head_lb, trail_)) return false;
       }
@@ -253,12 +253,12 @@ void PrecedencesPropagator::AddArc(IntegerVariable tail, IntegerVariable head,
   }
 
   if (head == tail) {
-    // A self-arc is either plain SAT or plan UNSAT or it forces something on
+    // A self-arc is either plain SAT or plain UNSAT or it forces something on
     // the given offset_var or l. In any case it could be presolved in something
     // more efficent.
-    LOG(WARNING) << "Self arc! This could be presolved. "
-                 << "var:" << tail << " offset:" << offset
-                 << " offset_var:" << offset_var << " conditioned_by:" << l;
+    VLOG(1) << "Self arc! This could be presolved. "
+            << "var:" << tail << " offset:" << offset
+            << " offset_var:" << offset_var << " conditioned_by:" << l;
     if (offset_var == kNoIntegerVariable) {
       // Always false => l is false, otherwise this is a no op.
       if (offset > 0) trail_->EnqueueWithUnitReason(Literal(l).Negated());
@@ -357,7 +357,7 @@ bool PrecedencesPropagator::ArcShouldPropagate(const ArcInfo& arc,
 // horizon. Find an even sparser algorithm?
 void PrecedencesPropagator::PropagateOptionalArcs(Trail* trail) {
   for (const IntegerVariable var : modified_vars_.PositionsSetAtLeastOnce()) {
-    if (var >= impacted_potential_arcs_.size()) continue;
+    if (var >= impacted_potential_arcs_.size()) break;
 
     // We can't deduce anything if this is the case.
     if (!IsInvalidOrTrue(OptionalLiteralOf(var), *trail)) continue;
@@ -385,7 +385,7 @@ void PrecedencesPropagator::PropagateOptionalArcs(Trail* trail) {
       // IntegerVariable.
       DCHECK_EQ(var, arc.tail_var);
       const IntegerValue head_ub = integer_trail_->UpperBound(arc.head_var);
-      if (CapAdd(tail_lb, ArcOffset(arc)) > head_ub) {
+      if (tail_lb + ArcOffset(arc) > head_ub) {
         integer_reason_.clear();
         integer_reason_.push_back(
             integer_trail_->LowerBoundAsLiteral(arc.tail_var));
@@ -637,7 +637,7 @@ bool PrecedencesPropagator::BellmanFordTarjan(Trail* trail) {
       if (!ArcShouldPropagate(arc, *trail)) continue;
 
       const IntegerValue candidate =
-          CapAdd(integer_trail_->LowerBound(arc.tail_var), ArcOffset(arc));
+          integer_trail_->LowerBound(arc.tail_var) + ArcOffset(arc);
       if (candidate > integer_trail_->LowerBound(arc.head_var)) {
         if (!EnqueueAndCheck(arc, candidate, trail)) return false;
 
